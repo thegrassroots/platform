@@ -1,16 +1,14 @@
 # The Grassroots - keeps track of what changes on the ground
 
-A self-contained, browser-native **Results-Based M&E platform** whose interface mirrors
-the *SDG Media Monitor* (map + facets + record list + insights), but whose data model is
-the **Results-Based Management (RBM) results chain** from the UNDP *Handbook on Planning,
-Monitoring and Evaluating for Development Results* (2009) - the reference in
-`references/pme-handbook.pdf`.
+A self-contained, browser-native **Results-Based M&E platform**: an interactive world map,
+faceted filters, a record list and an insights dashboard over the **Results-Based Management
+(RBM) results chain**.
 
 > **No build step, no npm, no framework.** Pure vanilla JavaScript + native browser
 > APIs, loaded as classic scripts. The only runtime dependency is **MapLibre GL JS**
 > (from unpkg), which draws the basemap.
 
-**[▶ Live demo](https://shamoug.github.io/grassroots/)** - sign in with **`demo`** / **`demo`**.
+**[▶ Live demo](https://thegrassroots.github.io/platform/)** - sign in with **`demo`** / **`demo`**.
 Every seeded user's password is their username. The data is synthetic.
 
 ---
@@ -29,18 +27,16 @@ status engine, every chart - runs entirely in the browser with no server.
 
 ---
 
-## What you see (and how it maps to the SDG Monitor)
+## What you see
 
-| SDG Media Monitor        | RBM Monitor equivalent                                            |
-|--------------------------|-------------------------------------------------------------------|
-| 5,060 **Articles**       | **Indicators** tracked across the portfolio                       |
-| Regional Offices          | **Programme portfolio**, grouped by world region (continent) → country |
-| Development Goal (SDG)    | **Results by SDG** alignment                                      |
+| Surface                   | What it shows                                                     |
+|---------------------------|-------------------------------------------------------------------|
+| Portfolio panel           | **Programme portfolio**, grouped by world region (continent) → country |
 | Map bubbles (size/colour) | Country bubbles - **size = # indicators**, **colour = performance status (RAG)** or **SDG** |
-| Article cards            | **Indicator cards** - status dot, latest vs. target, result statement, level/SDG/status badges |
-| Most tagged / Latest     | Bubble colour **By Progress / By Performance** (which metric drives the RAG) |
-| Insights tab             | KPIs + status donut + SDG / region / results-chain charts + programme league table |
-| Ticker                   | Most recently updated indicators                                  |
+| Indicator cards           | Status dot, latest vs. target, result statement, level/SDG/status badges |
+| Bubble colour toggle      | **By Progress / By Performance** - which metric drives the RAG    |
+| Insights tab              | KPIs + status donut + SDG / region / results-chain charts + programme league table |
+| Ticker                    | Most recently updated indicators                                  |
 
 **Status (RAG)** is always **computed** from the reported results - never picked from a
 list. Two complementary metrics are derived per indicator:
@@ -62,8 +58,8 @@ the indicator detail shows both side by side.
 
 ## Data model - the RBM results framework
 
-The schema follows Table 6 of the handbook (*Results | Indicators | Baseline | Target |
-Means of Verification | Risks & Assumptions*) and the results chain
+The schema follows the standard RBM results-framework table (*Results | Indicators |
+Baseline | Target | Means of Verification | Risks & Assumptions*) and the results chain
 **Plan → Impact → Outcome → Output → Activity**.
 
 A **Plan** is a multi-year development plan and the top of the results chain: every
@@ -100,8 +96,8 @@ sqlite3 rbm.db < schema.sql
 
 ### "SQLite" in a dependency-free browser
 
-Browsers have no built-in SQLite engine, and the brief forbids external libraries
-(that rules out `sql.js`/WASM). So `js/db.js` implements a **relational store that mirrors
+Browsers have no built-in SQLite engine, and the app avoids heavyweight external
+libraries (that rules out `sql.js`/WASM). So `js/db.js` implements a **relational store that mirrors
 `schema.sql` table-for-table** over **IndexedDB** (a native browser database), with a hot
 in-memory copy for fast joins/filters. It is SQLite-*compatible* by construction:
 
@@ -117,7 +113,7 @@ Data is seeded on first run and persisted in IndexedDB; `DB.reset()` wipes and r
 
 ```
 index.html          App shell (loads classic scripts, no modules → works on file://)
-styles.css          Visual system (light/dark, mirrors the SDG Monitor chrome)
+styles.css          Visual system (light/dark)
 schema.sql          Canonical SQLite schema (incl. donor/project/project_kpi + beneficiary_type/beneficiary)
 data/world.js       Simplified world map (Natural Earth 110m, → window.WORLD)
 js/seed.js          Seeded sample database (→ window.SEED)
@@ -193,27 +189,6 @@ python tools/proc_world.py               # rebuilds data/world.js from assets/wo
 `gen_seed.py` samples to place demo activities; it was extracted from the GeoNames
 `cities1000` dump (CC BY 4.0).
 
-### Two seed variants
-
-The seed comes in a **public** and an **internal** variant. They differ in one record - the
-owner account - so a local install can carry a real identity while this public repo never does:
-
-```
-python tools/gen_seed.py                 # public   -> owner: demo / demo          (committed)
-python tools/gen_seed.py --internal      # internal -> owner: a real person        (never committed)
-```
-
-Public is the default, so forgetting the flag produces the safe seed rather than the leaky
-one. Everyone else in the seed is fictional in **both** variants. Each build stamps
-`window.SEED_VARIANT`, and `.githooks/pre-commit` reads it from the *staged* blob and
-rejects an internal seed - so the working tree may hold the internal one while you develop,
-but a commit cannot. Enable the hook once per clone:
-
-```
-git config core.hooksPath .githooks
-```
-
-Publishing from a machine with the internal seed checked out is therefore a three-step
-dance: regenerate public, commit and push, then `--internal` again to restore your local
-data. Because the app auto-reseeds when the seed's content stamp changes, switching
-variants takes effect on the next page load.
+Every person in the seed is fictional, and the app ships one build - what runs locally is
+what is published. The owner account is **`demo` / `demo`**; every other seeded user's
+password is likewise their username.

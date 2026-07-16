@@ -64,7 +64,7 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .brand .wm b{color:var(--primary);font-weight:var(--w-title)}
 .wm.sdg{font-size:17px;font-weight:800;letter-spacing:.03em;line-height:1;white-space:nowrap}
 .wm.sdg .sp{display:inline-block;width:.3em}
-.header .wm.sdg span{color:#1CABE2 !important} /* UNICEF blue */
+.header .wm.sdg span{color:#1CABE2 !important} /* brand blue */
 .brand .rain{height:3px;width:100%;border-radius:2px;
   background:linear-gradient(90deg,#E5243B,#DDA63A,#4C9F38,#26BDE2,#FCC30B,#FD6925,#0A97D9,#00689D,#19486A);}
 .snap{display:flex;align-items:center;gap:6px;background:var(--bg-sunk);border:1px solid var(--border);
@@ -364,7 +364,7 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .about-hero{display:flex;flex-direction:column;gap:6px;align-items:flex-start;
   padding:4px 0 16px;margin-bottom:16px;border-bottom:1px solid var(--border)}
 .about-hero .wm.sdg{font-size:22px;letter-spacing:.04em}
-.about-hero .wm.sdg span{color:#1CABE2 !important} /* UNICEF blue */
+.about-hero .wm.sdg span{color:#1CABE2 !important} /* brand blue */
 .about-hero .rain{height:4px;width:100%;border-radius:2px;
   background:linear-gradient(90deg,#E5243B,#DDA63A,#4C9F38,#26BDE2,#FCC30B,#FD6925,#0A97D9,#00689D,#19486A)}
 .about-lead{color:var(--ink-2);font-size:11.5px;line-height:1.6;margin:0 0 12px}
@@ -372,6 +372,8 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .about-lead:last-of-type{margin-bottom:0}
 .about-foot{margin-top:16px;text-align:center;color:var(--muted);font-size:9.5px;letter-spacing:.02em}
 .about-foot #appVersion{font-variant-numeric:tabular-nums}
+.about-foot .about-mail{color:var(--accent,var(--ink-2));text-decoration:none}
+.about-foot .about-mail:hover{text-decoration:underline}
 /* one row: [badge] title  ·  ↳ sub-line  ................  [Export PDF] */
 .chain{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:0 12px;margin-bottom:14px}
 .chain .lnk{display:flex;gap:9px;padding:5px 0;position:relative;min-width:0;flex:0 1 auto}

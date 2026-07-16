@@ -150,18 +150,18 @@
     return _countryShade[iso] || '#94a3b8';
   }
   // People carry two orthogonal fields: a Section (where they sit: the central
-  // Section or a Resident Coordinator Office) and a Status (their permission:
+  // Section or a Country Office) and a Status (their permission:
   // Admin / User / Viewer). Legacy rows only had `role`; fall back from it.
-  var SECTION_LABEL = { ddi:'Section', rco:'Resident Coordinator Office' };
+  var SECTION_LABEL = { hq:'Section', co:'Country Office' };
   var STATUS_LABEL  = { admin:'Admin', user:'User', viewer:'Viewer' };
-  function userSection(u){ return u ? (u.section || 'ddi') : null; }
+  function userSection(u){ return u ? (u.section || 'hq') : null; }
   function userStatus(u){ return u ? (u.status || 'user') : null; }
-  // colour identity for a user row (Admin has its own accent; RCO inherits its
+  // colour identity for a user row (Admin has its own accent; a country office inherits its
   // country/region colour; the central Section otherwise)
   function userColor(u){
     if (!u) return '#aab6c8';
     if (userStatus(u) === 'admin') return '#5B8DEF';
-    if (userSection(u) === 'ddi') return '#9D7BEE';
+    if (userSection(u) === 'hq') return '#9D7BEE';
     return u.country_iso3 ? countryColor(u.country_iso3) : regionColor(u.region);
   }
   // People are stored by id everywhere; look their name up for display only.
@@ -231,7 +231,7 @@
     expandImpact: new Set(),
     expandOutcome: new Set(),
     expandKpiPillar: new Set(),
-    expandUserRole: new Set(['ddi']),
+    expandUserRole: new Set(['hq']),
     // left-sidebar filter groups: display order + which are collapsed (drag-and-drop)
     facetOrder: null,        // array of group keys; null = use FACET_ORDER_DEFAULT
     facetCollapsed: {},      // { groupKey: true } for collapsed groups
@@ -1840,7 +1840,7 @@
       counts = finalizeCounts(userSets);
     }
     var q = (S.qUser || '').toLowerCase();
-    var sections = [['ddi', 'Section'], ['rco', 'Resident Coordinator Offices']];
+    var sections = [['hq', 'Section'], ['co', 'Country Offices']];
     sections.forEach(function (rl) {
       var section = rl[0];
       var us = DB.tables.user.filter(function (u) {
@@ -1859,7 +1859,7 @@
         us.forEach(function (u) { var s = userSets[u.id]; if (s) Object.keys(s).forEach(function (pid) { stot[pid] = 1; }); });
         total = Object.keys(stot).length;
       }
-      var base = section === 'ddi' ? '#9D7BEE' : '#8FA3C4';
+      var base = section === 'hq' ? '#9D7BEE' : '#8FA3C4';
       var open = S.expandUserRole.has(section) || !!q;
       host.appendChild(facetRow({
         cat: true, expandable: true, open: open, color: base, name: rl[1], count: total, barPct: 1, barColor: base,
@@ -1868,7 +1868,7 @@
       if (!open) return;
       var sub = el('div', 'subrow');
       var maxN = 1; us.forEach(function (u) { if ((counts[u.id] || 0) > maxN) maxN = counts[u.id] || 0; });
-      // reveal window (per section) - long sections (e.g. 56 RCOs) page 10 at a time
+      // reveal window (per section) - long sections (e.g. 56 country offices) page 10 at a time
       var window = q ? us.length : Math.min(S.userShown[section] || FACET_PAGE, us.length);
       var shown = us.slice(0, window);
       us.forEach(function (u) { if (S.selUser.has(u.id) && shown.indexOf(u) < 0) shown.push(u); });   // keep selected visible
@@ -2376,7 +2376,7 @@
       projsFromInds = true;
       actScope = function (m){ return m.reported_by_id === key; };
       title = u ? u.name : 'User'; color = u ? userColor(u) : color; badge = 'person';
-      sub = u ? ((userSection(u) === 'ddi' ? 'Section' : 'Resident Coordinator Office') + (u.country_iso3 ? '  ·  ' + u.country_iso3 : '')) : '';
+      sub = u ? ((userSection(u) === 'hq' ? 'Section' : 'Country Office') + (u.country_iso3 ? '  ·  ' + u.country_iso3 : '')) : '';
     } else if (kind === 'bentype'){
       // Beneficiary type: the projects whose OWN activities logged it (p.benTypeIds),
       // the KPIs that reach it, and a count of the activities that recorded it.
@@ -2754,9 +2754,9 @@
 
   // Beneficiary heat-map for a set of activities: one row per activity, one column
   // per beneficiary type that actually carries a count, plus a per-row Total. Cell
-  // shading is a UNICEF-blue ramp (darker = more beneficiaries), scaled to the
+  // shading is a blue ramp (darker = more beneficiaries), scaled to the
   // single largest cell in the grid so the busiest cell is the deepest blue.
-  var UNICEF_BLUE = '#1CABE2';
+  var HEAT_BLUE = '#1CABE2';
   // Linear blend between two #rrggbb colours (t in 0..1).
   function mixHex(a, b, t){
     var pa = /^#?([0-9a-f]{6})$/i.exec(a), pb = /^#?([0-9a-f]{6})$/i.exec(b);
@@ -2768,9 +2768,9 @@
     var bl = Math.round((na & 255) + ((nb & 255) - (na & 255)) * t);
     return '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
   }
-  function benHeatColor(t){                // t in 0..1 → light→bright UNICEF blue
+  function benHeatColor(t){                // t in 0..1 → light→bright blue
     if (t <= 0) return { bg: 'var(--bg-sunk)', fg: 'var(--muted)' };   // empty cell: light gray
-    // light tint (#EAF7FC) → bright UNICEF blue (#1CABE2); dark navy text stays legible
+    // light tint (#EAF7FC) → bright blue (#1CABE2); dark navy text stays legible
     // across the whole (brighter) ramp, so no white-on-blue flip is needed.
     var e = Math.pow(t, 0.7);
     var bg = mixHex('#EAF7FC', '#1CABE2', e);
@@ -3138,8 +3138,8 @@
   var curProject = null;   // DB project row being edited (null = brand-new, unsaved)
 
   function canEditProjects(){ return CURRENT_USER && curStatus() !== 'viewer'; }
-  // RCO users are scoped to their own country; Section/Admin to any.
-  function projectCountryLock(){ return (curSection() === 'rco' && CURRENT_USER) ? CURRENT_USER.country_iso3 : null; }
+  // Country-office users are scoped to their own country; Section/Admin to any.
+  function projectCountryLock(){ return (curSection() === 'co' && CURRENT_USER) ? CURRENT_USER.country_iso3 : null; }
   function canEditThisProject(p){
     if (!canEditProjects()) return false;
     var lock = projectCountryLock();
@@ -4201,7 +4201,7 @@
       '  <label><span>Frequency</span><select class="kf-freq">' + optionList(FREQ_OPTS, ind.frequency) + '</select></label>' +
       '  <label><span>Collection method</span><select class="kf-method">' + optionList(METHOD_OPTS, ind.collection_method) + '</select></label>' +
       '  <label class="kf-wide"><span>Means of verification</span><input class="kf-mov" type="text" value="' + esc(ind.means_of_verification || '') + '"></label>' +
-      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(ind.responsible_id, ['ddi']) + '</select></label>' +
+      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(ind.responsible_id, ['hq']) + '</select></label>' +
       '  <label><span>Disaggregation</span><select class="kf-disag">' + optionList(DISAGG_OPTS, ind.disaggregation || 'none') + '</select></label>' +
       '  <label class="kf-wide"><span>Parent Output *</span><select class="kf-parent">' + parentResultOptions('output', curParent) + '</select></label>' +
       '  <label><span>Code (auto)</span><input class="kf-code" type="text" value="' + esc(ind.code || '') + '" readonly title="System-generated from the parent Output - not editable. It updates automatically if the KPI is moved to another Output."></label>' +
@@ -4271,7 +4271,7 @@
       '  <label><span>Frequency</span><select class="kf-freq">' + optionList(FREQ_OPTS, 'quarterly') + '</select></label>' +
       '  <label><span>Collection method</span><select class="kf-method">' + optionList(METHOD_OPTS, 'Administrative records') + '</select></label>' +
       '  <label class="kf-wide"><span>Means of verification</span><input class="kf-mov" type="text" placeholder="Data source"></label>' +
-      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(null, ['ddi']) + '</select></label>' +
+      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(null, ['hq']) + '</select></label>' +
       '  <label><span>Disaggregation</span><select class="kf-disag">' + optionList(DISAGG_OPTS, 'none') + '</select></label>' +
       '  <label class="kf-wide"><span>Parent Output *</span><select class="kf-parent">' + parentResultOptions('output', '') + '</select></label>' +
       '</div>' +
@@ -4329,7 +4329,7 @@
     return DB.tables.user.some(function (u){ return u.username.toLowerCase() === name && u.id !== exceptId; });
   }
   function userScopeText(u){
-    if (userSection(u) === 'rco') return (u.country_iso3 || '') + (u.region ? ' · ' + regionShort(u.region) : '');
+    if (userSection(u) === 'co') return (u.country_iso3 || '') + (u.region ? ' · ' + regionShort(u.region) : '');
     return 'Section';
   }
 
@@ -4382,7 +4382,7 @@
       '  <label><span>Username *</span><input class="uf-user" type="text" value="' + esc(u ? u.username : '') + '"></label>' +
       '  <label><span>' + (isNew ? 'Password *' : 'Reset password') + '</span><input class="uf-pass" type="text" placeholder="' + (isNew ? '' : 'leave blank to keep') + '" value=""></label>' +
       '  <label><span>Section *</span><select class="uf-section">' +
-          [['ddi', SECTION_LABEL.ddi], ['rco', SECTION_LABEL.rco]].map(function (rl){ var cur = u ? userSection(u) : 'rco'; return '<option value="' + rl[0] + '"' + (cur === rl[0] ? ' selected' : '') + '>' + rl[1] + '</option>'; }).join('') +
+          [['hq', SECTION_LABEL.hq], ['co', SECTION_LABEL.co]].map(function (rl){ var cur = u ? userSection(u) : 'co'; return '<option value="' + rl[0] + '"' + (cur === rl[0] ? ' selected' : '') + '>' + rl[1] + '</option>'; }).join('') +
         '</select></label>' +
       '  <label><span>Status *</span><select class="uf-status">' +
           [['admin', STATUS_LABEL.admin], ['user', STATUS_LABEL.user], ['viewer', STATUS_LABEL.viewer]].map(function (rl){ var cur = u ? userStatus(u) : 'user'; return '<option value="' + rl[0] + '"' + (cur === rl[0] ? ' selected' : '') + '>' + rl[1] + '</option>'; }).join('') +
@@ -4404,11 +4404,11 @@
         .filter(function (c){ return c.region === rg; }).sort(function (a,b){ return a.name < b.name ? -1 : 1; })
         .map(function (c){ return '<option value="' + c.iso3 + '"' + (u && u.country_iso3 === c.iso3 ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('');
     }
-    // Region/Country apply only to a Resident Coordinator Office section.
-    function syncScope(){ var rco = sectionSel.value === 'rco'; f.querySelector('.uf-reg-wrap').style.display = rco ? '' : 'none'; f.querySelector('.uf-cty-wrap').style.display = rco ? '' : 'none'; }
+    // Region/Country apply only to a Country Office section.
+    function syncScope(){ var isCO = sectionSel.value === 'co'; f.querySelector('.uf-reg-wrap').style.display = isCO ? '' : 'none'; f.querySelector('.uf-cty-wrap').style.display = isCO ? '' : 'none'; }
     var STATUS_NOTE = {
       admin:'Admin - full control: manage users, edit the framework & KPIs, and log activities for any country.',
-      user:'User - can log activities within scope (Section: all countries; RCO: its own country). No user or framework administration.',
+      user:'User - can log activities within scope (Section: all countries; Country Office: its own country). No user or framework administration.',
       viewer:'Viewer - read-only. Cannot log activities or edit anything.'
     };
     function syncStatusNote(){ f.querySelector('.uf-statusnote').textContent = STATUS_NOTE[statusSel.value] || ''; }
@@ -4423,8 +4423,8 @@
       if (!name || !uname) { msg.textContent = 'Name and username are required.'; return; }
       if (usernameTaken(uname, u ? u.id : -1)) { msg.textContent = 'That username is already taken.'; return; }
       if (isNew && !pass) { msg.textContent = 'Set an initial password.'; return; }
-      var region = section === 'rco' ? regionSel.value : null;
-      var iso = section === 'rco' ? (countrySel.value || null) : null;
+      var region = section === 'co' ? regionSel.value : null;
+      var iso = section === 'co' ? (countrySel.value || null) : null;
       var enabled = +f.querySelector('.uf-enabled').value;
       if (isNew) {
         applyUserMutation(DB.insert('user', { username: uname, name: name, password: pass, section: section, status: status,
@@ -4515,7 +4515,7 @@
     var newOuts = outcomes.map(function (oc){
       // `code` is system-generated in DB.insert (Output #.#.#) - never set here.
       return { plan_id: oc.plan_id, programme_id: oc.programme_id, parent_id: oc.id, level: 'output',
-        statement: outStmt, sdg: pillar, owner_id: null, assumptions: 'Delivery timelines are met; RCOs and agencies participate.',
+        statement: outStmt, sdg: pillar, owner_id: null, assumptions: 'Delivery timelines are met; country offices and partners participate.',
         risks: '', risk_level: 'medium' };
     });
     return DB.insert('result', newOuts);
@@ -5718,13 +5718,13 @@
     var st = curStatus();
     if (st === 'viewer') return false;          // read-only
     if (st === 'admin') return true;            // report anywhere
-    // status 'user': the central Section reports on any country; RCO on its own only
-    if (curSection() === 'ddi') return true;
+    // status 'user': the central Section reports on any country; a country office on its own only
+    if (curSection() === 'hq') return true;
     return !!(r && r.programme && r.programme.country_iso3 === CURRENT_USER.country_iso3);
   }
 
   function userScopeLabel(u){
-    return userSection(u) === 'rco' ? (u.country_iso3 || 'RCO') : 'Section';
+    return userSection(u) === 'co' ? (u.country_iso3 || 'CO') : 'Section';
   }
   function renderUserChip(){
     var chip = $('#userChip'); if (!chip || !CURRENT_USER) return;
@@ -5813,7 +5813,7 @@
     return f;
   }
   function applyRole(){
-    document.body.classList.remove('status-admin','status-user','status-viewer','sec-ddi','sec-rco');
+    document.body.classList.remove('status-admin','status-user','status-viewer','sec-hq','sec-co');
     if (CURRENT_USER) { document.body.classList.add('status-' + curStatus()); document.body.classList.add('sec-' + curSection()); }
   }
   function loginAs(u){
@@ -5855,7 +5855,7 @@
   // Reconcile country → region assignments from the (authoritative) seed onto any
   // previously-persisted IndexedDB data, so region taxonomy changes - e.g. the move
   // from UN Regional Offices to geographic continents - reach existing browsers
-  // without a manual data reset. Programmes, projects and RCO users all carry a
+  // without a manual data reset. Programmes, projects and country-office users all carry a
   // denormalised region derived from their country; each is realigned here.
   // Countries are never edited in-app, so this is always safe.
   function reconcileRegions() {
@@ -5876,7 +5876,7 @@
       if (rg && pr.region !== rg) { pr.region = rg; prjChanged.push(pr); }
     });
     DB.tables.user.forEach(function (usr) {
-      if (userSection(usr) !== 'rco' || !usr.country_iso3) return;
+      if (userSection(usr) !== 'co' || !usr.country_iso3) return;
       var rg = regionByIso[usr.country_iso3];
       if (rg && usr.region !== rg) { usr.region = rg; uChanged.push(usr); }
     });

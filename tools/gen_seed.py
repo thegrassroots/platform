@@ -20,7 +20,7 @@
 # The `sdg` field on results is REPURPOSED to hold the Pillar id (1-4), PLAN-SCOPED
 # (each plan numbers its pillars 1-4). Every impact row also carries pillar_name /
 # pillar_color so the app rebuilds its colour/name lookup from the active plan.
-import json, os, sys
+import json, os
 from datetime import date
 
 OUT = "js/seed.js"
@@ -43,22 +43,11 @@ def shuffle(lst):
 
 TODAY = date(2026, 7, 13)   # the app's "today"
 
-# ---- Build variant ----------------------------------------------------------
-# The repo is public, so the committed seed must never carry a real person's
-# identity. Two variants, from one generator:
-#
-#   python tools/gen_seed.py              -> PUBLIC   (owner: demo / Demo Owner)
-#   python tools/gen_seed.py --internal   -> INTERNAL (owner: shamoug / Aladdin Shamoug)
-#
-# Public is the DEFAULT on purpose: forgetting the flag yields the safe seed, not
-# the leaky one. Only the public seed is committed - `git commit` is guarded by
-# .githooks/pre-commit, which rejects an internal seed. Everyone else in the seed
-# (the output owners) is fictional in BOTH variants.
-INTERNAL = "--internal" in sys.argv
-VARIANT  = "internal" if INTERNAL else "public"
-OWNER    = ("shamoug", "Aladdin Shamoug") if INTERNAL else ("demo", "Demo Owner")
+# The owner account. Everyone in the seed is fictional - the repo is public and
+# the local app is the same build, so there is no second variant to keep apart.
+OWNER = ("demo", "Demo Owner")
 
-# ---- Country teams / RCOs (iso3, name, region) ------------------------------
+# ---- Country teams / offices (iso3, name, region) ------------------------------
 # Regions are the six geographic continents (UN M49 continental grouping), with
 # the Americas split into North and South. Placement follows the UN M49 geoscheme:
 # North Africa (Egypt/Morocco/Tunisia) sits in Africa; the Middle East, Central
@@ -197,7 +186,7 @@ for _iso, _nm, _rg in COUNTRIES + WORLD_EXTRA:
     _seen_iso.add(_iso)
     assert _rg in region_id_by_name, f"unknown region {_rg!r} for {_iso}"
 
-# Resident Coordinator / RCO leads (country-team level)
+# Country-office leads (country-team level)
 LEADS = ["A. Mwangi","S. Rahman","T. Eriksson","M. Okonkwo","L. Petrova","J. Alvarez",
  "N. Haile","R. Santos","F. Ndiaye","P. Gurung","K. Nasser","E. Bryant","C. Dlamini","H. Tran"]
 
@@ -229,7 +218,7 @@ PILLARS_2021 = [
  "pillar":1,"tag":"Data Governance & Quality",
  "impact":"Programmes plan and report on the basis of trusted, high-quality, interoperable data.",
  "outcomes":[
-  ("Data governance frameworks and standards are adopted across the RC system.",
+  ("Data governance frameworks and standards are adopted across the organisation.",
     [("Data and dashboards policy issued and applied across regions.","Priya Raman",
         [("Number of regions applying the data and dashboards policy","quantitative","count","increase",0,5,
             "Policy document; regional confirmations"),
@@ -237,21 +226,21 @@ PILLARS_2021 = [
             "Regional governance adoption records")]),
      ("Minimum shared dataset standard for interoperability defined and endorsed.","Elena Duarte",
         [("Share of country teams reporting against the minimum dataset standard","quantitative","%","increase",0,70,
-            "Reference Group record; IMS reports"),
-         ("Share of the RC system reporting on trusted, interoperable data","quantitative","%","increase",45,90,
-            "IMS interoperability audit")]),
-     ("Data protection focal point function operational under ODPP.","Priya Raman",
+            "Steering group record; reporting-system extracts"),
+         ("Share of the organisation reporting on trusted, interoperable data","quantitative","%","increase",45,90,
+            "Interoperability audit")]),
+     ("Data protection focal point function operational under the data protection office.","Priya Raman",
         [("Share of data protection requests processed within agreed procedures","quantitative","%","increase",0,100,
             "Focal point log")])]),
   ("Leadership and mandated reporting are served by timely, quality data and analytics.",
-    [("Chair, QCPR, and mandated data reporting delivered on schedule.","Priya Raman",
+    [("Executive and mandated data reporting delivered on schedule.","Priya Raman",
         [("Share of mandated reporting cycles delivered on time","quantitative","%","increase",90,100,
             "Reporting calendar and submission records"),
          ("Composite data quality index across mandated reporting","quantitative","index","increase",2.4,4.5,
             "Data quality assessment across mandated reporting")]),
-     ("Country-team profiles and RC scorecards maintained and current.","Elena Duarte",
+     ("Country-team profiles and scorecards maintained and current.","Elena Duarte",
         [("Share of country-team profiles and scorecards updated within 30 days","quantitative","%","increase",75,95,
-            "IMS and platform audit"),
+            "Reporting-system and platform audit"),
          ("Share of leadership data requests served within service standards","quantitative","%","increase",70,95,
             "Service desk / request tracker records")])]),
  ],
@@ -260,23 +249,23 @@ PILLARS_2021 = [
  "pillar":2,"tag":"Digital Platforms & Services",
  "impact":"Country teams use reliable, integrated platforms that lighten the reporting burden and increase efficiency.",
  "outcomes":[
-  ("UN INFO functions as the trusted digital backbone of the RC system.",
-    [("UN INFO maintained and enhanced with agency engagement strengthened.","Marco Ruiz",
-        [("Increase in active agency users on UN INFO","quantitative","%","increase",0,40,
+  ("The Programme Portal functions as the trusted digital backbone of the organisation.",
+    [("Programme Portal maintained and enhanced with partner engagement strengthened.","Marco Ruiz",
+        [("Increase in active partner users on the Programme Portal","quantitative","%","increase",0,40,
             "Platform analytics"),
-         ("Reduction in reporting burden reported by RCOs (index, baseline=100)","quantitative","index","decrease",100,60,
-            "RCO reporting burden survey")]),
+         ("Reduction in reporting burden reported by country offices (index, baseline=100)","quantitative","index","decrease",100,60,
+            "Country-office reporting burden survey")]),
      ("Country-level dashboard guidance issued and dashboards rolled out on demand.","Nadia Haddad",
         [("Number of country teams with a live country dashboard","quantitative","count","increase",0,60,
             "Guidance note; dashboard registry")])]),
-  ("Proven field solutions are matured and reused across the RC system through the Digital Solutions Lab.",
-    [("Field-generated solutions curated, matured, and made reusable by the Digital Solutions Lab.","Nadia Haddad",
+  ("Proven field solutions are matured and reused across the organisation through the Solutions Lab.",
+    [("Field-generated solutions curated, matured, and made reusable by the Solutions Lab.","Nadia Haddad",
         [("Number of proven solutions matured and reused by 3+ country teams","quantitative","count","increase",0,12,
             "Lab solution registry")]),
-     ("UNOPS delivery team aligned to priorities with stable delivery capacity.","Marco Ruiz",
+     ("Delivery partner team aligned to priorities with stable delivery capacity.","Marco Ruiz",
         [("Share of sprint commitments delivered per release cycle","quantitative","%","increase",0,90,
             "Sprint and release reports"),
-         ("Platform availability across the RC system","quantitative","%","increase",99,99.7,
+         ("Platform availability across the organisation","quantitative","%","increase",99,99.7,
             "Platform uptime monitoring")])]),
  ],
 },
@@ -284,16 +273,16 @@ PILLARS_2021 = [
  "pillar":3,"tag":"Innovation & Emerging Technology",
  "impact":"The organisation adopts emerging technologies responsibly, with governance in place and value demonstrated in the field.",
  "outcomes":[
-  ("Responsible AI governance and quality assurance are in place for the RC system.",
+  ("Responsible AI governance and quality assurance are in place across the organisation.",
     [("AI Governance and QA Framework launched and applied to AI tools.","Nadia Haddad",
         [("Share of AI tools assessed under the framework","quantitative","%","increase",0,100,
             "Framework document; assessment log")]),
-     ("CF Design Intelligence cleared, trained, and rolled out to RCOs.","Nadia Haddad",
-        [("Number of RCOs onboarded to CF Design Intelligence","quantitative","count","increase",0,90,
+     ("Design intelligence service cleared, trained, and rolled out to country offices.","Nadia Haddad",
+        [("Number of country offices onboarded to the design intelligence service","quantitative","count","increase",0,90,
             "OICT record; training and onboarding log")])]),
-  ("AI capabilities are embedded in RC system workflows and demonstrably reduce workload.",
-    [("Copilot 365 enablement programme delivered across RCOs.","Nadia Haddad",
-        [("Share of licensed Copilot users active monthly","quantitative","%","increase",0,75,
+  ("AI capabilities are embedded in workflows and demonstrably reduce workload.",
+    [("AI assistant enablement programme delivered across country offices.","Nadia Haddad",
+        [("Share of licensed AI assistant users active monthly","quantitative","%","increase",0,75,
             "Licence and usage reports")]),
      ("Field AI use cases assessed, and high-value cases scaled.","Nadia Haddad",
         [("Number of field AI use cases scaled to 3+ country teams","quantitative","count","increase",0,8,
@@ -310,20 +299,20 @@ PILLARS_2021 = [
     [("Learning sessions delivered in regional and peer formats.","Ingrid Lindqvist",
         [("Number of learning sessions delivered","quantitative","count","increase",0,20,
             "Session records; feedback surveys"),
-         ("Share of RC system staff with core delivery capacity","quantitative","%","increase",40,75,
+         ("Share of staff with core delivery capacity","quantitative","%","increase",40,75,
             "Capacity self-assessment; HR records"),
          ("Participant satisfaction with learning","quantitative","%","increase",78,88,
             "Post-session feedback surveys")]),
-     ("UN 2.0 training and capacity-building programme designed for launch when resourced.","Ingrid Lindqvist",
-        [("UN 2.0 programme design and launch-readiness level (1-5)","qualitative","index","increase",1,5,
-            "Programme document; Reference Group decision")])]),
+     ("Digital capability training programme designed for launch when resourced.","Ingrid Lindqvist",
+        [("Capability programme design and launch-readiness level (1-5)","qualitative","index","increase",1,5,
+            "Programme document; Steering group decision")])]),
   ("Partnerships extend capacity and bring expertise to the field.",
-    [("Partnerships with academia, UNV, and UNSSC active and delivering.","Ingrid Lindqvist",
+    [("Partnerships with academia, volunteer networks, and training institutes active and delivering.","Ingrid Lindqvist",
         [("Number of active partnership agreements with joint deliverables","quantitative","count","increase",0,5,
             "Partnership agreements; joint deliverables")]),
-     ("UNV pipeline of UN 2.0 experts deploying to the field.","Ingrid Lindqvist",
-        [("Number of UN 2.0 experts deployed to RCOs","quantitative","count","increase",0,15,
-            "UNV deployment records")])]),
+     ("Volunteer pipeline of digital experts deploying to the field.","Ingrid Lindqvist",
+        [("Number of digital experts deployed to country offices","quantitative","count","increase",0,15,
+            "Volunteer deployment records")])]),
  ],
 },
 ]
@@ -340,7 +329,7 @@ PILLARS_2026 = [
  "pillar":1,"tag":"Predictive Data & Foresight",
  "impact":"The organisation anticipates needs through predictive, real-time, and shared data foresight.",
  "outcomes":[
-  ("Real-time data pipelines and predictive analytics are institutionalised across the RC system.",
+  ("Real-time data pipelines and predictive analytics are institutionalised across the organisation.",
     [("Federated real-time data pipelines operating across all regions.","Priya Raman",
         [("Number of regions operating federated real-time data pipelines","quantitative","count","increase",1,5,
             "Data platform telemetry; regional confirmations"),
@@ -351,7 +340,7 @@ PILLARS_2026 = [
             "Analytics service catalogue"),
          ("Forecast accuracy of the predictive analytics service","quantitative","%","increase",55,85,
             "Backtesting and validation reports")])]),
-  ("Shared foresight shapes RC system planning.",
+  ("Shared foresight shapes organisational planning.",
     [("System-wide foresight briefs produced and used in planning cycles.","Priya Raman",
         [("Share of country teams using foresight briefs in planning","quantitative","%","increase",0,70,
             "Planning cycle records"),
@@ -363,9 +352,9 @@ PILLARS_2026 = [
  "pillar":2,"tag":"Integrated Digital Ecosystem",
  "impact":"Country teams operate on one interoperable digital ecosystem with shared identity and services.",
  "outcomes":[
-  ("A unified platform ecosystem replaces fragmented tools across the RC system.",
+  ("A unified platform ecosystem replaces fragmented tools across the organisation.",
     [("Single sign-on and a shared service layer are adopted across platforms.","Marco Ruiz",
-        [("Share of RC system platforms behind single sign-on","quantitative","%","increase",30,100,
+        [("Share of platforms behind single sign-on","quantitative","%","increase",30,100,
             "Identity platform records"),
          ("Reduction in duplicate data entry across platforms (index, baseline=100)","quantitative","index","decrease",100,45,
             "Process audit")]),
@@ -376,7 +365,7 @@ PILLARS_2026 = [
     [("Open APIs and continuous delivery sustain the ecosystem.","Marco Ruiz",
         [("Number of published open APIs reused across the system","quantitative","count","increase",4,40,
             "API gateway registry"),
-         ("Ecosystem availability across the RC system","quantitative","%","increase",99.5,99.9,
+         ("Ecosystem availability across the organisation","quantitative","%","increase",99.5,99.9,
             "Uptime monitoring")])]),
  ],
 },
@@ -384,9 +373,9 @@ PILLARS_2026 = [
  "pillar":3,"tag":"Applied AI at Scale",
  "impact":"Trusted AI is embedded at scale, with automated workflows delivering measurable value under strong governance.",
  "outcomes":[
-  ("Governed AI is deployed at scale across RC system workflows.",
-    [("Enterprise AI assistants are deployed to all RCOs under the governance framework.","Nadia Haddad",
-        [("Share of RCOs with a governed AI assistant in daily use","quantitative","%","increase",10,95,
+  ("Governed AI is deployed at scale across organisational workflows.",
+    [("Enterprise AI assistants are deployed to all country offices under the governance framework.","Nadia Haddad",
+        [("Share of country offices with a governed AI assistant in daily use","quantitative","%","increase",10,95,
             "Usage analytics; governance log"),
          ("Share of AI systems passing the responsible-AI assurance review","quantitative","%","increase",60,100,
             "Assurance review records")]),
@@ -409,16 +398,16 @@ PILLARS_2026 = [
     [("A continuous-learning academy operates across regions and cohorts.","Ingrid Lindqvist",
         [("Number of staff completing certified learning pathways","quantitative","count","increase",300,4000,
             "Learning management system records"),
-         ("Share of RC system staff at the target digital-capability level","quantitative","%","increase",55,90,
+         ("Share of staff at the target digital-capability level","quantitative","%","increase",55,90,
             "Capability assessment")]),
-     ("UN 2.0 capabilities are embedded in every RCO.","Ingrid Lindqvist",
-        [("Number of RCOs with embedded UN 2.0 capability","quantitative","count","increase",20,130,
-            "RCO capability records")])]),
-  ("Networks and partnerships sustain capacity beyond the RC system core.",
+     ("Digital capabilities are embedded in every country office.","Ingrid Lindqvist",
+        [("Number of country offices with embedded digital capability","quantitative","count","increase",20,130,
+            "Country-office capability records")])]),
+  ("Networks and partnerships sustain capacity beyond the core organisation.",
     [("Peer networks and partnerships deliver durable capacity.","Ingrid Lindqvist",
         [("Number of active partnerships delivering joint capacity","quantitative","count","increase",5,20,
             "Partnership agreements"),
-         ("Number of UN 2.0 experts sustained in the field","quantitative","count","increase",15,60,
+         ("Number of digital experts sustained in the field","quantitative","count","increase",15,60,
             "Deployment records")])]),
  ],
 },
@@ -433,7 +422,7 @@ def _elapsed(start, end):
 
 PLANS = [
  {"id":1,"name":"Development Plan (2021-2025)",
-  "description":"The RC system's first digital transformation plan - establishing data governance, integrated platforms, responsible innovation and field capacity across 2021-2025.",
+  "description":"The organisation's first digital transformation plan - establishing data governance, integrated platforms, responsible innovation and field capacity across 2021-2025.",
   "start":date(2021,1,1),"end":date(2025,12,31),
   "framework":PILLARS_2021,
   "meas_from":(2021,1),"meas_to":(2025,12),"meas_cap":None,
@@ -518,7 +507,7 @@ def add_measurements(indicator, base_v, target_v, unit, reporter_id, plan,
     # progress achieved so far = performance x elapsed-share of the plan
     progress = perf * plan["elapsed"]
     n = ri(3, 6)
-    narrative_pool = ["Reported through the monthly RCO cycle.","Validated against IMS / UN INFO analytics.",
+    narrative_pool = ["Reported through the monthly country-office cycle.","Validated against reporting-system analytics.",
         "Confirmed during regional review.","Awaiting final quality assurance.","Self-reported by the country team."]
     achieved = base_v + (target_v - base_v) * progress   # cumulative level reached by now
 
@@ -555,7 +544,7 @@ def make_indicator(result_id, spec, responsible_id, reporter_name, reporter_id, 
     """A KPI sits ONLY under an Output. `spec` = (name, type, unit, direction,
     baseline, target, means_of_verification). `code` = system-generated hierarchy
     code 'KPI #.#.#.#' (never user-edited). Baseline/target years come from the
-    plan; the monthly reports (activities) are entered by the country's RCO."""
+    plan; the monthly reports (activities) are entered by the country office."""
     global iid
     name,typ,unit,direction,base,target,mov = spec
     iid += 1
@@ -564,23 +553,23 @@ def make_indicator(result_id, spec, responsible_id, reporter_name, reporter_id, 
         "secondary":0,"project_id":None,
         "baseline_value":base,"baseline_year":plan["baseline_year"],"baseline_date":plan["baseline_date"],
         "target_value":target,"target_year":plan["target_year"],"target_date":plan["target_date"],
-        "means_of_verification": mov or pick(["Platform analytics","IMS and reporting records","Programme monitoring database",
-            "Regional review report","Independent assessment","Reference Group record"]),
+        "means_of_verification": mov or pick(["Platform analytics","Reporting records","Programme monitoring database",
+            "Regional review report","Independent assessment","Steering group record"]),
         "collection_method":pick(["Administrative records","Platform analytics","Survey","Self-reporting","Regional review"]),
         "frequency":pick(["annual","semi-annual","quarterly","monthly"]),
         "responsible_id":responsible_id,
-        "disaggregation":pick(["region","region, agency","none","region, country"]),
+        "disaggregation":pick(["region","region, partner","none","region, country"]),
     })
     add_measurements(iid, base, target, unit, reporter_id, plan, iso=iso)
 
-# ---- users (Owner / Section / RCO) ------------------------------------------
+# ---- users (Owner / Section / Country Office) ------------------------------------------
 # Reports are attributed to a logged-in user, never a typed name. Each user's
 # demo password equals their username (browser-only app; not real security).
 # Users are UNIVERSAL - shared across plans.
 users = []
 uid = 0
-_SECTION_FOR = {"owner":"ddi", "ddi":"ddi", "rco":"rco"}
-_STATUS_FOR  = {"owner":"admin", "ddi":"user", "rco":"user"}
+_SECTION_FOR = {"owner":"hq", "hq":"hq", "co":"co"}
+_STATUS_FOR  = {"owner":"admin", "hq":"user", "co":"user"}
 def add_user(username, name, role, region=None, iso=None, enabled=1):
     global uid
     uid += 1
@@ -593,23 +582,23 @@ def add_user(username, name, role, region=None, iso=None, enabled=1):
 # Owner - full control. Identity depends on the build variant (see INTERNAL above).
 add_user(OWNER[0], OWNER[1], "owner")
 # Section - the distinct output owners across BOTH frameworks (can edit Results & Framework)
-ddi_by_name = {}
+hq_by_name = {}
 for _fw in (PILLARS_2021, PILLARS_2026):
     for _t in _fw:
         for (_os, _outs) in _t["outcomes"]:
             for (_ostmt, _owner, _kpis) in _outs:
-                if _owner not in ddi_by_name:
-                    ddi_by_name[_owner] = add_user(_owner.lower().replace(" ", "."), _owner, "ddi")
+                if _owner not in hq_by_name:
+                    hq_by_name[_owner] = add_user(_owner.lower().replace(" ", "."), _owner, "hq")
 
 # ---- country programmes (UNIVERSAL - shared across plans) -------------------
 prog_by_iso = {}
-rco_by_iso = {}
+co_by_iso = {}
 lead_name_by_iso = {}
 for iso, cname, region in COUNTRIES:
     pid += 1
     lead = pick(LEADS)
-    rco_uid = add_user(iso.lower(), lead, "rco", region, iso)   # username = iso3
-    rco_by_iso[iso] = rco_uid
+    co_uid = add_user(iso.lower(), lead, "co", region, iso)   # username = iso3
+    co_by_iso[iso] = co_uid
     lead_name_by_iso[iso] = lead
     programmes.append({
         "id":pid,"name":cname,"short_name":iso,"region":region,
@@ -632,16 +621,16 @@ for plan in PLANS:
     for iso, cname, region in COUNTRIES:
         prog_id = prog_by_iso[iso]
         lead = lead_name_by_iso[iso]
-        rco_uid = rco_by_iso[iso]
+        co_uid = co_by_iso[iso]
         for t in plan["framework"]:
             color = t.get("color") or PILLAR_PALETTE.get(t["pillar"], "#94a3b8")
             rid += 1; impact_id = rid
             results.append({"id":rid,"plan_id":plan["id"],"programme_id":prog_id,"parent_id":None,"level":"impact",
                 "code":f"Impact {t['pillar']}","statement":t["impact"],"sdg":t["pillar"],
                 "pillar_name":t["tag"],"pillar_color":color,
-                "assumptions":"RC system leadership engagement sustained; Reference Group priorities hold; resourcing confirmed.",
-                "risks":pick(["Resourcing constraints under prioritisation.","Uneven agency engagement.",
-                    "Competing reporting demands on RCOs.","Capacity gaps at field level."]),
+                "assumptions":"Leadership engagement sustained; Steering group priorities hold; resourcing confirmed.",
+                "risks":pick(["Resourcing constraints under prioritisation.","Uneven partner engagement.",
+                    "Competing reporting demands on country offices.","Capacity gaps at field level."]),
                 "risk_level":pick(["low","medium","medium","high"])})
             for oi,(o_stmt, outputs) in enumerate(t["outcomes"], start=1):
                 rid += 1; outcome_id = rid
@@ -655,12 +644,12 @@ for plan in PLANS:
                     rid += 1; output_id = rid
                     results.append({"id":rid,"plan_id":plan["id"],"programme_id":prog_id,"parent_id":outcome_id,"level":"output",
                         "code":f"Output {t['pillar']}.{oi}.{pj}","statement":out_stmt,"sdg":t["pillar"],
-                        "assumptions":"Delivery timelines are met; RCOs and agencies participate.",
+                        "assumptions":"Delivery timelines are met; country offices and partners participate.",
                         "risks":pick(["Delivery / procurement delays.","Clearance dependencies.","Staff attrition.","Budget constraints."]),
                         "risk_level":pick(["low","low","medium","high"]),
-                        "owner_id":ddi_by_name.get(owner)})
+                        "owner_id":hq_by_name.get(owner)})
                     for ki,kpi in enumerate(kpis, start=1):
-                        make_indicator(output_id, kpi, ddi_by_name.get(owner), lead, rco_uid,
+                        make_indicator(output_id, kpi, hq_by_name.get(owner), lead, co_uid,
                                        f"KPI {t['pillar']}.{oi}.{pj}.{ki}", iso, plan)
 
 # ---- Donors (UNIVERSAL) -----------------------------------------------------
@@ -750,7 +739,7 @@ prj = pk = 0
 for plan in PLANS:
     for p in programmes:
         iso, region = p["country_iso3"], p["region"]
-        reporter_id = rco_by_iso.get(iso)
+        reporter_id = co_by_iso.get(iso)
         pool = list(inds_by_plan_prog.get((plan["id"], p["id"]), []))
         shuffle(pool)
         nproj = ri(1, 3)
@@ -851,12 +840,9 @@ payload_json = json.dumps(payload, separators=(",",":"))
 # and WITHOUT anyone running a console command.
 import hashlib
 stamp = hashlib.sha1(payload_json.encode("utf-8")).hexdigest()[:12]
-# SEED_VARIANT lets the pre-commit hook reject an internal seed by an explicit
-# marker rather than by grepping for a person's name.
-js = ("window.SEED_VARIANT=" + json.dumps(VARIANT) + ";"
-      "window.SEED_STAMP=" + json.dumps(stamp) + ";window.SEED=" + payload_json + ";")
+js = "window.SEED_STAMP=" + json.dumps(stamp) + ";window.SEED=" + payload_json + ";"
 open(OUT,"w",encoding="utf-8").write(js)
-print("variant:",VARIANT,"| owner:",OWNER[0],"/",OWNER[1])
+print("owner:",OWNER[0],"/",OWNER[1])
 print("stamp:",stamp)
 # NB: interactive activity logging searches REAL settlements live from OpenStreetMap
 # (Photon) in the app. The PLACES gazetteer here only seeds coordinates onto the

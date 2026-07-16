@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS country (
 -- Application users. Activities are attributed to the logged-in user, never a
 -- typed name. `password` is demo-grade local validation only (browser-only app,
 -- no server), NOT real authentication. A user carries two orthogonal fields:
---   section = where they sit (the central Section or a Resident Coordinator Office)
+--   section = where they sit (the central Section or a Country Office)
 --   status  = permission level (Admin: full control · User: log activities in
 --             scope · Viewer: read-only)
 CREATE TABLE IF NOT EXISTS user (
@@ -67,10 +67,10 @@ CREATE TABLE IF NOT EXISTS user (
     username     TEXT NOT NULL UNIQUE,
     name         TEXT NOT NULL,          -- display name attributed to activities
     password     TEXT,                   -- demo-grade, stored locally
-    section      TEXT CHECK (section IN ('ddi','rco')),
+    section      TEXT CHECK (section IN ('hq','co')),
     status       TEXT CHECK (status IN ('admin','user','viewer')),
-    region       TEXT,                   -- RCO scoping (their region)
-    country_iso3 TEXT REFERENCES country(iso3),  -- RCO scoping (their country)
+    region       TEXT,                   -- country-office scoping (their region)
+    country_iso3 TEXT REFERENCES country(iso3),  -- country-office scoping (their country)
     enabled      INTEGER NOT NULL DEFAULT 1,      -- 0 = cannot log in
     created      TEXT
 );

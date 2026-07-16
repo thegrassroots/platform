@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  var DB_NAME = 'ddi_me_v9';       // v9 re-seed: theme-scoped beneficiaries (no blanket types)
+  var DB_NAME = 'grassroots_v1';       // v9 re-seed: theme-scoped beneficiaries (no blanket types)
   var DB_VERSION = 5;              // v5 adds the `region` store (all-world country reference)
   var STAMP_KEY = 'ddi_seed_stamp'; // localStorage key: content stamp of last-seeded data (auto-reseed)
   // `plan` is the top of the results chain (Plan > Impact > Outcome > Output > KPI);
