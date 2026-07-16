@@ -20,7 +20,7 @@
 # The `sdg` field on results is REPURPOSED to hold the Pillar id (1-4), PLAN-SCOPED
 # (each plan numbers its pillars 1-4). Every impact row also carries pillar_name /
 # pillar_color so the app rebuilds its colour/name lookup from the active plan.
-import json, os
+import json, os, sys
 from datetime import date
 
 OUT = "js/seed.js"
@@ -42,6 +42,21 @@ def shuffle(lst):
         j = int(rnd() * (i + 1)); lst[i], lst[j] = lst[j], lst[i]
 
 TODAY = date(2026, 7, 13)   # the app's "today"
+
+# ---- Build variant ----------------------------------------------------------
+# The repo is public, so the committed seed must never carry a real person's
+# identity. Two variants, from one generator:
+#
+#   python tools/gen_seed.py              -> PUBLIC   (owner: demo / Demo Owner)
+#   python tools/gen_seed.py --internal   -> INTERNAL (owner: shamoug / Aladdin Shamoug)
+#
+# Public is the DEFAULT on purpose: forgetting the flag yields the safe seed, not
+# the leaky one. Only the public seed is committed - `git commit` is guarded by
+# .githooks/pre-commit, which rejects an internal seed. Everyone else in the seed
+# (the output owners) is fictional in BOTH variants.
+INTERNAL = "--internal" in sys.argv
+VARIANT  = "internal" if INTERNAL else "public"
+OWNER    = ("shamoug", "Aladdin Shamoug") if INTERNAL else ("demo", "Demo Owner")
 
 # ---- Country teams / RCOs (iso3, name, region) ------------------------------
 # Regions are the six geographic continents (UN M49 continental grouping), with
@@ -575,8 +590,8 @@ def add_user(username, name, role, region=None, iso=None, enabled=1):
         "created":"2021-01-01"})
     return uid
 
-# Owner - full control
-add_user("demo","Demo Owner","owner")
+# Owner - full control. Identity depends on the build variant (see INTERNAL above).
+add_user(OWNER[0], OWNER[1], "owner")
 # Section - the distinct output owners across BOTH frameworks (can edit Results & Framework)
 ddi_by_name = {}
 for _fw in (PILLARS_2021, PILLARS_2026):
@@ -836,8 +851,12 @@ payload_json = json.dumps(payload, separators=(",",":"))
 # and WITHOUT anyone running a console command.
 import hashlib
 stamp = hashlib.sha1(payload_json.encode("utf-8")).hexdigest()[:12]
-js = "window.SEED_STAMP=" + json.dumps(stamp) + ";window.SEED=" + payload_json + ";"
+# SEED_VARIANT lets the pre-commit hook reject an internal seed by an explicit
+# marker rather than by grepping for a person's name.
+js = ("window.SEED_VARIANT=" + json.dumps(VARIANT) + ";"
+      "window.SEED_STAMP=" + json.dumps(stamp) + ";window.SEED=" + payload_json + ";")
 open(OUT,"w",encoding="utf-8").write(js)
+print("variant:",VARIANT,"| owner:",OWNER[0],"/",OWNER[1])
 print("stamp:",stamp)
 # NB: interactive activity logging searches REAL settlements live from OpenStreetMap
 # (Photon) in the app. The PLACES gazetteer here only seeds coordinates onto the
