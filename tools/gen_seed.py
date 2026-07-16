@@ -211,8 +211,8 @@ PILLAR_PALETTE = {1:"#4FA9E8", 2:"#33C2B4", 3:"#9D7BEE", 4:"#F5A04D"}
 # each KPI = (name, type, unit, direction, baseline, target, means_of_verification)
 PILLARS_2021 = [
 {
- "pillar":1,"tag":"Data Governance & Stewardship",
- "impact":"The RC system plans and reports on the basis of trusted, high quality, and interoperable data.",
+ "pillar":1,"tag":"Data Governance & Quality",
+ "impact":"Programmes plan and report on the basis of trusted, high-quality, interoperable data.",
  "outcomes":[
   ("Data governance frameworks and standards are adopted across the RC system.",
     [("Data and dashboards policy issued and applied across regions.","Priya Raman",
@@ -242,8 +242,8 @@ PILLARS_2021 = [
  ],
 },
 {
- "pillar":2,"tag":"Digital Solutions & Platforms",
- "impact":"Country teams and RCOs use reliable, integrated platforms that lighten the reporting burden and increase efficiency.",
+ "pillar":2,"tag":"Digital Platforms & Services",
+ "impact":"Country teams use reliable, integrated platforms that lighten the reporting burden and increase efficiency.",
  "outcomes":[
   ("UN INFO functions as the trusted digital backbone of the RC system.",
     [("UN INFO maintained and enhanced with agency engagement strengthened.","Marco Ruiz",
@@ -266,8 +266,8 @@ PILLARS_2021 = [
  ],
 },
 {
- "pillar":3,"tag":"Innovation & Emerging Tech",
- "impact":"The RC system adopts AI and emerging technologies responsibly, with governance in place and value demonstrated in the field.",
+ "pillar":3,"tag":"Innovation & Emerging Technology",
+ "impact":"The organisation adopts emerging technologies responsibly, with governance in place and value demonstrated in the field.",
  "outcomes":[
   ("Responsible AI governance and quality assurance are in place for the RC system.",
     [("AI Governance and QA Framework launched and applied to AI tools.","Nadia Haddad",
@@ -288,8 +288,8 @@ PILLARS_2021 = [
  ],
 },
 {
- "pillar":4,"tag":"Capacity, Partnerships & Enablement",
- "impact":"RC system staff have the skills, peer networks, and partnerships to sustain capacity and delivery in the field.",
+ "pillar":4,"tag":"Capacity & Partnerships",
+ "impact":"Staff have the skills, peer networks, and partnerships to sustain capacity and delivery in the field.",
  "outcomes":[
   ("Learning is delivered at scale through regional, cohort, and peer-based formats.",
     [("Learning sessions delivered in regional and peer formats.","Ingrid Lindqvist",
@@ -322,8 +322,8 @@ PILLARS_2021 = [
 # roughly where the first plan left off; targets are 2030 ambitions.
 PILLARS_2026 = [
 {
- "pillar":1,"tag":"Intelligent Data & Foresight",
- "impact":"The RC system anticipates needs through predictive, real-time, and shared data foresight.",
+ "pillar":1,"tag":"Predictive Data & Foresight",
+ "impact":"The organisation anticipates needs through predictive, real-time, and shared data foresight.",
  "outcomes":[
   ("Real-time data pipelines and predictive analytics are institutionalised across the RC system.",
     [("Federated real-time data pipelines operating across all regions.","Priya Raman",
@@ -345,7 +345,7 @@ PILLARS_2026 = [
  ],
 },
 {
- "pillar":2,"tag":"Unified Digital Ecosystem",
+ "pillar":2,"tag":"Integrated Digital Ecosystem",
  "impact":"Country teams operate on one interoperable digital ecosystem with shared identity and services.",
  "outcomes":[
   ("A unified platform ecosystem replaces fragmented tools across the RC system.",
@@ -366,8 +366,8 @@ PILLARS_2026 = [
  ],
 },
 {
- "pillar":3,"tag":"AI at Scale & Autonomy",
- "impact":"Trusted AI is embedded at scale, with agentic workflows delivering measurable value under strong governance.",
+ "pillar":3,"tag":"Applied AI at Scale",
+ "impact":"Trusted AI is embedded at scale, with automated workflows delivering measurable value under strong governance.",
  "outcomes":[
   ("Governed AI is deployed at scale across RC system workflows.",
     [("Enterprise AI assistants are deployed to all RCOs under the governance framework.","Nadia Haddad",
@@ -387,8 +387,8 @@ PILLARS_2026 = [
  ],
 },
 {
- "pillar":4,"tag":"Skills, Networks & Sustainable Capacity",
- "impact":"RC system staff sustain digital capability through continuous learning, strong peer networks, and durable partnerships.",
+ "pillar":4,"tag":"Skills & Sustainable Capacity",
+ "impact":"Staff sustain digital capability through continuous learning, strong peer networks, and durable partnerships.",
  "outcomes":[
   ("Continuous learning sustains digital capability at scale.",
     [("A continuous-learning academy operates across regions and cohorts.","Ingrid Lindqvist",
