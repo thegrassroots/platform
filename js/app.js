@@ -5821,9 +5821,20 @@
     $('#loginGate').classList.remove('on');
     renderUserChip(); applyRole(); renderAll();
   }
+  // The owner account differs between the public and internal seeds (see
+  // tools/gen_seed.py), so name it from the data rather than hard-coding it in
+  // the markup - otherwise the hint tells one build's users the other's login.
+  function renderLoginHint(){
+    var el = $('.lg-hint'); if (!el) return;
+    var owner = ((DB.tables && DB.tables.user) || []).filter(function(u){ return u.status === 'admin'; })[0];
+    if (!owner) return;
+    el.innerHTML = "Demo access - each user's password is their username. Owner: <b>" +
+                   esc(owner.username) + "</b> / <b>" + esc(owner.username) + "</b>.";
+  }
   function showLogin(){
     var g = $('#loginGate'); if (!g) return;
     g.classList.add('on'); $('#lgMsg').textContent = '';
+    renderLoginHint();
     var uu = $('#lgUser'); if (uu){ uu.value=''; $('#lgPass').value=''; uu.focus(); }
   }
   function doLogout(){ closeUserMenu(); CURRENT_USER = null; clearSession(); showLogin(); }
