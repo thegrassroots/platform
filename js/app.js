@@ -836,16 +836,15 @@
       }
     });
   }
-  // The credit is supplied via customAttribution (see ensureBasemap). CARTO also
-  // puts an equivalent one on the source, which would render as a second copy the
-  // moment the style finishes loading - so clear it. Runs on every `styledata`
-  // tick, which also covers the theme swap re-creating the source.
-  function stripSourceAttribution() {
-    if (!mlMap) return;
-    try {
-      var src = mlMap.getSource('carto');
-      if (src && src.attribution) { src.attribution = ''; }
-    } catch (e) {}
+  // Keep the attribution collapsed to its "i" disclosure. MapLibre opens the
+  // compact control on first paint (`open` + `maplibregl-compact-show`); the
+  // credit only needs to be *reachable*, not permanently expanded over the map.
+  // Runs on every `styledata` tick, so a theme swap cannot leave it open.
+  function collapseAttribution() {
+    var el = document.querySelector('#basemap .maplibregl-ctrl-attrib');
+    if (!el) return;
+    el.classList.remove('maplibregl-compact-show');
+    if (el.tagName === 'DETAILS') { el.open = false; }
   }
   function ensureBasemap() {
     if (mlMap || typeof maplibregl === 'undefined') return;
@@ -854,25 +853,22 @@
       container: 'basemap',
       style: basemapStyleUrl(_mlTheme),
       interactive: false,            // the SVG overlay owns all pan/zoom
-      // ODbL requires the OSM credit to stay visible. The CARTO style carries an
-      // equivalent credit on its source, but MapLibre only paints it once
-      // isStyleLoaded() flips true - which is not guaranteed (it can stay false
-      // while sprites/glyphs settle, and then nothing renders at all). So state
-      // the same credit explicitly, which paints unconditionally, and drop the
-      // source's copy in stripSourceAttribution() so it is not shown twice.
-      // Compact keeps it to an "i" disclosure.
-      attributionControl: {
-        compact: true,
-        customAttribution: '<a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a>, <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> contributors'
-      },
+      // ODbL requires the OSM credit to stay reachable, and the CARTO style
+      // already carries it ("© CARTO, © OpenStreetMap contributors", both
+      // linked) on its source - so inherit it. Do NOT add a customAttribution:
+      // MapLibre would render it *alongside* the source's, and clearing the
+      // source's afterwards is a race the control usually wins, which is how
+      // the credit ended up printed twice. Compact = an "i" disclosure, kept
+      // collapsed by collapseAttribution().
+      attributionControl: { compact: true },
       renderWorldCopies: true,
       minZoom: 0, maxZoom: 24, fadeDuration: 0
     });
-    mlMap.on('style.load', function () { recolorBoundaries(); stripSourceAttribution(); syncCamera(); });
+    mlMap.on('style.load', function () { recolorBoundaries(); collapseAttribution(); syncCamera(); });
     // `style.load` does NOT re-fire after setStyle() (theme switch), so the
     // continent-label hide was lost when swapping Voyager<->Dark Matter. `styledata`
     // fires on every restyle; the guard in recolorBoundaries keeps it cheap.
-    mlMap.on('styledata', function () { recolorBoundaries(); stripSourceAttribution(); });
+    mlMap.on('styledata', function () { recolorBoundaries(); collapseAttribution(); });
     window._mlMap = mlMap;   // debug handle
   }
   // Convert the app's world-mercator `view` rect → MapLibre center/zoom.
