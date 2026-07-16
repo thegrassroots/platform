@@ -836,6 +836,17 @@
       }
     });
   }
+  // The credit is supplied via customAttribution (see ensureBasemap). CARTO also
+  // puts an equivalent one on the source, which would render as a second copy the
+  // moment the style finishes loading - so clear it. Runs on every `styledata`
+  // tick, which also covers the theme swap re-creating the source.
+  function stripSourceAttribution() {
+    if (!mlMap) return;
+    try {
+      var src = mlMap.getSource('carto');
+      if (src && src.attribution) { src.attribution = ''; }
+    } catch (e) {}
+  }
   function ensureBasemap() {
     if (mlMap || typeof maplibregl === 'undefined') return;
     _mlTheme = (S.theme === 'dark');
@@ -843,21 +854,25 @@
       container: 'basemap',
       style: basemapStyleUrl(_mlTheme),
       interactive: false,            // the SVG overlay owns all pan/zoom
-      // ODbL requires the OSM credit to stay visible. The CARTO style's own source
-      // metadata comes through empty here, so the credit is stated explicitly
-      // rather than inherited. Compact keeps it to an "i" disclosure.
+      // ODbL requires the OSM credit to stay visible. The CARTO style carries an
+      // equivalent credit on its source, but MapLibre only paints it once
+      // isStyleLoaded() flips true - which is not guaranteed (it can stay false
+      // while sprites/glyphs settle, and then nothing renders at all). So state
+      // the same credit explicitly, which paints unconditionally, and drop the
+      // source's copy in stripSourceAttribution() so it is not shown twice.
+      // Compact keeps it to an "i" disclosure.
       attributionControl: {
         compact: true,
-        customAttribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> contributors · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a>'
+        customAttribution: '<a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a>, <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> contributors'
       },
       renderWorldCopies: true,
       minZoom: 0, maxZoom: 24, fadeDuration: 0
     });
-    mlMap.on('style.load', function () { recolorBoundaries(); syncCamera(); });
+    mlMap.on('style.load', function () { recolorBoundaries(); stripSourceAttribution(); syncCamera(); });
     // `style.load` does NOT re-fire after setStyle() (theme switch), so the
     // continent-label hide was lost when swapping Voyager<->Dark Matter. `styledata`
     // fires on every restyle; the guard in recolorBoundaries keeps it cheap.
-    mlMap.on('styledata', recolorBoundaries);
+    mlMap.on('styledata', function () { recolorBoundaries(); stripSourceAttribution(); });
     window._mlMap = mlMap;   // debug handle
   }
   // Convert the app's world-mercator `view` rect → MapLibre center/zoom.
