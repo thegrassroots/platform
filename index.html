@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Grassroots - keeps track of what changes on the ground</title>
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="styles.css?v=grw73">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= HEADER ================= -->
+  <header class="header">
+    <div class="brand" id="brandBtn" role="button" tabindex="0" title="About The Grassroots">
+      <div class="wm sdg" aria-label="The Grassroots">
+        <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp"> </span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+      </div>
+      <div class="rain"></div>
+    </div>
+    <div class="snap"><span class="dot"></span>Live</div>
+    <div class="seg" id="tabs">
+      <button data-tab="map" class="on">Map</button>
+      <button data-tab="insights">Insights</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="planbox" id="planbox">
+      <button class="planchip" id="planChip" title="Development plan - click to switch or manage" aria-haspopup="true" aria-expanded="false">
+        <span class="planchip-ic" aria-hidden="true">◷</span>
+        <span class="planchip-nm" id="planChipName">–</span>
+        <span class="planchip-cr" aria-hidden="true">▾</span>
+      </button>
+      <div class="plan-menu" id="planMenu" hidden></div>
+    </div>
+    <div class="userbox" id="userBox">
+      <button class="userchip" id="userChip" title="Account" aria-haspopup="menu" aria-expanded="false">
+        <span class="ua">?</span>
+        <span class="un">–</span>
+        <span class="uchev" aria-hidden="true">⌄</span>
+      </button>
+      <div class="user-menu" id="userMenu" hidden></div>
+    </div>
+  </header>
+
+  <!-- ================= SUB / FILTER BAR ================= -->
+  <div class="subbar">
+    <button class="clearbtn" id="clearFilters" title="Clear all filters">✕ Clear filters</button>
+    <span class="cal" title="Activity period">▤</span>
+    <div id="ranges"></div>
+    <span class="lbl">Custom:</span>
+    <input type="date" id="dFrom">
+    <span class="arrow">→</span>
+    <input type="date" id="dTo">
+    <div class="metric"><b id="metricN">0</b><span id="metricLabel">PROJECTS</span></div>
+  </div>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main" id="main">
+
+    <!-- left sidebar : facets -->
+    <aside class="side left" id="sideLeft">
+      <div class="side-head">
+        <button class="head-toggle" id="countBasis" title="Counting by - click to switch between Projects and Activities">⇄ Projects</button>
+        <button class="head-toggle" id="mapmode" title="Status by - click to switch between Progress and Performance">⇄ Performance</button>
+      </div>
+      <div class="side-scroll" id="facetGroups">
+        <div class="fgroup" data-group="prog">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">PROGRAMME PORTFOLIO</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qProg" placeholder="Search programme or country…"></div>
+            <div id="facetProg"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="level">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">RESULTS FRAMEWORK</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qSdg" placeholder="Search impacts, outcomes…"></div>
+            <div id="facetLevel"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="donor">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">DONORS</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qDonor" placeholder="Search donors…"></div>
+            <div id="facetDonor"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="project">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">PROJECTS</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qProject" placeholder="Search projects…"></div>
+            <div id="facetProject"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="status">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">PERFORMANCE STATUS</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div id="facetStatus"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="bentype">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">PROJECT BENEFICIARIES</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div id="facetBenType"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="kpi">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">KPI INVENTORY</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qKpi" placeholder="Search KPIs…"></div>
+            <div id="facetKpi"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="user">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">LOGGED BY</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qUser" placeholder="Search people…"></div>
+            <div id="facetUser"></div>
+          </div>
+        </div>
+      </div>
+      <div class="resizer l" id="rzLeft" title="Drag to resize"></div>
+    </aside>
+
+    <!-- center : map / insights -->
+    <section class="mapwrap" id="mapView">
+      <div id="basemap"></div>
+      <button class="collapse l" id="colLeft" title="Hide portfolio panel">‹</button>
+      <button class="collapse r" id="colRight" title="Hide results panel">›</button>
+      <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="map-controls">
+        <button id="zIn">+</button>
+        <button id="zOut">−</button>
+        <button id="zReset" title="Reset view">⟳</button>
+      </div>
+      <div class="legend" id="legend">
+        <div class="lh"><span>LEGEND</span><button id="legMin">–</button></div>
+        <div class="lb">
+          <select id="colorMode">
+            <option value="status">Status</option>
+            <option value="region">Region</option>
+            <option value="impact">Impact</option>
+            <option value="donor">Donor</option>
+            <option value="budget">Budget</option>
+          </select>
+          <div class="note">● size = activities logged</div>
+          <div class="note">● colour = <span id="colorNote">project status</span></div>
+          <div class="cnt" id="countryCount">0 locations</div>
+          <div id="legendRows"></div>
+        </div>
+      </div>
+      <div class="tip" id="tip"></div>
+    </section>
+
+    <section class="insights hide" id="insightsView"></section>
+
+    <!-- right sidebar : indicator list -->
+    <aside class="side right" id="sideRight">
+      <div class="resizer r" id="rzRight" title="Drag to resize"></div>
+      <div class="list-top">
+        <div class="pane-title"><span id="paneTitle">Projects</span><button class="hbtn primary rc-new" id="btnNewProjectSide">＋ New Project</button></div>
+        <div class="row1">
+          <div class="search"><input id="qList" placeholder="Search projects, donors, countries…"><button class="go">→</button></div>
+        </div>
+        <div class="sorts" id="sorts">
+          <span class="sortlbl">Sort</span>
+        </div>
+      </div>
+      <div class="list-scroll" id="list"></div>
+      <div class="pager">
+        <button id="pFirst" title="First page" aria-label="First page"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6l-6 6 6 6M11 6l-6 6 6 6"/></svg></button>
+        <button id="pPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+        <span class="pg" id="pgInfo">1 / 1</span>
+        <button id="pNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button id="pLast" title="Last page" aria-label="Last page"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6l6 6-6 6M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ================= BOTTOM BAR ================= -->
+  <div class="botbar">
+    <button class="hbtn" id="btnTheme">☀ Light</button>
+    <button class="hbtn" id="btnControl">⚙ Global Items</button>
+    <button class="hbtn" id="btnResults">◔ Results Management</button>
+  </div>
+
+  <!-- ================= DETAIL MODAL ================= -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <button class="mback" id="mBack" title="Back" style="display:none">‹</button>
+        <div class="mt">
+          <h2 id="mTitle">–</h2>
+          <div class="msub" id="mSub"></div>
+          <div class="msub-impact" id="mImpact"></div>
+        </div>
+        <button class="mx" id="mClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-tabs" id="mTabs">
+        <button data-mtab="details" class="on">Details</button>
+        <button data-mtab="projects">Projects</button>
+        <button data-mtab="results">Activities</button>
+      </div>
+      <div class="modal-body" id="mBody"></div>
+      <div class="modal-body hide" id="mProjects"></div>
+      <div class="modal-body hide" id="mResults"></div>
+    </div>
+  </div>
+
+  <!-- ================= GLOBAL ITEMS MODAL ================= -->
+  <div class="modal-overlay" id="cpModal">
+    <div class="modal cp" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="mt">
+          <h2>Global Items</h2>
+          <div class="msub">Administer The Grassroots monitoring platform</div>
+        </div>
+        <button class="mx" id="cpClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-tabs" id="cpTabs">
+        <button data-cptab="donors" class="on">Donors</button>
+        <button data-cptab="beneficiaries">Beneficiaries</button>
+        <button data-cptab="users">Users</button>
+      </div>
+      <div class="modal-body" id="cpBody"></div>
+    </div>
+  </div>
+
+  <!-- ================= RESULTS MANAGEMENT MODAL ================= -->
+  <div class="modal-overlay" id="rmModal">
+    <div class="modal cp" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="mt">
+          <h2>Results Management</h2>
+          <div class="msub">Results framework and KPI inventory</div>
+        </div>
+        <button class="mx" id="rmClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-tabs" id="rmTabs">
+        <button data-rmtab="framework" class="on">Results Framework</button>
+        <button data-rmtab="kpis">KPI Inventory</button>
+      </div>
+      <div class="modal-body" id="rmBody"></div>
+    </div>
+  </div>
+
+  <!-- ================= PROJECT MODAL ================= -->
+  <div class="modal-overlay" id="projectModal">
+    <div class="modal cp" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="mt">
+          <h2 id="prTitle">Project</h2>
+          <div class="msub" id="prSub">Country programme project - donor, budget, KPIs and activities</div>
+        </div>
+        <button class="mx" id="prClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-tabs" id="prTabs">
+        <button data-prtab="details" class="on">Project details</button>
+        <button data-prtab="primary">Primary KPIs</button>
+        <button data-prtab="secondary">Secondary KPIs</button>
+        <button data-prtab="activities">Activities</button>
+      </div>
+      <div class="modal-body" id="prBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: Donor add/edit (Control Panel) ===== -->
+  <div class="child-overlay" id="donorEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="donorEditTitle">Donor</h3>
+        <button class="mx" id="donorEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="donorEditBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: Beneficiary measure add/edit (Control Panel) ===== -->
+  <div class="child-overlay" id="benTypeOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="benTypeTitle">Beneficiary measure</h3>
+        <button class="mx" id="benTypeClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="benTypeBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: Beneficiary entry add/edit (over the activity popup) ===== -->
+  <div class="child-overlay lvl2" id="benEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="benEditTitle">Beneficiary</h3>
+        <button class="mx" id="benEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="benEditBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: Secondary KPI edit (over the Project modal) ===== -->
+  <div class="child-overlay" id="secEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="secEditTitle">Secondary KPI</h3>
+        <button class="mx" id="secEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="secEditBody"></div>
+    </div>
+  </div>
+
+  <!-- ================= ABOUT MODAL ================= -->
+  <div class="modal-overlay" id="aboutModal">
+    <div class="modal about" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+      <div class="modal-head">
+        <div class="mt">
+          <h2 id="aboutTitle">About The Grassroots</h2>
+          <div class="msub">Results-based monitoring for development that takes root on the ground</div>
+        </div>
+        <button class="mx" id="aboutClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="about-hero">
+          <div class="wm sdg" aria-label="The Grassroots">
+            <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp"> </span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+          </div>
+          <div class="rain"></div>
+        </div>
+
+        <p class="about-lead">
+          <b>The Grassroots</b> shows whether development work is actually making a
+          difference. Across a portfolio of country programmes it brings the whole
+          picture into one view: an interactive world map, faceted filters, a live
+          activity feed and an insights dashboard, all aligned to the
+          <b>Sustainable Development Goals</b>.
+        </p>
+
+        <p class="about-lead">
+          Everything hangs on one results chain:
+          <b>Plan → Impact → Outcome → Output → Activity</b>. Each multi-year
+          <b>Plan</b> holds its own Impacts; Impacts break down into the Outcomes
+          that drive them, Outcomes into the Outputs that deliver them, and each
+          Output is measured by one or more KPIs. Activities are the individual
+          updates logged against those KPIs in the field, so a single report in one
+          country rolls all the way up to the Impact and Plan it belongs to. Switch
+          the active plan from the Results Framework panel.
+        </p>
+
+        <p class="about-lead">
+          Status is never chosen by hand. For every KPI the platform reads the
+          baseline, the target and the latest measurement, then derives
+          <b>Progress</b> (how far the result has come toward its target) and
+          <b>Performance</b> (whether that progress keeps pace with the time elapsed).
+          Together they produce the <b>Red / Amber / Green</b> rating on every map
+          bubble, KPI card and roll-up.
+        </p>
+
+        <p class="about-lead">
+          Two chains meet at every KPI: a results chain from Impact down to Activity,
+          and a delivery chain from Donor to Project to Activity, so results and
+          spending read side by side. Field teams simply log activities; every status,
+          total and trend above them is derived, never retyped.
+        </p>
+
+        <div class="about-foot">A Results-Based Monitoring &amp; Evaluation platform · v<span id="appVersion">0.0.1</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: New Activity (dims everything below) ===== -->
+  <div class="child-overlay" id="newActivityOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="naHead">Log a new activity</h3>
+        <button class="mx" id="naClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="naBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: KPI edit (dims everything below) ===== -->
+  <div class="child-overlay" id="kpiEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="kpiEditTitle">Edit KPI</h3>
+        <button class="mx" id="kpiEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="kpiEditBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: User add/edit (dims everything below) ===== -->
+  <div class="child-overlay" id="userEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="userEditTitle">Edit user</h3>
+        <button class="mx" id="userEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="userEditBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: Results Framework edit/add (dims everything below) ===== -->
+  <div class="child-overlay" id="fwEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="fwEditTitle">Edit</h3>
+        <button class="mx" id="fwEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="fwEditBody"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================= LOGIN GATE ================= -->
+<div class="login-gate" id="loginGate">
+  <form class="login-card" id="lgForm" autocomplete="on">
+    <div class="lg-brand">DATA · DIGITAL · INNOVATION <b>MONITORING PLATFORM</b></div>
+    <div class="lg-rain"></div>
+    <h2>Sign in to continue</h2>
+    <label class="lg-field"><span>Username</span><input id="lgUser" type="text" autocomplete="username"></label>
+    <label class="lg-field"><span>Password</span><input id="lgPass" type="password" autocomplete="current-password"></label>
+    <div class="lg-msg" id="lgMsg"></div>
+    <button class="hbtn primary lg-submit" type="submit">Sign in</button>
+    <div class="lg-hint">Demo access - each user's password is their username. Owner: <b>demo</b> / <b>demo</b>.</div>
+  </form>
+</div>
+
+<script src="data/world.js"></script>
+<script src="js/seed.js?v=ddi42"></script>
+<script src="js/db.js?v=ddi42"></script>
+<script src="js/app.js?v=ddi76"></script>
+</body>
+</html>

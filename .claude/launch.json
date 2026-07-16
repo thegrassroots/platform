@@ -1,0 +1,53 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "promon",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8781"],
+      "port": 8781
+    },
+    {
+      "name": "promon-verify",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8782"],
+      "port": 8782
+    },
+    {
+      "name": "promon-verify3",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8783"],
+      "port": 8783
+    },
+    {
+      "name": "promon-verify4",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8784"],
+      "port": 8784
+    },
+    {
+      "name": "promon-plans",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8790"],
+      "port": 8790
+    },
+    {
+      "name": "promon-donors",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8792"],
+      "port": 8792
+    },
+    {
+      "name": "promon-lead",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8796"],
+      "port": 8796
+    },
+    {
+      "name": "promon-globalitems",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8799"],
+      "port": 8799
+    }
+  ]
+}

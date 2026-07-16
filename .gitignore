@@ -1,0 +1,20 @@
+# Raw GeoNames dumps — build-time inputs only, already distilled into tools/cities.json.
+# Not needed to run or rebuild the demo. Download from https://download.geonames.org/export/dump/
+cities1000.txt
+cities1000.zip
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+
+# Machine-local Claude Code permission grants (launch.json is shared, this isn't)
+.claude/settings.local.json
+
+# Local scratch
+*.db
+rbm.db
+__pycache__/
+*.pyc
