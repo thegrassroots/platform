@@ -192,3 +192,28 @@ python tools/proc_world.py               # rebuilds data/world.js from assets/wo
 `tools/cities.json` is the real-settlement gazetteer (name, type, lat/lng per country) that
 `gen_seed.py` samples to place demo activities; it was extracted from the GeoNames
 `cities1000` dump (CC BY 4.0).
+
+### Two seed variants
+
+The seed comes in a **public** and an **internal** variant. They differ in one record - the
+owner account - so a local install can carry a real identity while this public repo never does:
+
+```
+python tools/gen_seed.py                 # public   -> owner: demo / demo          (committed)
+python tools/gen_seed.py --internal      # internal -> owner: a real person        (never committed)
+```
+
+Public is the default, so forgetting the flag produces the safe seed rather than the leaky
+one. Everyone else in the seed is fictional in **both** variants. Each build stamps
+`window.SEED_VARIANT`, and `.githooks/pre-commit` reads it from the *staged* blob and
+rejects an internal seed - so the working tree may hold the internal one while you develop,
+but a commit cannot. Enable the hook once per clone:
+
+```
+git config core.hooksPath .githooks
+```
+
+Publishing from a machine with the internal seed checked out is therefore a three-step
+dance: regenerate public, commit and push, then `--internal` again to restore your local
+data. Because the app auto-reseeds when the seed's content stamp changes, switching
+variants takes effect on the next page load.
