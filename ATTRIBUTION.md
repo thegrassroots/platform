@@ -65,16 +65,6 @@ is currently unreferenced.)
 
 ---
 
-## Reference material
-
-### UNDP Handbook on Planning, Monitoring and Evaluating for Development Results (2009)
-`references/pme-handbook.pdf`. © United Nations Development Programme. Included as the
-methodological reference behind the RBM results-chain data model. All rights remain with
-UNDP; it is not covered by this repository's terms.
-<https://www.undp.org/publications/handbook-planning-monitoring-and-evaluating-development-results>
-
----
-
 ## A note on the sample data
 
 Every programme, result, indicator, measurement, project, donor, beneficiary and **user
