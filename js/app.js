@@ -187,6 +187,10 @@
   var CURRENT_USER = null;     // the logged-in user (reports are attributed to them)
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var el = function (tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  // el() sets textContent, so markup handed to it renders as literal "<b>" on
+  // screen. elHTML() is the deliberate exception for the handful of help notes
+  // that need emphasis. Callers MUST esc() anything interpolated into `html`.
+  var elHTML = function (tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   // Coalesce bursts of calls (e.g. per-keystroke re-renders) into one trailing
   // call, so typing in a search box doesn't re-cluster the map / rebuild a facet
   // on every character. The <input> shows characters natively regardless.
@@ -841,10 +845,10 @@
   // credit only needs to be *reachable*, not permanently expanded over the map.
   // Runs on every `styledata` tick, so a theme swap cannot leave it open.
   function collapseAttribution() {
-    var el = document.querySelector('#basemap .maplibregl-ctrl-attrib');
-    if (!el) return;
-    el.classList.remove('maplibregl-compact-show');
-    if (el.tagName === 'DETAILS') { el.open = false; }
+    var ctrl = document.querySelector('#basemap .maplibregl-ctrl-attrib');
+    if (!ctrl) return;
+    ctrl.classList.remove('maplibregl-compact-show');
+    if (ctrl.tagName === 'DETAILS') { ctrl.open = false; }
   }
   function ensureBasemap() {
     if (mlMap || typeof maplibregl === 'undefined') return;
@@ -3272,7 +3276,7 @@
     var cands = IND.filter(function (r){ return !r.secondary && r.iso === p.country_iso3; })
       .sort(function (a, b){ return (a.sdg || 99) - (b.sdg || 99) || (a.raw.code < b.raw.code ? -1 : 1); });
     var box = el('div', 'prtab');
-    box.appendChild(el('div', 'cp-note', 'Primary KPIs are drawn from the <b>KPI inventory</b> for ' + esc((DB._idx.countryByIso[p.country_iso3] || {}).name || p.country_iso3) + '. Tick the KPIs this project reports against; their activities aggregate into the project. Secondary (project-local) KPIs are managed on the next tab.'));
+    box.appendChild(elHTML('div', 'cp-note', 'Primary KPIs are drawn from the <b>KPI inventory</b> for ' + esc((DB._idx.countryByIso[p.country_iso3] || {}).name || p.country_iso3) + '. Tick the KPIs this project reports against; their activities aggregate into the project. Secondary (project-local) KPIs are managed on the next tab.'));
     if (!cands.length) box.appendChild(el('div', 'empty', 'No inventory KPIs for this country yet.'));
     var list = el('div', 'prkpi-list');
     // group by impact
@@ -3325,7 +3329,7 @@
     var p = curProject, ro = !canEditThisProject(p);
     var secs = (DB._idx.secondaryByProject[p.id] || []).slice().sort(function (a, b){ return (a.code < b.code ? -1 : 1); });
     var box = el('div', 'prtab');
-    box.appendChild(el('div', 'cp-note', 'Secondary KPIs are <b>defined and used within this project only</b>. They are structured like primary KPIs and are <b>aggregated separately and together with primaries</b>. A global toggle (top bar) can exclude all secondary KPIs from every view when needed.'));
+    box.appendChild(elHTML('div', 'cp-note', 'Secondary KPIs are <b>defined and used within this project only</b>. They are structured like primary KPIs and are <b>aggregated separately and together with primaries</b>. A global toggle (top bar) can exclude all secondary KPIs from every view when needed.'));
     if (!ro) { var add = el('button', 'hbtn primary', '＋ Add secondary KPI'); add.onclick = function (){ openSecEdit(null); }; box.appendChild(add); }
     var tbl = el('table', 'utbl');
     tbl.innerHTML = '<thead><tr><th>Code</th><th>KPI</th><th>Unit</th><th>Baseline</th><th>Target</th><th>Progress</th><th></th></tr></thead>';
@@ -3876,7 +3880,7 @@
   }
   function beneficiaryTypesEditor(){
     var box = el('div', 'cp-users');
-    box.appendChild(el('div', 'cp-note', 'Beneficiary <b>measures / units</b> record who benefits from an activity (e.g. Men, Women, Children, Persons with Disabilities, Refugees, IDPs). Add, rename or delete them here - they populate the Beneficiaries tab of the activity form.'));
+    box.appendChild(elHTML('div', 'cp-note', 'Beneficiary <b>measures / units</b> record who benefits from an activity (e.g. Men, Women, Children, Persons with Disabilities, Refugees, IDPs). Add, rename or delete them here - they populate the Beneficiaries tab of the activity form.'));
     var add = el('button', 'hbtn primary', '＋ Add measure'); add.onclick = function (){ openBenTypeEdit(null); };
     box.appendChild(add);
     var usage = {}; DB.tables.beneficiary.forEach(function (b){ usage[b.type_id] = (usage[b.type_id] || 0) + 1; });
@@ -4095,7 +4099,7 @@
 
   function kpiInventoryEditor(){
     var box = el('div', 'cp-kpis');
-    box.appendChild(el('div', 'cp-note', 'Fine-tune KPI definitions - name, type, unit, direction, baseline/target, means & method of measurement, frequency, responsible and <b>parent Output</b>. Every KPI belongs to an Output; use <b>＋ Add KPI</b> to create one under an Output, or Edit to change it (applies to every country instance and re-derives status & roll-up).'));
+    box.appendChild(elHTML('div', 'cp-note', 'Fine-tune KPI definitions - name, type, unit, direction, baseline/target, means & method of measurement, frequency, responsible and <b>parent Output</b>. Every KPI belongs to an Output; use <b>＋ Add KPI</b> to create one under an Output, or Edit to change it (applies to every country instance and re-derives status & roll-up).'));
     var addBtn = el('button', 'hbtn primary cp-adduser', '＋ Add KPI');
     addBtn.onclick = function (){ openKpiAdd(); };
     box.appendChild(addBtn);

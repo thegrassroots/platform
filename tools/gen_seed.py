@@ -669,8 +669,8 @@ DONOR_DEFS = [
  ("Government of the Netherlands","NLD","Bilateral"),
  ("Republic of Korea (KOICA)","KOICA","Bilateral"),
  ("Swiss Cooperation (SDC)","SDC","Bilateral"),
- ("Joint SDG Fund","JSDG","Multilateral"),
- ("UN Multi-Partner Trust Fund","MPTF","Multilateral"),
+ ("Global Resilience Fund","GRF","Multilateral"),
+ ("Multi-Donor Trust Fund","MDTF","Multilateral"),
  ("Government of Denmark (Danida)","DANIDA","Bilateral"),
 ]
 DONOR_PAL = ["#4FA9E8","#33C2B4","#9D7BEE","#F5A04D","#EC7BA6","#5399EA","#2CC4A0","#E0A93B",
