@@ -4735,37 +4735,48 @@
     };
   }
 
-  // The forecast companion that rides along with every results report - the SAME
-  // detailed brief the Forecast tab exports (letterhead, plan stamp, headline
-  // tiles, trajectory chart, advice and the full dimension table), focused on
-  // the lead's entity, always projected to the end of the active plan and free
-  // of any on-screen filters. Returns the PDF base64-encoded for the email.
+  // The forecast companion that rides along with every results report - the same
+  // detailed layout the Forecast tab exports (letterhead, plan stamp, headline
+  // tiles, trajectory chart, advice and the breakdown table), but scoped the way
+  // the results report is: the tiles/chart/advice cover the lead's entity, and
+  // the table forecasts each PROJECT under it (a project lead drills into its
+  // own KPIs instead). Always projected to the end of the active plan, free of
+  // any on-screen filters. Returns the PDF base64-encoded for the email.
   function commBuildForecastPdf(ent, year, month){
     var period = MONTH_NAMES[month - 1] + ' ' + year;
-    var dimMap = { plan:'plans', impact:'impacts', outcome:'outcomes', output:'outputs',
-                   project:'projects', donor:'donors', region:'regions', country:'countries' };
     var savedH = S.fcHorizon, savedD = S.fcDim;
-    S.fcHorizon = 'plan'; S.fcDim = dimMap[ent.cat] || 'projects';
+    S.fcHorizon = 'plan';   // lead briefs always look to the end of the plan
+    S.fcDim = 'projects';   // the breakdown below is per project (labels follow)
     try {
-      var ents = fcEntities(IND);   // every sibling in the dimension, unfiltered
-      // the comm entity, focused within its dimension (key formats differ per cat)
-      var selKey = ent.cat === 'impact' ? 'impact:' + ent.sdg
-        : (ent.cat === 'outcome' || ent.cat === 'output') ? ent.cat + ':' + ent.stmt
-        : ent.cat === 'region' ? 'region:' + ent.region.name
-        : ent.ref;
-      var sel = null;
-      ents.forEach(function (e){ if (e.key === selKey) sel = e; });
-      if (!sel){
-        // entity outside the active plan's forecast universe (e.g. a past plan's
-        // lead) - build its scope directly so the brief still goes out
-        sel = fcEntity(ent.ref, ent.name, commCatOne(ent.cat), COMM_BRAND,
-          commIndicators(ent).map(function (i){ return INDBYID[i.id]; }).filter(Boolean));
-        fcCompute(sel);
+      function toRows(inds){ return inds.map(function (i){ return INDBYID[i.id]; }).filter(Boolean); }
+      // the lead's whole scope drives the tiles, the chart and the advice
+      var scope = fcEntity(ent.ref, (ent.code ? ent.code + ' - ' : '') + ent.name,
+        commCatOne(ent.cat), COMM_BRAND, toRows(commIndicators(ent)));
+      fcCompute(scope);
+      var ents = [], dimLabel = null, entityLabel = null;
+      if (ent.cat === 'project'){
+        // exception: a project lead gets the per-KPI forecast of their project
+        dimLabel = 'KPIs'; entityLabel = 'KPI';
+        toRows(commIndicators(ent)).forEach(function (r){
+          ents.push(fcEntity('kpi:' + r.id, (r.raw.code ? r.raw.code + ' · ' : '') + r.name,
+            r.unit || '', r.sdg ? (PILLAR_COLORS[r.sdg] || '#94a3b8') : '#94a3b8', [r]));
+        });
+      } else {
+        commProjectsFor(ent).forEach(function (row){
+          var p = row.p, co = DB._idx.countryByIso[p.country_iso3], dn = DB._idx.donorById[p.donor_id];
+          ents.push(fcEntity('project:' + p.id, (p.code ? p.code + ' · ' : '') + p.name,
+            (co ? co.name : (p.country_iso3 || '')) + (dn ? ' · ' + (dn.short_name || dn.name) : ''),
+            p.country_iso3 ? countryColor(p.country_iso3) : '#94a3b8', toRows(row.kpis || [])));
+        });
       }
-      var doc = fcPdfDoc(sel, ents, sel, {
+      ents.forEach(fcCompute);
+      // riskiest first, same ordering as the Forecast tab
+      ents.sort(function (a, b){ return (a.aR == null ? 2 : a.aR) - (b.aR == null ? 2 : b.aR); });
+      var doc = fcPdfDoc(scope, ents, null, {
         tag: 'Forecast Brief  ·  ' + period,
         preparedFor: ent,
         noFilters: true,
+        dimLabel: dimLabel, entityLabel: entityLabel,
         ctx: commCatOne(ent.cat) + '  ·  forecast to end of plan  ·  generated ' + pdfDate(TODAY)
       });
       return btoa(doc.build());
@@ -4801,13 +4812,16 @@
   }
 
   // ---- email template ({PLACEHOLDER} substitution; editable, persisted) --------
-  var COMM_TPL_KEY = 'gr_email_tpl_v1';
+  // v2: the default now covers the forecast brief - the key bump stops a stale
+  // v1 save (pre-forecast wording) from shadowing the new default.
+  var COMM_TPL_KEY = 'gr_email_tpl_v2';
   function commDefaultTpl(){
     return {
-      subject: 'Your {MONTH} {YEAR} results report - {ENTITY}',
+      subject: 'Your {MONTH} {YEAR} results & forecast - {ENTITY}',
       body: 'Dear {LEAD},\n\n' +
-        'I hope this finds you well. Attached are two PDFs for {MONTH} {YEAR}, covering {ENTITY} - the {CATEGORY} you lead on The Grassroots: your monthly results report, and the forecast brief for the same scope.\n\n' +
-        'The month at a glance: {SUMMARY}. In the results report you will find each KPI\'s value against its baseline and target, its progress, and its performance status as of the end of {MONTH}, alongside the activities logged and the people reached during the month. The forecast brief adds where your KPIs are projected to land by the end of the plan - best, realistic and worst case - and what to do now to keep every target on track.\n\n' +
+        'I hope this finds you well. Attached are two PDFs for {MONTH} {YEAR}, covering {ENTITY} - the {CATEGORY} you lead on The Grassroots: your monthly results report and your forecast brief.\n\n' +
+        'The month at a glance: {SUMMARY}. In the results report you will find each KPI\'s value against its baseline and target, its progress, and its performance status as of the end of {MONTH}, alongside the activities logged and the people reached during the month.\n\n' +
+        'The forecast brief looks ahead: best, realistic and worst-case trajectories for your scope to the end of the plan, the projects under it ranked riskiest first (a project\'s brief drills into its KPIs instead), and what to do now to keep every target within reach.\n\n' +
         'If anything looks off - or you would like the underlying activity detail - just reply to this email, or open The Grassroots and drill into your scope.\n\n' +
         'Thank you for everything you and your team put into this. It shows.\n\n' +
         'Warm regards,\n{SENDER}\nThe Grassroots - Monitoring & Evaluation'
@@ -4895,6 +4909,9 @@
     var em = el('button', 'comm-mailtab' + (COMM.tab === 'email' ? ' on' : ''), '✉ Email draft');
     em.dataset.commtab = 'email';
     tabs.appendChild(em);
+    var dv = el('button', 'comm-mailtab' + (COMM.tab === 'delivery' ? ' on' : ''), '📮 Email delivery');
+    dv.dataset.commtab = 'delivery';
+    tabs.appendChild(dv);
   }
   function commStatusChip(rep){
     if (rep && rep.enabled === 0) return '<span class="comm-chip off">Disabled</span>';
@@ -4909,6 +4926,7 @@
       return;
     }
     if (COMM.tab === 'email'){ body.appendChild(commEmailEditor()); return; }
+    if (COMM.tab === 'delivery'){ body.appendChild(commMailSettings()); return; }
     var cat = COMM.tab, ents = commEntities(cat), un = commUnassigned(cat);
     var catDef = COMM_CATS.filter(function (c){ return c.key === cat; })[0];
     var note = el('div', 'cp-note');
@@ -5209,7 +5227,6 @@
     };
     btns.appendChild(msg); btns.appendChild(reset); btns.appendChild(save);
     left.appendChild(subjLab); left.appendChild(bodyLab); left.appendChild(btns);
-    left.appendChild(commMailSettings());
     // live preview against a real lead (first entity that has one)
     var right = el('div', 'comm-mail-prev');
     function sampleEnt(){
@@ -7233,6 +7250,9 @@
 
     // headline tiles - 3 x 2 cards, same data as the on-screen grid
     var tiles = fcTileData(scope, ents), gap = 10, cardW = (AW - gap * 2) / 3, cardH = 52;
+    // the third tile is "<dimension> on course" - rename it when the breakdown
+    // is something else (the comm brief's per-KPI drill-down for project leads)
+    if (opts.dimLabel) tiles[2].l = opts.dimLabel + ' on course';
     tiles.forEach(function (t, i){
       var cx = M + (i % 3) * (cardW + gap);
       var cy = y - Math.floor(i / 3) * (cardH + gap);
@@ -7296,7 +7316,7 @@
     // 3-month delta, the outlook bar a worst-best range)
     var mNow = fcNowMi(), hasLate = false;
     var cols = [
-      { t: FC_SING[S.fcDim] || 'Entity' }, { t: 'KPIs', align: 'right' },
+      { t: opts.entityLabel || FC_SING[S.fcDim] || 'Entity' }, { t: 'KPIs', align: 'right' },
       { t: 'Now', align: 'right' }, { t: 'Trend 3 mo', align: 'right' },
       { t: 'Realistic', align: 'right' }, { t: 'Worst - best', align: 'right' },
       { t: 'Status' }, { t: 'Pace', align: 'right' }, { t: 'Target by', align: 'right' }
@@ -7331,7 +7351,7 @@
       ];
     });
     if (y < M + 80){ doc.addPage(); y = doc.PH - M; }
-    doc.text((fcDimLabel() + '  ·  FORECAST ' + fcHorizonLabel() + '  ·  RISKIEST FIRST').toUpperCase(),
+    doc.text(((opts.dimLabel || fcDimLabel()) + '  ·  FORECAST ' + fcHorizonLabel() + '  ·  RISKIEST FIRST').toUpperCase(),
       M, y - 9, { size: 8.5, bold: true, color: SUB });
     y -= 15;
     y = pdfTable(doc, cols, rows, M, AW, y);
