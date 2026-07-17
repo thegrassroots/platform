@@ -36,6 +36,7 @@ status engine, every chart - runs entirely in the browser with no server.
 | Indicator cards           | Status dot, latest vs. target, result statement, level/SDG/status badges |
 | Bubble colour toggle      | **By Progress / By Performance** - which metric drives the RAG    |
 | Insights tab              | KPIs + status donut + SDG / region / results-chain charts + programme league table |
+| Forecast tab              | Scenario projections toward targets: best / realistic / worst case, by plan, impact, outcome, output, project, region or country |
 | Ticker                    | Most recently updated indicators                                  |
 
 **Status (RAG)** is always **computed** from the reported results - never picked from a
@@ -53,6 +54,29 @@ Because 0 % is the baseline and 100 % is the target, either metric maps to the s
 baseline*; indicators with no measurement yet are `No Data` (grey). The map toggle
 **By Progress / By Performance** switches which metric colours the bubbles, legend and facets;
 the indicator detail shows both side by side.
+
+---
+
+## Forecast - making the future present
+
+The **Forecast** tab (header, next to Insights) projects every result toward its target.
+It works in *achievement space* - `(current − baseline) / (target − baseline)` - so counts
+and levels are comparable and can be averaged. Per KPI the engine derives the recent
+monthly velocity (an OLS slope over the last 12 monthly positions) and its volatility
+(the std-dev of month-over-month moves); **Realistic** continues at that velocity, while
+**Best / Worst** run at velocity ± one volatility, so the uncertainty cone widens with how
+erratic delivery has actually been. Projections freeze at each KPI's own target date -
+no progress is assumed beyond the plan window.
+
+Pick one of seven lenses - **Plans** (the active plan), **Impacts, Outcomes, Outputs,
+Projects, Regions, Countries** - and a horizon (end of plan, +6/12/24 months). Every
+active filter applies, so the forecast is always for the slice on screen. The view
+answers the senior-management questions directly: forecast achievement at the horizon
+with a projected RAG, the scenario range, the date the target is attained at the current
+pace, the **required run-rate** (×N of today's pace) to land the target by plan end, and
+a prioritised "what to change" panel - acceleration needed, where to concentrate
+support, regressing KPIs, quick wins within reach, and stale or missing reporting. Click
+any row to focus the trajectory chart and advice on that slice of the portfolio.
 
 ---
 

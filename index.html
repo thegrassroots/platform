@@ -6,7 +6,7 @@
 <title>The Grassroots - keeps track of what changes on the ground</title>
 <link rel="stylesheet" href="assets/fonts.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="styles.css?v=gr01">
+<link rel="stylesheet" href="styles.css?v=gr03">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 </head>
 <body>
@@ -24,6 +24,7 @@
     <div class="seg" id="tabs">
       <button data-tab="map" class="on">Map</button>
       <button data-tab="insights">Insights</button>
+      <button data-tab="forecast">Forecast</button>
     </div>
     <div class="spacer"></div>
     <div class="planbox" id="planbox">
@@ -134,8 +135,6 @@
     <!-- center : map / insights -->
     <section class="mapwrap" id="mapView">
       <div id="basemap"></div>
-      <button class="collapse l" id="colLeft" title="Hide portfolio panel">‹</button>
-      <button class="collapse r" id="colRight" title="Hide results panel">›</button>
       <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
       <div class="map-controls">
         <button id="zIn">+</button>
@@ -163,6 +162,8 @@
 
     <section class="insights hide" id="insightsView"></section>
 
+    <section class="forecast hide" id="forecastView"></section>
+
     <!-- right sidebar : indicator list -->
     <aside class="side right" id="sideRight">
       <div class="resizer r" id="rzRight" title="Drag to resize"></div>
@@ -184,6 +185,11 @@
         <button id="pLast" title="Last page" aria-label="Last page"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6l6 6-6 6M13 6l6 6-6 6"/></svg></button>
       </div>
     </aside>
+
+    <!-- pane collapse toggles: children of .main (not the map) so they stay
+         visible on the Insights and Forecast views too -->
+    <button class="collapse l" id="colLeft" title="Hide portfolio panel">‹</button>
+    <button class="collapse r" id="colRight" title="Hide results panel">›</button>
   </div>
 
   <!-- ================= BOTTOM BAR ================= -->
@@ -191,6 +197,7 @@
     <button class="hbtn" id="btnTheme">☀ Light</button>
     <button class="hbtn" id="btnControl">⚙ Global Items</button>
     <button class="hbtn" id="btnResults">◔ Results Management</button>
+    <button class="hbtn" id="btnComms">✉ Communication</button>
   </div>
 
   <!-- ================= DETAIL MODAL ================= -->
@@ -229,9 +236,28 @@
       <div class="modal-tabs" id="cpTabs">
         <button data-cptab="donors" class="on">Donors</button>
         <button data-cptab="beneficiaries">Beneficiaries</button>
+        <button data-cptab="geo">Regions &amp; Countries</button>
         <button data-cptab="users">Users</button>
       </div>
       <div class="modal-body" id="cpBody"></div>
+    </div>
+  </div>
+
+  <!-- ================= COMMUNICATION MODAL ================= -->
+  <!-- Monthly PDF results reports for every Lead: generate per period, review
+       per category, and send to each lead by email (tabs render in JS). -->
+  <div class="modal-overlay" id="commModal">
+    <div class="modal comm" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="mt">
+          <h2>Communication</h2>
+          <div class="msub">Monthly results reports, delivered to every Lead</div>
+        </div>
+        <button class="mx" id="commClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="comm-bar" id="commBar"></div>
+      <div class="modal-tabs comm-tabs" id="commTabs"></div>
+      <div class="modal-body" id="commBody"></div>
     </div>
   </div>
 
@@ -438,8 +464,8 @@
 </div>
 
 <script src="data/world.js"></script>
-<script src="js/seed.js?v=gr03"></script>
-<script src="js/db.js?v=gr01"></script>
-<script src="js/app.js?v=gr03"></script>
+<script src="js/seed.js?v=gr06"></script>
+<script src="js/db.js?v=gr02"></script>
+<script src="js/app.js?v=gr09"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@
   // Single source of truth for the app version. Semantic versioning; bump the
   // patch (or minor) on each change. Stays below 1.0.0 until sign-off - do not
   // release 1.0.0 without explicit approval.
-  var APP_VERSION = '0.3.0';
+  var APP_VERSION = '0.4.0';
   var TODAY = new Date('2026-07-13');
   // The `sdg` field on results is REPURPOSED to hold the Pillar id (1-4), scoped
   // PER PLAN (each plan numbers its pillars 1-4). These tables therefore key on
@@ -241,6 +241,10 @@
     facetCollapsed: {},      // { groupKey: true } for collapsed groups
     // insights dashboard config
     insX: 'sdg', insTopX: 5, insY: 'region', insTopY: 10, insMode: 'bar',
+    // forecast dashboard config (fcSel is transient - reset when the dimension changes)
+    fcDim: 'plans',      // plans | outcomes | outputs | projects | countries
+    fcHorizon: 'plan',   // plan (end of plan) | 6m | 12m | 24m
+    fcSel: null,         // selected entity key ('' / null = whole portfolio)
     // Insights measures whatever S.countBasis says (Projects | Activities) - no separate Value setting.
     // resizable pane widths (px); null = use default (15% of screen width)
     leftW: null, rightW: null,
@@ -1944,7 +1948,7 @@
       if (!projectPassesFacets(p, false, progIso)) return false;
       if (q) {
         var co = p.country ? p.country.name : '';
-        var hay = (p.code + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co + ' ' + (p.raw.lead || '')).toLowerCase();
+        var hay = (p.code + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co + ' ' + (p.raw.lead_id != null ? userName(+p.raw.lead_id) : '')).toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
       return true;
@@ -2555,7 +2559,7 @@
     // A single project shows its KPIs; every other item shows its projects. KPIs
     // are never listed on a non-project results box. The same rows are pushed into
     // expCols/expRows so the PDF export mirrors exactly what is on screen.
-    var CAP = 60, expCols = [], expRows = [], expSection = '', expNote = '';
+    var expCols = [], expRows = [], expSection = '', expNote = '';
     var indsHead = 'KPIs - ' + ofTotal(inds.length, sc.indsAll.length, 'KPI', 'KPIs').replace(/ KPIs?$/, '');
     var projsHead = 'Projects - ' + ofTotal(projs.length, sc.projsAll.length, 'project', 'projects').replace(/ projects?$/, '');
     if (isProject){
@@ -2566,7 +2570,7 @@
       if (!inds.length) html += '<div class="empty">' + (sc.indsAll.length ? 'No KPIs on this project match the active filters.' : 'No KPIs attached to this project.') + '</div>';
       else {
         html += '<table class="esum-tbl esum-kpi"><thead><tr><th>KPI</th><th class="tcol">Type</th><th class="num">Baseline</th><th class="num">Target</th><th class="num">Latest</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead><tbody>';
-        inds.slice().sort(function (a, b){ return (b.updated || '') < (a.updated || '') ? -1 : 1; }).slice(0, CAP).forEach(function (r){
+        inds.slice().sort(function (a, b){ return (b.updated || '') < (a.updated || '') ? -1 : 1; }).forEach(function (r){
           var u = r.unit === '%' ? '%' : '', col = r.sdg ? PILLAR_COLORS[r.sdg] : '#94a3b8', ind = r.raw;
           // this project's own reports against the KPI, under the active filters
           var kActs = filteredSeries([r], function (m){ return m.project_id === key; }).length;
@@ -2583,7 +2587,9 @@
             + '<td class="num"><b style="color:' + STATUS[r.perfCode].c + '">' + per + '</b></td></tr>';
           expRows.push([
             { t: (r.code ? r.code + ' · ' : '') + r.name, dot: col },
-            { t: r.secondary ? 'Secondary' : 'Primary' },
+            // tinted Type badge in the PDF, matching the on-screen .kpi-type colours
+            { t: r.secondary ? 'Secondary' : 'Primary',
+              tag: r.secondary ? { bg: '#dce4d1', fg: '#27500a' } : { bg: '#d8e3ec', fg: '#0c447c' } },
             { t: ind.baseline_value != null ? fmtNum(ind.baseline_value) + u : '–' },
             { t: ind.target_value != null ? fmtNum(ind.target_value) + u : '–' },
             { t: r.value != null ? fmtNum(r.value) + u : '–' },
@@ -2593,7 +2599,6 @@
           ]);
         });
         html += '</tbody></table>';
-        if (inds.length > CAP){ expNote = 'Showing ' + CAP + ' of ' + fmt(inds.length) + ' KPIs.'; html += '<div class="cp-note">' + expNote + '</div>'; }
       }
       html += '</div>';
     } else {
@@ -2607,7 +2612,7 @@
         // Activities stat above it rather than to the project's lifetime total.
         var actByProj = countBy(actPool([]), function (a){ return a.pid; });
         html += '<table class="esum-tbl esum-proj"><thead><tr><th>Project</th><th>Country</th><th>Donor</th><th class="num">Budget</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead><tbody>';
-        projs.slice().sort(function (a, b){ return (actByProj[b.id] || 0) - (actByProj[a.id] || 0); }).slice(0, CAP).forEach(function (p){
+        projs.slice().sort(function (a, b){ return (actByProj[b.id] || 0) - (actByProj[a.id] || 0); }).forEach(function (p){
           var pActs = actByProj[p.id] || 0;
           var proV = aggMetric(p.kpis, 'progress'), perV = aggMetric(p.kpis, 'performance');
           var pro = proV != null ? Math.round(proV * 100) + '%' : '–';
@@ -2632,7 +2637,6 @@
           ]);
         });
         html += '</tbody></table>';
-        if (projs.length > CAP){ expNote = 'Showing ' + CAP + ' of ' + fmt(projs.length) + ' projects.'; html += '<div class="cp-note">' + expNote + '</div>'; }
       }
       html += '</div>';
     }
@@ -3212,7 +3216,7 @@
       '  <label><span>Donor</span><select class="pf-donor">' + donorOptions(p ? p.donor_id : null) + '</select></label>' +
       '  <label><span>Country *</span><select class="pf-country"' + (lock ? ' disabled' : '') + '>' + countryOptionsGrouped(iso, lock) + '</select></label>' +
       '  <label><span>Budget (USD)</span><input class="pf-budget" type="text" inputmode="numeric" value="' + esc(p && p.budget_usd != null ? fmt(p.budget_usd) : '') + '" placeholder="0"></label>' +
-      '  <label><span>Lead</span><select class="pf-lead">' + leadOptions(p ? (p.lead || '') : '') + '</select></label>' +
+      '  <label><span>Lead</span><select class="pf-lead">' + userOptions(projectLeadId(p), ['hq','co']) + '</select></label>' +
       '  <label><span>Start date</span><input class="pf-start" type="date" value="' + esc(p ? (p.start_date || '') : '') + '"></label>' +
       '  <label><span>End date</span><input class="pf-end" type="date" value="' + esc(p ? (p.end_date || '') : '') + '"></label>' +
       '  <label class="pf-wide"><span>Description</span><textarea class="pf-desc" rows="3" placeholder="Objectives, scope, partners…">' + esc(p ? (p.description || '') : '') + '</textarea></label>' +
@@ -3248,7 +3252,7 @@
       code: v('.pf-code').trim(), name: name,
       donor_id: v('.pf-donor') ? +v('.pf-donor') : null,
       country_iso3: iso, region: co ? co.region : null,
-      budget_usd: num(v('.pf-budget').replace(/,/g, '')), lead: v('.pf-lead').trim(),
+      budget_usd: num(v('.pf-budget').replace(/,/g, '')), lead_id: v('.pf-lead') ? +v('.pf-lead') : null,
       start_date: v('.pf-start') || null, end_date: v('.pf-end') || null,
       description: v('.pf-desc').trim()
     };
@@ -3260,6 +3264,7 @@
     };
     if (curProject){
       Object.keys(fields).forEach(function (k){ curProject[k] = fields[k]; });
+      delete curProject.lead;   // legacy name column, superseded by lead_id
       Promise.resolve(DB.persist('project', [curProject])).then(done);
     } else {
       if (!fields.code) fields.code = 'PRJ-' + iso + '-' + String((DB._idx.projectByCountry[iso] || []).length + 1).padStart(2, '0');
@@ -3751,6 +3756,8 @@
     if (dt) dt.classList.toggle('hide', !canEditFramework());
     var bt = $('#cpTabs').querySelector('[data-cptab="beneficiaries"]');
     if (bt) bt.classList.toggle('hide', !canEditFramework());
+    var gt = $('#cpTabs').querySelector('[data-cptab="geo"]');
+    if (gt) gt.classList.toggle('hide', !canEditFramework());
     renderControl('donors'); $('#cpModal').classList.add('on');
   }
   function closeControl(){ $('#cpModal').classList.remove('on'); }
@@ -3765,11 +3772,12 @@
   function renderControl(tab){
     tab = tab || 'donors';
     if (tab === 'users' && !canManageUsers()) tab = 'donors';
-    if ((tab === 'donors' || tab === 'beneficiaries') && !canEditFramework()) tab = 'donors';
+    if ((tab === 'donors' || tab === 'beneficiaries' || tab === 'geo') && !canEditFramework()) tab = 'donors';
     Array.prototype.forEach.call($('#cpTabs').children, function (x){ x.classList.toggle('on', x.dataset.cptab === tab); });
     var body = $('#cpBody'); body.innerHTML = '';
     if (tab === 'users') body.appendChild(usersEditor());
     else if (tab === 'beneficiaries') body.appendChild(beneficiaryTypesEditor());
+    else if (tab === 'geo') body.appendChild(geoLeadsEditor());
     else body.appendChild(donorsEditor());
   }
 
@@ -3808,10 +3816,10 @@
     var add = el('button', 'hbtn primary', '＋ Add donor'); add.onclick = function (){ openDonorEdit(null); };
     box.appendChild(add);
     var tbl = el('table', 'utbl');
-    tbl.innerHTML = '<thead><tr><th>Donor</th><th>Short</th><th>Type</th><th>Projects</th><th></th></tr></thead>';
+    tbl.innerHTML = '<thead><tr><th>Donor</th><th>Short</th><th>Type</th><th>Lead</th><th>Projects</th><th></th></tr></thead>';
     var tb = el('tbody');
     var list = donors();
-    if (!list.length) tb.innerHTML = '<tr><td colspan="5" class="re-empty">No donors yet.</td></tr>';
+    if (!list.length) tb.innerHTML = '<tr><td colspan="6" class="re-empty">No donors yet.</td></tr>';
     list.forEach(function (d){
       var used = donorProjectCount(d.id);
       var tr = el('tr');
@@ -3819,6 +3827,7 @@
         '<td><span class="udot" style="background:' + (d.color || '#94a3b8') + '"></span>' + esc(d.name) + '</td>' +
         '<td class="umono">' + esc(d.short_name || '') + '</td>' +
         '<td>' + esc(d.type || '') + '</td>' +
+        '<td>' + (d.lead_id != null ? esc(userName(+d.lead_id)) : '–') + '</td>' +
         '<td class="umono">' + fmt(used) + '</td>';
       var act = el('td', 'uact');
       var ed = el('button', 'cp-mini', 'Edit'); ed.onclick = function (){ openDonorEdit(d); };
@@ -3845,6 +3854,9 @@
       '  <label><span>Type *</span><select class="dn-type">' + typeOpts + '</select></label>' +
       '  <label><span>Identity colour</span><input class="dn-color" type="color" value="' + esc(color) + '"></label>' +
       '</div>' +
+      '<div class="ufgrid" style="grid-template-columns:1fr">' +
+      '  <label><span>Lead</span><select class="dn-lead">' + userOptions(d && d.lead_id != null ? +d.lead_id : null, ['hq','co']) + '</select></label>' +
+      '</div>' +
       '<div class="ufbtns"><span class="ufmsg"></span>' +
         '<button class="hbtn dn-cancel" type="button">Cancel</button>' +
         '<button class="hbtn primary dn-save" type="button">' + (d ? 'Save changes' : 'Add donor') + '</button></div>';
@@ -3854,10 +3866,11 @@
       var short_name = f.querySelector('.dn-short').value.trim();
       var type = f.querySelector('.dn-type').value;
       var col = f.querySelector('.dn-color').value;
+      var leadId = f.querySelector('.dn-lead').value ? +f.querySelector('.dn-lead').value : null;
       if (!name){ msg.textContent = 'Donor name is required.'; return; }
       msg.textContent = 'Saving…';
-      if (d){ d.name = name; d.short_name = short_name; d.type = type; d.color = col; applyDonorMutation(DB.persist('donor', [d])); }
-      else { applyDonorMutation(DB.insert('donor', { name: name, short_name: short_name, type: type, color: col })); }
+      if (d){ d.name = name; d.short_name = short_name; d.type = type; d.color = col; d.lead_id = leadId; applyDonorMutation(DB.persist('donor', [d])); }
+      else { applyDonorMutation(DB.insert('donor', { name: name, short_name: short_name, type: type, color: col, lead_id: leadId })); }
     };
     body.appendChild(f);
     $('#donorEditOverlay').classList.add('on');
@@ -3867,6 +3880,889 @@
   function deleteDonor(d){
     if (donorProjectCount(d.id)) return;   // guarded in the UI too
     Promise.resolve(DB.remove('donor', [d.id])).then(function (){ enrich(); renderTicker(); renderAll(); renderControl('donors'); });
+  }
+
+  // =========================================================================
+  //  CONTROL PANEL - Regions & Countries (assign Leads; Admin only)
+  // =========================================================================
+  // Inline Lead dropdown for a lookup row - selecting a user persists the row's
+  // lead_id immediately (id-based, from the user list, never free-typed).
+  function inlineLeadSelect(row, table){
+    var s = el('select', 'geo-lead');
+    s.innerHTML = userOptions(row.lead_id != null ? +row.lead_id : null, ['hq','co']);
+    s.onchange = function (){
+      row.lead_id = s.value ? +s.value : null;
+      DB.persist(table, [row]);
+    };
+    return s;
+  }
+  function geoLeadsEditor(){
+    var box = el('div', 'cp-users cp-geo');
+    box.appendChild(elHTML('div', 'cp-note', 'Assign an accountable <b>Lead</b> to each <b>region</b> and <b>country</b> - chosen from the user list, saved immediately on selection. Programme countries come seeded with their country-office user as Lead; reference-only countries start unassigned.'));
+
+    // ---- regions (the six continents) --------------------------------------
+    var rtbl = el('table', 'utbl');
+    rtbl.innerHTML = '<thead><tr><th>Region</th><th>Countries</th><th>Projects</th><th>Lead</th></tr></thead>';
+    var rtb = el('tbody');
+    var projByRegion = {}; DB.tables.project.forEach(function (p){ if (p.region) projByRegion[p.region] = (projByRegion[p.region] || 0) + 1; });
+    DB.tables.region.slice().sort(function (a, b){ return (a.seq || 0) - (b.seq || 0); }).forEach(function (rg){
+      var nCty = DB.tables.country.reduce(function (n, c){ return n + (c.region_id === rg.id ? 1 : 0); }, 0);
+      var tr = el('tr');
+      tr.innerHTML = '<td><span class="udot" style="background:' + regionColor(rg.name) + '"></span>' + esc(rg.name) + '</td>'
+        + '<td class="umono">' + fmt(nCty) + '</td>'
+        + '<td class="umono">' + fmt(projByRegion[rg.name] || 0) + '</td>';
+      var td = el('td', 'geo-lead-cell'); td.appendChild(inlineLeadSelect(rg, 'region')); tr.appendChild(td);
+      rtb.appendChild(tr);
+    });
+    rtbl.appendChild(rtb); box.appendChild(rtbl);
+
+    // ---- countries (all of them, searchable) --------------------------------
+    var q = el('input', 'geo-search');
+    q.type = 'search'; q.placeholder = 'Search countries…';
+    box.appendChild(q);
+    var ctbl = el('table', 'utbl');
+    ctbl.innerHTML = '<thead><tr><th>Country</th><th>Region</th><th>Projects</th><th>Lead</th></tr></thead>';
+    var ctb = el('tbody');
+    var rows = [];   // [{tr, hay}] for the search filter
+    DB.tables.country.slice().sort(function (a, b){ return a.name < b.name ? -1 : 1; }).forEach(function (c){
+      var nProj = (DB._idx.projectByCountry[c.iso3] || []).length;
+      var tr = el('tr');
+      tr.innerHTML = '<td>' + esc(c.name) + ' <span class="umono">' + esc(c.iso3) + '</span></td>'
+        + '<td>' + esc(c.region || '') + '</td>'
+        + '<td class="umono">' + fmt(nProj) + '</td>';
+      var td = el('td', 'geo-lead-cell'); td.appendChild(inlineLeadSelect(c, 'country')); tr.appendChild(td);
+      rows.push({ tr: tr, hay: (c.name + ' ' + c.iso3 + ' ' + (c.region || '')).toLowerCase() });
+      ctb.appendChild(tr);
+    });
+    ctbl.appendChild(ctb); box.appendChild(ctbl);
+    q.oninput = function (){
+      var v = q.value.trim().toLowerCase();
+      rows.forEach(function (r){ r.tr.style.display = (!v || r.hay.indexOf(v) >= 0) ? '' : 'none'; });
+    };
+    return box;
+  }
+
+  // =========================================================================
+  //  COMMUNICATION - monthly PDF results reports for every Lead
+  //  A report is a fixed snapshot: KPI values / progress / performance as of the
+  //  end of the selected month, plus the month's activities and beneficiaries -
+  //  the same numbers the app derives, scoped to what each Lead is accountable
+  //  for. Reports are generated as real PDFs (built in-browser, zero libraries),
+  //  stored in the `report` table, and emailed to each Lead from the panel.
+  // =========================================================================
+  var COMM_CATS = [
+    { key:'plan',    label:'Plans',     one:'Plan' },
+    { key:'impact',  label:'Impacts',   one:'Impact' },
+    { key:'outcome', label:'Outcomes',  one:'Outcome' },
+    { key:'output',  label:'Outputs',   one:'Output' },
+    { key:'project', label:'Projects',  one:'Project' },
+    { key:'donor',   label:'Donors',    one:'Donor' },
+    { key:'region',  label:'Regions',   one:'Region' },
+    { key:'country', label:'Countries', one:'Country' }
+  ];
+  function commCatOne(cat){ var c = COMM_CATS.filter(function (x){ return x.key === cat; })[0]; return c ? c.one : cat; }
+  var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var COMM = { tab:'plan', year:null, month:null, busy:false };
+  function p2(n){ return (n < 10 ? '0' : '') + n; }
+  // Reports default to the last COMPLETED month (you report on a finished period).
+  function commDefaultPeriod(){
+    var d = new Date(TODAY), y = d.getFullYear(), m = d.getMonth();   // getMonth() is 0-based = previous 1-based month
+    if (m === 0){ y--; m = 12; }
+    return { year: y, month: m };
+  }
+  function commPeriodLabel(){ return MONTH_NAMES[COMM.month - 1] + ' ' + COMM.year; }
+  // Reports cover what has happened - never a period after the current month.
+  function commNow(){ var d = new Date(TODAY); return { y: d.getFullYear(), m: d.getMonth() + 1 }; }
+  function commIsFuture(y, m){ var n = commNow(); return y > n.y || (y === n.y && m > n.m); }
+  // Demo mail domain - users carry no email column; addresses derive from username.
+  function leadEmail(uid){ var u = DB._idx.userById[uid]; return u ? (u.username + '@thegrassroots.org') : ''; }
+  function commWhen(iso){
+    var d = new Date(iso); if (isNaN(d)) return '';
+    return MONTH_NAMES[d.getMonth()].slice(0,3) + ' ' + d.getDate() + ', ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  }
+
+  // ---- who gets a report: every entity of a category that HAS a Lead ---------
+  function commEntities(cat){
+    var out = [];
+    if (cat === 'plan'){
+      allPlans().forEach(function (p){ if (p.lead_id != null) out.push({ cat:cat, ref:'plan:'+p.id, name:p.name, code:'', leadId:+p.lead_id }); });
+    } else if (cat === 'impact' || cat === 'outcome' || cat === 'output'){
+      var seen = {};
+      DB.tables.result.forEach(function (r){
+        if (r.plan_id !== S.plan || r.level !== cat || r.owner_id == null) return;
+        var k = (r.sdg == null ? 0 : r.sdg) + '|' + r.statement;
+        if (seen[k]) return; seen[k] = 1;
+        out.push({ cat:cat, ref:cat+':'+k, name:r.statement, code:r.code || '', leadId:+r.owner_id, sdg:r.sdg, stmt:r.statement });
+      });
+    } else if (cat === 'project'){
+      DB.tables.project.forEach(function (p){ if (p.plan_id === S.plan && p.lead_id != null) out.push({ cat:cat, ref:'project:'+p.id, name:p.name, code:p.code || '', leadId:+p.lead_id, project:p }); });
+    } else if (cat === 'donor'){
+      DB.tables.donor.forEach(function (d){ if (d.lead_id != null) out.push({ cat:cat, ref:'donor:'+d.id, name:d.name, code:d.short_name || '', leadId:+d.lead_id, donor:d }); });
+    } else if (cat === 'region'){
+      DB.tables.region.forEach(function (r){ if (r.lead_id != null) out.push({ cat:cat, ref:'region:'+r.id, name:r.name, code:'', leadId:+r.lead_id, region:r }); });
+    } else if (cat === 'country'){
+      DB.tables.country.forEach(function (c){ if (c.lead_id != null) out.push({ cat:cat, ref:'country:'+c.iso3, name:c.name, code:c.iso3, leadId:+c.lead_id, country:c }); });
+    }
+    out.sort(function (a, b){ return a.code && b.code && a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.name < b.name ? -1 : 1); });
+    return out;
+  }
+  // How many entities of a category still have NO lead (surfaced as a hint).
+  function commUnassigned(cat){
+    if (cat === 'plan') return allPlans().filter(function (p){ return p.lead_id == null; }).length;
+    if (cat === 'impact' || cat === 'outcome' || cat === 'output'){
+      var seen = {}, n = 0;
+      DB.tables.result.forEach(function (r){
+        if (r.plan_id !== S.plan || r.level !== cat) return;
+        var k = (r.sdg == null ? 0 : r.sdg) + '|' + r.statement;
+        if (seen[k]) return; seen[k] = 1;
+        if (r.owner_id == null) n++;
+      });
+      return n;
+    }
+    if (cat === 'project') return DB.tables.project.filter(function (p){ return p.plan_id === S.plan && p.lead_id == null; }).length;
+    if (cat === 'donor') return DB.tables.donor.filter(function (d){ return d.lead_id == null; }).length;
+    if (cat === 'region') return DB.tables.region.filter(function (r){ return r.lead_id == null; }).length;
+    if (cat === 'country') return DB.tables.country.filter(function (c){ return c.lead_id == null; }).length;
+    return 0;
+  }
+
+  // ---- the KPIs a report covers (the entity's scope) --------------------------
+  function commIndicators(ent){
+    var cat = ent.cat, all = DB.tables.indicator;
+    if (cat === 'plan'){
+      var pid = +ent.ref.split(':')[1];
+      return all.filter(function (i){ return indicatorPlanId(i) === pid; });
+    }
+    if (cat === 'impact' || cat === 'outcome' || cat === 'output'){
+      // every KPI under any country instance of the statement's subtree
+      var roots = DB.tables.result.filter(function (r){ return r.plan_id === S.plan && r.level === cat && r.statement === ent.stmt && (ent.sdg == null || r.sdg === ent.sdg); });
+      var byParent = {};
+      DB.tables.result.forEach(function (r){ if (r.parent_id != null) (byParent[r.parent_id] = byParent[r.parent_id] || []).push(r); });
+      var ids = {}, stack = roots.slice();
+      while (stack.length){ var n = stack.pop(); ids[n.id] = 1; (byParent[n.id] || []).forEach(function (c){ stack.push(c); }); }
+      return all.filter(function (i){ return i.result_id != null && ids[i.result_id]; });
+    }
+    if (cat === 'project'){
+      var p = ent.project;
+      var prim = (DB._idx.projectKpiByProject[p.id] || []).map(function (pk){ return DB._idx.indicatorById[pk.indicator_id]; }).filter(Boolean);
+      return prim.concat(DB._idx.secondaryByProject[p.id] || []);
+    }
+    if (cat === 'donor'){
+      var set = {}, res = [];
+      DB.tables.project.forEach(function (p){
+        if (p.donor_id !== ent.donor.id) return;
+        (DB._idx.projectKpiByProject[p.id] || []).forEach(function (pk){
+          if (!set[pk.indicator_id]){ set[pk.indicator_id] = 1; var i = DB._idx.indicatorById[pk.indicator_id]; if (i) res.push(i); }
+        });
+        (DB._idx.secondaryByProject[p.id] || []).forEach(function (i){ if (!set[i.id]){ set[i.id] = 1; res.push(i); } });
+      });
+      return res;
+    }
+    // region / country: KPIs whose programme (or project) country falls in scope, active plan
+    var isoSet = {};
+    if (cat === 'country') isoSet[ent.country.iso3] = 1;
+    else DB.tables.country.forEach(function (c){ if (c.region_id === ent.region.id) isoSet[c.iso3] = 1; });
+    return all.filter(function (i){
+      if (indicatorPlanId(i) !== S.plan) return false;
+      var iso = null;
+      if (i.result_id != null){ var r = DB._idx.resultById[i.result_id], pg = r ? DB._idx.programmeById[r.programme_id] : null; iso = pg ? pg.country_iso3 : null; }
+      else if (i.project_id != null){ var pj = DB._idx.projectById[i.project_id]; iso = pj ? pj.country_iso3 : null; }
+      return !!(iso && isoSet[iso]);
+    });
+  }
+  // A KPI snapshot AS OF the end of the report month (same maths the app uses,
+  // with the clock stopped at month end): value / progress / performance status,
+  // plus the month's own activity count and beneficiary reach.
+  function commSnapshot(ind, startISO, endISO){
+    var upto = DB.measurementsFor(ind.id).filter(function (m){ return m.date && m.date <= endISO; });
+    var inMonth = upto.filter(function (m){ return m.date >= startISO; });
+    var b = ind.baseline_value, t = ind.target_value;
+    var v = indicatorValue(ind, upto);
+    var progress = (v == null || t == null || b == null || t === b) ? null : (v - b) / (t - b);
+    var perf = progress == null ? null : progress / elapsedFraction(ind, endISO);
+    var ben = 0;
+    inMonth.forEach(function (m){ (DB._idx.benByMeasurement[m.id] || []).forEach(function (x){ ben += (+x.value || 0); }); });
+    return { value: v, progress: progress, perf: perf, code: ratioToCode(perf), acts: inMonth.length, ben: ben };
+  }
+
+  // ---- a tiny PDF writer (PDF 1.4, Helvetica, zero dependencies) --------------
+  var PDF_W = 595.28, PDF_H = 841.89;   // A4 portrait, points
+  function PdfDoc(){ this.pagesOps = []; this.ops = null; this.newPage(); }
+  PdfDoc.prototype.newPage = function (){ this.ops = []; this.pagesOps.push(this.ops); };
+  function pdfEsc(s){
+    s = String(s == null ? '' : s); var out = '';
+    for (var i = 0; i < s.length; i++){
+      var c = s.charCodeAt(i), ch = s.charAt(i);
+      if (c === 40 || c === 41 || c === 92) out += '\\' + ch;
+      else if (c === 8226) out += '-';
+      else if (c > 255) out += '?';
+      else out += ch;
+    }
+    return out;
+  }
+  function pdfCol(hex){ var r = hexToRgb(hex); return (r[0]/255).toFixed(3) + ' ' + (r[1]/255).toFixed(3) + ' ' + (r[2]/255).toFixed(3); }
+  PdfDoc.prototype.text = function (x, y, s, size, bold, color){
+    this.ops.push('BT /F' + (bold ? 2 : 1) + ' ' + size + ' Tf ' + pdfCol(color || '#1e293b') + ' rg 1 0 0 1 ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Tm (' + pdfEsc(s) + ') Tj ET');
+  };
+  PdfDoc.prototype.rect = function (x, y, w, h, color){
+    this.ops.push(pdfCol(color) + ' rg ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2) + ' re f');
+  };
+  PdfDoc.prototype.line = function (x1, y1, x2, y2, color, w){
+    this.ops.push(pdfCol(color) + ' RG ' + (w || 0.7) + ' w ' + x1.toFixed(2) + ' ' + y1.toFixed(2) + ' m ' + x2.toFixed(2) + ' ' + y2.toFixed(2) + ' l S');
+  };
+  // Helvetica width approximation (avg ~0.5em) - good enough to truncate/right-align.
+  function pdfW(s, size){ return String(s == null ? '' : s).length * size * 0.5; }
+  function pdfTrunc(s, size, maxW){
+    s = String(s == null ? '' : s);
+    if (pdfW(s, size) <= maxW) return s;
+    var n = Math.max(1, Math.floor(maxW / (size * 0.5)) - 3);
+    return s.slice(0, n) + '...';
+  }
+  function pdfWrap(s, size, maxW){
+    var words = String(s == null ? '' : s).split(/\s+/), lines = [], cur = '';
+    words.forEach(function (w){
+      var t = cur ? cur + ' ' + w : w;
+      if (pdfW(t, size) > maxW && cur){ lines.push(cur); cur = w; } else cur = t;
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  PdfDoc.prototype.build = function (){
+    var n = this.pagesOps.length, objs = [], kids = [];
+    for (var i = 0; i < n; i++) kids.push((5 + i * 2) + ' 0 R');
+    objs.push('<< /Type /Catalog /Pages 2 0 R >>');
+    objs.push('<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + n + ' >>');
+    objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    this.pagesOps.forEach(function (ops, i){
+      objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PDF_W + ' ' + PDF_H + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + (6 + i * 2) + ' 0 R >>');
+      var stream = ops.join('\n');
+      objs.push('<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream');
+    });
+    var out = '%PDF-1.4\n', offs = [0];
+    objs.forEach(function (o, i){ offs.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
+    var xref = out.length;
+    out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n';
+    for (var j = 1; j <= objs.length; j++) out += ('0000000000' + offs[j]).slice(-10) + ' 00000 n \n';
+    out += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+    return out;
+  };
+
+  // ---- build one Lead's monthly report PDF ------------------------------------
+  //  PROJECT reports drill into the project's KPIs. Every OTHER report lists
+  //  PROJECTS - grouped one level down the results chain, so a Lead reads their
+  //  scope the way the framework hangs together:
+  //    Plan -> projects under each Impact · Impact -> under each Outcome ·
+  //    Outcome -> under each Output · Region -> under each country ·
+  //    Output / Donor / Country -> a flat project list.
+  var COMM_BRAND = '#3F7E44';   // grassroots green (the wordmark's T)
+  function commProjectKpis(p){
+    var prim = (DB._idx.projectKpiByProject[p.id] || []).map(function (pk){ return DB._idx.indicatorById[pk.indicator_id]; }).filter(Boolean);
+    return prim.concat(DB._idx.secondaryByProject[p.id] || []);
+  }
+  // Projects in an entity's scope, each with the KPIs that tie it to that scope.
+  function commProjectsFor(ent){
+    var cat = ent.cat;
+    if (cat === 'plan'){
+      var pid = +ent.ref.split(':')[1];
+      return DB.tables.project.filter(function (p){ return p.plan_id === pid; })
+        .map(function (p){ return { p: p, kpis: commProjectKpis(p) }; });
+    }
+    if (cat === 'donor' || cat === 'region' || cat === 'country'){
+      var ok;
+      if (cat === 'donor') ok = function (p){ return p.donor_id === ent.donor.id; };
+      else if (cat === 'country') ok = function (p){ return p.country_iso3 === ent.country.iso3; };
+      else { var iso = {}; DB.tables.country.forEach(function (c){ if (c.region_id === ent.region.id) iso[c.iso3] = 1; }); ok = function (p){ return !!iso[p.country_iso3]; }; }
+      return DB.tables.project.filter(function (p){ return p.plan_id === S.plan && ok(p); })
+        .map(function (p){ return { p: p, kpis: commProjectKpis(p) }; });
+    }
+    // impact / outcome / output: projects reporting against KPIs in the node's subtree
+    var scope = {};
+    commIndicators(ent).forEach(function (i){ scope[i.id] = 1; });
+    var rows = [];
+    DB.tables.project.forEach(function (p){
+      if (p.plan_id !== S.plan) return;
+      var ks = commProjectKpis(p).filter(function (i){ return scope[i.id]; });
+      if (ks.length) rows.push({ p: p, kpis: ks });
+    });
+    return rows;
+  }
+  // Section groups one level down the chain; each project lands in the group it
+  // contributes the most KPIs to (so it appears exactly once). Returns null for
+  // flat categories (output / donor / country).
+  function commGroups(ent, projRows){
+    var cat = ent.cat;
+    if (cat === 'region'){
+      var by = {};
+      projRows.forEach(function (r){ var c = DB._idx.countryByIso[r.p.country_iso3]; var k = c ? c.name : (r.p.country_iso3 || '?'); (by[k] = by[k] || []).push(r); });
+      return Object.keys(by).sort().map(function (k){ return { title: k, color: null, rows: by[k] }; });
+    }
+    var level = cat === 'plan' ? 'impact' : cat === 'impact' ? 'outcome' : cat === 'outcome' ? 'output' : null;
+    if (!level) return null;
+    var planId = cat === 'plan' ? +ent.ref.split(':')[1] : S.plan;
+    var rById = DB._idx.resultById;
+    var kids = {}, order = [];
+    DB.tables.result.forEach(function (r){
+      if (r.plan_id !== planId || r.level !== level) return;
+      if (cat !== 'plan'){
+        var par = rById[r.parent_id];
+        if (!par || par.statement !== ent.stmt || (ent.sdg != null && par.sdg !== ent.sdg)) return;
+      }
+      var k = (r.sdg == null ? 0 : r.sdg) + '|' + r.statement;
+      if (!kids[k]){
+        kids[k] = { key: k, title: (r.code ? r.code + ' - ' : '') + (level === 'impact' ? (r.pillar_name || r.statement) : r.statement),
+          color: level === 'impact' ? (r.pillar_color || PILLAR_COLORS[r.sdg] || '#94a3b8') : null, ids: {}, rows: [] };
+        order.push(kids[k]);
+      }
+    });
+    // each group's KPI id-set via its subtree (byParent built once per report)
+    var byParent = {};
+    DB.tables.result.forEach(function (r){ if (r.parent_id != null) (byParent[r.parent_id] = byParent[r.parent_id] || []).push(r); });
+    DB.tables.result.forEach(function (r){
+      if (r.plan_id !== planId || r.level !== level) return;
+      var g = kids[(r.sdg == null ? 0 : r.sdg) + '|' + r.statement]; if (!g) return;
+      var stack = [r];
+      while (stack.length){
+        var n = stack.pop();
+        (DB._idx.indicatorByResult[n.id] || []).forEach(function (i){ g.ids[i.id] = 1; });
+        (byParent[n.id] || []).forEach(function (c){ stack.push(c); });
+      }
+    });
+    var other = { title: 'Project-specific KPIs (no framework parent)', color: null, rows: [] };
+    projRows.forEach(function (row){
+      var best = null, bestN = 0;
+      order.forEach(function (g){
+        var n = 0; row.kpis.forEach(function (i){ if (g.ids[i.id]) n++; });
+        if (n > bestN){ bestN = n; best = g; }
+      });
+      (best || other).rows.push(row);
+    });
+    var out = order.filter(function (g){ return g.rows.length; });
+    out.sort(function (a, b){ return a.title < b.title ? -1 : 1; });
+    if (other.rows.length) out.push(other);
+    return out;
+  }
+  // A project's monthly snapshot: mean KPI progress/performance as of month end,
+  // plus the activities logged and people reached during the month.
+  function commProjectSnap(row, startISO, endISO){
+    var progs = [], perfs = [];
+    row.kpis.forEach(function (ind){
+      var s = commSnapshot(ind, startISO, endISO);
+      if (s.progress != null){ progs.push(s.progress); perfs.push(s.perf); }
+    });
+    var acts = 0, ben = 0;
+    (DB._idx.measByProject[row.p.id] || []).forEach(function (m){
+      if (m.date && m.date >= startISO && m.date <= endISO){ acts++; ben += benTotalFor(m.id); }
+    });
+    function avg(a){ var s = 0; a.forEach(function (x){ s += x; }); return a.length ? s / a.length : null; }
+    var progress = avg(progs), perf = avg(perfs);
+    return { progress: progress, perf: perf, code: progress == null ? 'nodata' : ratioToCode(perf), acts: acts, ben: ben };
+  }
+  function commBuildPdf(ent, year, month){
+    var startISO = year + '-' + p2(month) + '-01';
+    var lastDay = new Date(year, month, 0).getDate();
+    var endISO = year + '-' + p2(month) + '-' + p2(lastDay);
+    var period = MONTH_NAMES[month - 1] + ' ' + year;
+    var asOf = lastDay + ' ' + MONTH_NAMES[month - 1] + ' ' + year;
+    var leadNm = userName(ent.leadId);
+    var catLabel = commCatOne(ent.cat);
+    var projMode = ent.cat !== 'project';
+    var snaps = null, projRows = null, groups = null, total;
+    var acts = 0, ben = 0, counts = { blue:0, green:0, amber:0, red:0, maroon:0, nodata:0 };
+    if (projMode){
+      projRows = commProjectsFor(ent);
+      projRows.forEach(function (row){ row.s = commProjectSnap(row, startISO, endISO); });
+      projRows.sort(function (a, b){ return String(a.p.code || a.p.name) < String(b.p.code || b.p.name) ? -1 : 1; });
+      groups = commGroups(ent, projRows);
+      projRows.forEach(function (row){ acts += row.s.acts; ben += row.s.ben; counts[row.s.code]++; });
+      total = projRows.length;
+    } else {
+      var inds = commIndicators(ent);
+      snaps = inds.map(function (ind){ return { ind: ind, s: commSnapshot(ind, startISO, endISO) }; });
+      snaps.sort(function (a, b){ return String(a.ind.code || '') < String(b.ind.code || '') ? -1 : 1; });
+      snaps.forEach(function (x){ acts += x.s.acts; ben += x.s.ben; counts[x.s.code]++; });
+      total = snaps.length;
+    }
+    var noun = projMode ? 'project' : 'KPI';
+    var withData = total - counts.nodata, onTrack = counts.blue + counts.green;
+
+    var doc = new PdfDoc(), M = 46, y;
+    var ink = '#1e293b', mut = '#64748b', faint = '#f1f5f9';
+    // header band
+    doc.rect(0, PDF_H - 92, PDF_W, 92, COMM_BRAND);
+    doc.rect(0, PDF_H - 96, PDF_W, 4, '#FCC30B');   // a grassroots accent root-line
+    doc.text(M, PDF_H - 40, 'THE GRASSROOTS', 17, true, '#ffffff');
+    doc.text(M, PDF_H - 58, 'Monthly Results Report', 10.5, false, '#e7f0e9');
+    var pw = pdfW(period, 15);
+    doc.text(PDF_W - M - pw, PDF_H - 40, period, 15, true, '#ffffff');
+    var scopeTxt = catLabel.toUpperCase() + (ent.code ? ' - ' + ent.code : '');
+    doc.text(PDF_W - M - pdfW(scopeTxt, 8.5), PDF_H - 57, scopeTxt, 8.5, false, '#e7f0e9');
+    // prepared-for block
+    y = PDF_H - 126;
+    doc.text(M, y, 'PREPARED FOR', 7, true, mut);
+    doc.text(M, y - 15, leadNm, 12.5, true, ink);
+    doc.text(M, y - 28, leadEmail(ent.leadId), 8.5, false, mut);
+    doc.text(300, y, 'SCOPE', 7, true, mut);
+    doc.text(300, y - 15, pdfTrunc((ent.code ? ent.code + ' - ' : '') + ent.name, 10.5, PDF_W - M - 300), 10.5, true, ink);
+    doc.text(300, y - 28, catLabel + ' - as of ' + asOf, 8.5, false, mut);
+    // narrative
+    y -= 50;
+    var grouping = ent.cat === 'plan' ? ' Projects are grouped by the Impact they contribute to.'
+      : ent.cat === 'impact' ? ' Projects are grouped by the Outcome they contribute to.'
+      : ent.cat === 'outcome' ? ' Projects are grouped by the Output they contribute to.'
+      : ent.cat === 'region' ? ' Projects are grouped by country.' : '';
+    var story = 'During ' + period + ', ' + fmt(acts) + ' activit' + (acts === 1 ? 'y was' : 'ies were') + ' logged across the ' + total +
+      ' ' + noun + (total === 1 ? '' : 's') + ' in this scope, reaching ' + fmt(ben) + ' people. ' +
+      (withData ? onTrack + ' of ' + withData + ' ' + noun + 's with data are on or over track.' : 'No data has been reported in this scope yet.') + grouping;
+    pdfWrap(story, 9.5, PDF_W - 2 * M).forEach(function (ln){ doc.text(M, y, ln, 9.5, false, ink); y -= 13; });
+    // summary cards
+    y -= 10;
+    var cards = [
+      { v: fmt(total), l: noun.toUpperCase() + 'S IN SCOPE', c: COMM_BRAND },
+      { v: fmt(acts), l: 'ACTIVITIES THIS MONTH', c: '#2563eb' },
+      { v: fmt(ben), l: 'PEOPLE REACHED', c: '#9D7BEE' },
+      { v: withData ? Math.round(100 * onTrack / withData) + '%' : '–', l: 'ON / OVER TRACK', c: '#16a34a' }
+    ];
+    var cw = (PDF_W - 2 * M - 3 * 10) / 4;
+    cards.forEach(function (cd, i){
+      var cx = M + i * (cw + 10);
+      doc.rect(cx, y - 46, cw, 46, faint);
+      doc.rect(cx, y - 46, 2.5, 46, cd.c);
+      doc.text(cx + 10, y - 20, cd.v, 14, true, cd.c);
+      doc.text(cx + 10, y - 36, cd.l, 6.5, true, mut);
+    });
+    y -= 66;
+    // status distribution bar
+    doc.text(M, y, 'PERFORMANCE STATUS', 7, true, mut);
+    y -= 12;
+    var order = ['blue','green','amber','red','maroon','nodata'], barW = PDF_W - 2 * M, bx = M;
+    if (total){
+      order.forEach(function (k){
+        var w = barW * counts[k] / total;
+        if (w > 0){ doc.rect(bx, y - 9, w, 9, STATUS[k].c); bx += w; }
+      });
+    } else doc.rect(M, y - 9, barW, 9, faint);
+    y -= 22;
+    var lx = M;
+    order.forEach(function (k){
+      if (!counts[k]) return;
+      doc.rect(lx, y - 1.5, 6, 6, STATUS[k].c);
+      var lbl = STATUS[k].label + ' ' + counts[k];
+      doc.text(lx + 9, y, lbl, 7.5, false, mut);
+      lx += 9 + pdfW(lbl, 7.5) + 14;
+    });
+    y -= 24;
+    // table columns per mode (KPI drill-down for a project; projects otherwise).
+    // The STATUS pill is NOT a flowed column - it anchors to the table's right
+    // edge, leaving clear air after the right-aligned PROG/PERF numbers.
+    var cols = projMode ? [
+      { t:'CODE', w:54 }, { t:'PROJECT', w:126 }, { t:'COUNTRY', w:52 }, { t:'DONOR', w:34 },
+      { t:'BUDGET', w:42, r:1 }, { t:'KPIS', w:26, r:1 }, { t:'ACT', w:24, r:1 }, { t:'PROG %', w:32, r:1 }, { t:'PERF %', w:32, r:1 }
+    ] : [
+      { t:'CODE', w:58 }, { t:'KPI', w:150 }, { t:'UNIT', w:28 }, { t:'BASE', w:40, r:1 },
+      { t:'TARGET', w:40, r:1 }, { t:'VALUE', w:40, r:1 }, { t:'PROG %', w:32, r:1 }, { t:'PERF %', w:32, r:1 }
+    ];
+    var pillW = 50, pillX = PDF_W - M - pillW;
+    function tableHead(){
+      var x = M;
+      cols.forEach(function (c){ doc.text(c.r ? x + c.w - pdfW(c.t, 6) : x, y, c.t, 6, true, mut); x += c.w; });
+      doc.text(PDF_W - M - pdfW('STATUS', 6), y, 'STATUS', 6, true, mut);
+      y -= 5; doc.line(M, y, PDF_W - M, y, '#cbd5e1', 0.8); y -= 13;
+    }
+    function pageBreak(need){
+      if (y >= need) return;
+      doc.newPage(); y = PDF_H - 54;
+      doc.text(M, y, pdfTrunc(ent.name, 9, 330) + ' - ' + period + ' (continued)', 9, true, mut);
+      y -= 20; tableHead();
+    }
+    function footer(){
+      doc.pagesOps.forEach(function (ops, i){
+        var save = doc.ops; doc.ops = ops;
+        doc.line(M, 42, PDF_W - M, 42, '#e2e8f0', 0.6);
+        doc.text(M, 30, 'The Grassroots - ' + catLabel + ' report - ' + pdfTrunc(ent.name, 7.5, 260) + ' - ' + period, 7.5, false, mut);
+        var pg = 'Page ' + (i + 1) + ' of ' + doc.pagesOps.length;
+        doc.text(PDF_W - M - pdfW(pg, 7.5), 30, pg, 7.5, false, mut);
+        doc.ops = save;
+      });
+    }
+    var MAXROWS = 150, shown = 0, truncated = 0;
+    function statusPill(code){
+      doc.rect(pillX, y - 2.5, pillW, 10.5, STATUS[code].c);
+      var slb = STATUS[code].label.toUpperCase();
+      doc.text(pillX + (pillW - pdfW(slb, 5.5)) / 2, y, slb, 5.5, true, '#ffffff');
+    }
+    function drawCells(cells, code){
+      pageBreak(62);
+      if (shown % 2 === 1) doc.rect(M - 4, y - 4, PDF_W - 2 * M + 8, 14.5, '#f8fafc');
+      var x = M;
+      cells.forEach(function (c, j){
+        var col = cols[j];
+        doc.text(col.r ? x + col.w - pdfW(String(c), 7) : x, y, String(c), 7, j === 0, j === 0 ? mut : ink);
+        x += col.w;
+      });
+      statusPill(code);
+      y -= 15.5; shown++;
+    }
+    function pct(v){ return v == null ? '–' : Math.round(v * 100) + '%'; }
+    function drawProjRow(row){
+      if (shown >= MAXROWS){ truncated++; return; }
+      var p = row.p, s = row.s;
+      var co = DB._idx.countryByIso[p.country_iso3], dn = DB._idx.donorById[p.donor_id];
+      drawCells([
+        p.code || '', pdfTrunc(p.name, 7, cols[1].w - 6), pdfTrunc(co ? co.name : (p.country_iso3 || ''), 7, cols[2].w - 4),
+        dn ? (dn.short_name || '') : '', p.budget_usd != null ? '$' + fmtCompact(p.budget_usd) : '–',
+        String(row.kpis.length), String(s.acts),
+        pct(s.progress), pct(s.perf)
+      ], s.code);
+    }
+    function groupHeader(g){
+      if (y < 110){ doc.newPage(); y = PDF_H - 54; }
+      doc.rect(M - 4, y - 3, 2.5, 11.5, g.color || '#94a3b8');
+      doc.text(M + 4, y, pdfTrunc(g.title, 9.5, 370), 9.5, true, ink);
+      var cnt = g.rows.length + ' project' + (g.rows.length === 1 ? '' : 's');
+      doc.text(PDF_W - M - pdfW(cnt, 7.5), y, cnt, 7.5, false, mut);
+      y -= 16; tableHead();
+    }
+    if (projMode){
+      if (groups) groups.forEach(function (g){ groupHeader(g); g.rows.forEach(drawProjRow); y -= 6; });
+      else { tableHead(); projRows.forEach(drawProjRow); }
+      if (truncated) doc.text(M, y, '... and ' + truncated + ' more projects - open The Grassroots for the full list.', 8.5, false, mut);
+      if (!projRows.length) doc.text(M, y, 'No projects fall in this scope for the active plan.', 9, false, mut);
+    } else {
+      tableHead();
+      for (var i = 0; i < snaps.length; i++){
+        if (shown >= MAXROWS){
+          doc.text(M, y, '... and ' + (snaps.length - shown) + ' more KPIs - open The Grassroots for the full list.', 8.5, false, mut);
+          break;
+        }
+        var sn = snaps[i], ind = sn.ind, s = sn.s;
+        drawCells([
+          ind.code || '', pdfTrunc(ind.name, 7, cols[1].w - 6), ind.unit || '',
+          fmtNum(ind.baseline_value), fmtNum(ind.target_value),
+          s.value == null ? '–' : fmtNum(s.value),
+          pct(s.progress), pct(s.perf)
+        ], s.code);
+      }
+      if (!snaps.length) doc.text(M, y, 'No KPIs fall in this scope for the active plan.', 9, false, mut);
+    }
+    footer();
+    return {
+      b64: btoa(doc.build()),
+      summary: total + ' ' + noun + (total === 1 ? '' : 's') + ' - ' + fmt(acts) + ' activities - ' + fmt(ben) + ' people reached'
+    };
+  }
+
+  // ---- report rows (the `report` table) ---------------------------------------
+  function commFindReport(ref, y, m){
+    return DB.tables.report.filter(function (r){ return r.ref === ref && r.year === y && r.month === m; })[0];
+  }
+  function commGenerate(ent, y, m){
+    var built = commBuildPdf(ent, y, m);
+    var rep = commFindReport(ent.ref, y, m), now = new Date().toISOString();
+    if (rep){
+      rep.category = ent.cat; rep.ref_name = ent.name; rep.lead_id = ent.leadId;
+      rep.generated = now; rep.sent = null; rep.summary = built.summary; rep.pdf = built.b64;
+      return DB.persist('report', [rep]);
+    }
+    return DB.insert('report', { category: ent.cat, ref: ent.ref, ref_name: ent.name, lead_id: ent.leadId,
+      year: y, month: m, enabled: 1, generated: now, sent: null, summary: built.summary, pdf: built.b64 });
+  }
+  function commFileName(rep){
+    var safe = String(rep.ref_name || 'report').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    return 'Grassroots_' + cap(rep.category) + '_' + safe + '_' + rep.year + '-' + p2(rep.month) + '.pdf';
+  }
+  function commPdfBlobUrl(rep){
+    var bin = atob(rep.pdf), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
+  }
+
+  // ---- email template ({PLACEHOLDER} substitution; editable, persisted) --------
+  var COMM_TPL_KEY = 'gr_email_tpl_v1';
+  function commDefaultTpl(){
+    return {
+      subject: 'Your {MONTH} {YEAR} results report - {ENTITY}',
+      body: 'Dear {LEAD},\n\n' +
+        'I hope this finds you well. Attached is your monthly results report for {MONTH} {YEAR}, covering {ENTITY} - the {CATEGORY} you lead on The Grassroots.\n\n' +
+        'The month at a glance: {SUMMARY}. Inside you will find each KPI\'s value against its baseline and target, its progress, and its performance status as of the end of {MONTH}, alongside the activities logged and the people reached during the month.\n\n' +
+        'If anything looks off - or you would like the underlying activity detail - just reply to this email, or open The Grassroots and drill into your scope.\n\n' +
+        'Thank you for everything you and your team put into this. It shows.\n\n' +
+        'Warm regards,\n{SENDER}\nThe Grassroots - Monitoring & Evaluation'
+    };
+  }
+  function commTpl(){
+    try {
+      var t = JSON.parse(localStorage.getItem(COMM_TPL_KEY));
+      if (t && t.subject != null && t.body != null) return t;
+    } catch (e) {}
+    return commDefaultTpl();
+  }
+  function commFill(s, ent, rep){
+    var catLabel = commCatOne(ent.cat);
+    return String(s)
+      .replace(/\{LEAD\}/g, userName(ent.leadId))
+      .replace(/\{MONTH\}/g, MONTH_NAMES[COMM.month - 1])
+      .replace(/\{YEAR\}/g, String(COMM.year))
+      .replace(/\{ENTITY\}/g, (ent.code ? ent.code + ' - ' : '') + ent.name)
+      .replace(/\{CATEGORY\}/g, catLabel)
+      .replace(/\{SUMMARY\}/g, rep && rep.summary ? rep.summary : 'KPI progress, performance and reach for the period')
+      .replace(/\{SENDER\}/g, CURRENT_USER ? CURRENT_USER.name : 'The Grassroots Team');
+  }
+
+  // ---- panel rendering ---------------------------------------------------------
+  function openComms(){
+    if (COMM.year == null){ var d = commDefaultPeriod(); COMM.year = d.year; COMM.month = d.month; }
+    renderCommBar(); renderCommTabs(); renderComm();
+    $('#commModal').classList.add('on');
+  }
+  function closeComms(){ $('#commModal').classList.remove('on'); }
+  function commYears(){
+    var min = 2100, max = 2000;
+    allPlans().forEach(function (p){
+      if (p.start_date) min = Math.min(min, +p.start_date.slice(0, 4));
+      if (p.end_date) max = Math.max(max, +p.end_date.slice(0, 4));
+    });
+    if (min > max){ min = 2021; max = 2030; }
+    max = Math.min(max, commNow().y);   // never offer a future year
+    if (min > max) min = max;
+    var out = []; for (var y = min; y <= max; y++) out.push(y);
+    return out;
+  }
+  function renderCommBar(){
+    var bar = $('#commBar'); bar.innerHTML = '';
+    var ro = !canEditFramework();
+    // clamp any future selection back to the current month (defence in depth -
+    // the dropdowns below never offer a future period)
+    var now = commNow();
+    if (commIsFuture(COMM.year, COMM.month)){ COMM.year = now.y; COMM.month = now.m; }
+    var lbl = el('span', 'comm-lbl', 'Reporting period');
+    var ySel = el('select', 'comm-sel comm-year');
+    ySel.innerHTML = commYears().map(function (y){ return '<option value="' + y + '"' + (y === COMM.year ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+    var mSel = el('select', 'comm-sel comm-month');
+    mSel.innerHTML = MONTH_NAMES.map(function (m, i){
+      var future = commIsFuture(COMM.year, i + 1);
+      return '<option value="' + (i + 1) + '"' + (i + 1 === COMM.month ? ' selected' : '') + (future ? ' disabled' : '') + '>' + m + (future ? ' ·' : '') + '</option>';
+    }).join('');
+    ySel.onchange = function (){
+      COMM.year = +ySel.value;
+      if (commIsFuture(COMM.year, COMM.month)) COMM.month = now.m;   // e.g. December selected, then the current year chosen
+      renderCommBar(); renderComm();
+    };
+    mSel.onchange = function (){ COMM.month = +mSel.value; renderCommBar(); renderComm(); };
+    var gen = el('button', 'hbtn primary comm-genall', '⚙ Generate ' + commPeriodLabel() + ' reports');
+    gen.title = 'Build (or rebuild) the monthly PDF for every enabled Lead in every category';
+    gen.onclick = commGenerateAll;
+    var send = el('button', 'hbtn comm-sendall', '📤 Send all by email');
+    send.title = 'Email every enabled, generated ' + commPeriodLabel() + ' report to its Lead';
+    send.onclick = commSendAll;
+    var msg = el('span', 'comm-msg'); msg.id = 'commMsg';
+    bar.appendChild(lbl); bar.appendChild(mSel); bar.appendChild(ySel);
+    if (!ro){ bar.appendChild(gen); bar.appendChild(send); }
+    bar.appendChild(msg);
+  }
+  function renderCommTabs(){
+    var tabs = $('#commTabs'); tabs.innerHTML = '';
+    COMM_CATS.forEach(function (c){
+      var n = commEntities(c.key).length;
+      var b = el('button', COMM.tab === c.key ? 'on' : '', c.label + (n ? ' ' : ''));
+      if (n){ var ct = el('span', 'comm-count', String(n)); b.appendChild(ct); }
+      b.dataset.commtab = c.key;
+      tabs.appendChild(b);
+    });
+    var em = el('button', 'comm-mailtab' + (COMM.tab === 'email' ? ' on' : ''), '✉ Email draft');
+    em.dataset.commtab = 'email';
+    tabs.appendChild(em);
+  }
+  function commStatusChip(rep){
+    if (rep && rep.enabled === 0) return '<span class="comm-chip off">Disabled</span>';
+    if (rep && rep.sent) return '<span class="comm-chip sent">✓ Sent ' + esc(commWhen(rep.sent)) + '</span>';
+    if (rep && rep.pdf) return '<span class="comm-chip ready">● Ready ' + esc(commWhen(rep.generated)) + '</span>';
+    return '<span class="comm-chip none">– Not generated</span>';
+  }
+  function renderComm(){
+    var body = $('#commBody'); body.innerHTML = '';
+    if (!canEditFramework()){
+      body.appendChild(el('div', 'cp-note', 'Communication is limited to Admin status.'));
+      return;
+    }
+    if (COMM.tab === 'email'){ body.appendChild(commEmailEditor()); return; }
+    var cat = COMM.tab, ents = commEntities(cat), un = commUnassigned(cat);
+    var catDef = COMM_CATS.filter(function (c){ return c.key === cat; })[0];
+    var note = el('div', 'cp-note');
+    var contentTxt = cat === 'project' ? 'the project\'s KPIs'
+      : cat === 'plan' ? 'the plan\'s projects, grouped by Impact'
+      : cat === 'impact' ? 'the projects contributing to it, grouped by Outcome'
+      : cat === 'outcome' ? 'the projects contributing to it, grouped by Output'
+      : cat === 'region' ? 'the region\'s projects, grouped by country'
+      : 'its projects';
+    note.innerHTML = 'Each row is one <b>' + commCatOne(cat) + '</b> with a Lead, and the monthly PDF report they will receive for <b>' +
+      esc(commPeriodLabel()) + '</b>. The report shows ' + contentTxt + ' - point-in-time snapshots of the same results the app derives: progress and performance as of month end, plus the month\'s activities and reach.' +
+      (un ? ' <b>' + un + '</b> ' + (un === 1 ? 'entry has' : 'entries have') + ' no Lead yet - assign them to include them here.' : '');
+    body.appendChild(note);
+    if (!ents.length){
+      body.appendChild(el('div', 'cp-empty', 'No ' + catDef.label.toLowerCase() + ' have a Lead assigned yet.'));
+      return;
+    }
+    var tbl = el('table', 'utbl commtbl');
+    tbl.innerHTML = '<thead><tr><th>Lead</th><th>' + esc(commCatOne(cat)) + '</th><th>' + (cat === 'project' ? 'KPIs' : 'Projects') + '</th><th>Report</th><th></th></tr></thead>';
+    var tb = el('tbody');
+    ents.forEach(function (ent){ tb.appendChild(commRow(ent)); });
+    tbl.appendChild(tb); body.appendChild(tbl);
+  }
+  function commRow(ent){
+    var rep = commFindReport(ent.ref, COMM.year, COMM.month);
+    var enabled = !rep || rep.enabled !== 0;
+    var u = DB._idx.userById[ent.leadId];
+    var tr = el('tr', enabled ? '' : 'comm-off');
+    tr.innerHTML =
+      '<td><span class="udot" style="background:' + (u ? userColor(u) : '#94a3b8') + '"></span>' + esc(userName(ent.leadId)) +
+        '<div class="comm-email">' + esc(leadEmail(ent.leadId)) + '</div></td>' +
+      '<td>' + (ent.code ? '<span class="umono">' + esc(ent.code) + '</span> · ' : '') + esc(ent.name) + '</td>' +
+      '<td class="umono">' + (ent.cat === 'project' ? commIndicators(ent).length : commProjectsFor(ent).length) + '</td>' +
+      '<td>' + commStatusChip(rep) + '</td>';
+    var act = el('td', 'uact comm-act');
+    function btn(txt, title, fn, disabled){
+      var b = el('button', 'cp-mini', txt); b.title = title; b.disabled = !!disabled;
+      b.onclick = fn; act.appendChild(b); return b;
+    }
+    var future = commIsFuture(COMM.year, COMM.month);
+    btn(rep && rep.pdf ? '⟳' : '⚙', future ? commPeriodLabel() + ' hasn\'t happened yet' : (rep && rep.pdf ? 'Regenerate this report from current data' : 'Generate this report'), function (){
+      if (commIsFuture(COMM.year, COMM.month)) return;
+      Promise.resolve(commGenerate(ent, COMM.year, COMM.month)).then(renderComm);
+    }, !enabled || future);
+    btn('👁', 'View PDF', function (){ if (rep && rep.pdf) window.open(commPdfBlobUrl(rep), '_blank'); }, !(rep && rep.pdf));
+    btn('⬇', 'Download PDF', function (){
+      if (!(rep && rep.pdf)) return;
+      var a = document.createElement('a'); a.href = commPdfBlobUrl(rep); a.download = commFileName(rep); a.click();
+    }, !(rep && rep.pdf));
+    btn(enabled ? '✓' : '✗', enabled ? 'Enabled - click to exclude from batch generate & send' : 'Disabled - click to include again', function (){
+      if (rep){ rep.enabled = enabled ? 0 : 1; Promise.resolve(DB.persist('report', [rep])).then(renderComm); }
+      else Promise.resolve(DB.insert('report', { category: ent.cat, ref: ent.ref, ref_name: ent.name, lead_id: ent.leadId,
+        year: COMM.year, month: COMM.month, enabled: 0, generated: null, sent: null, summary: null, pdf: null })).then(renderComm);
+    });
+    btn('🗑', 'Delete this generated report', function (){
+      if (rep) Promise.resolve(DB.remove('report', [rep.id])).then(renderComm);
+    }, !rep);
+    tr.appendChild(act);
+    return tr;
+  }
+
+  // ---- batch generate & send (chunked so the UI stays alive) -------------------
+  function commAllEnts(){
+    var out = [];
+    COMM_CATS.forEach(function (c){ out = out.concat(commEntities(c.key)); });
+    return out;
+  }
+  function commGenerateAll(){
+    if (COMM.busy) return;
+    if (commIsFuture(COMM.year, COMM.month)){ commSay('⛔ ' + commPeriodLabel() + ' hasn\'t happened yet - reports cover completed or current months only.'); return; }
+    var ents = commAllEnts().filter(function (ent){
+      var rep = commFindReport(ent.ref, COMM.year, COMM.month);
+      return !rep || rep.enabled !== 0;
+    });
+    if (!ents.length){ commSay('Nothing to generate - no Leads assigned yet.'); return; }
+    COMM.busy = true;
+    var i = 0;
+    function step(){
+      // batch the DB writes per chunk - DB.insert/persist rebuild indexes per call,
+      // so one call per chunk (not per report) keeps 170+ reports fast
+      var n = Math.min(i + 20, ents.length), news = [], upds = [], now = new Date().toISOString();
+      for (; i < n; i++){
+        var ent = ents[i], built = commBuildPdf(ent, COMM.year, COMM.month);
+        var rep = commFindReport(ent.ref, COMM.year, COMM.month);
+        if (rep){
+          rep.category = ent.cat; rep.ref_name = ent.name; rep.lead_id = ent.leadId;
+          rep.generated = now; rep.sent = null; rep.summary = built.summary; rep.pdf = built.b64;
+          upds.push(rep);
+        } else {
+          news.push({ category: ent.cat, ref: ent.ref, ref_name: ent.name, lead_id: ent.leadId,
+            year: COMM.year, month: COMM.month, enabled: 1, generated: now, sent: null, summary: built.summary, pdf: built.b64 });
+        }
+      }
+      if (news.length) DB.insert('report', news);
+      if (upds.length) DB.persist('report', upds);
+      commSay('Generating ' + commPeriodLabel() + ' reports… ' + i + ' / ' + ents.length);
+      if (i < ents.length) setTimeout(step, 10);
+      else { COMM.busy = false; commSay('✓ ' + ents.length + ' reports generated for ' + commPeriodLabel() + '.'); renderComm(); }
+    }
+    step();
+  }
+  function commSendAll(){
+    if (COMM.busy) return;
+    if (commIsFuture(COMM.year, COMM.month)){ commSay('⛔ ' + commPeriodLabel() + ' hasn\'t happened yet - reports cover completed or current months only.'); return; }
+    var reps = DB.tables.report.filter(function (r){ return r.year === COMM.year && r.month === COMM.month && r.enabled !== 0 && r.pdf; });
+    if (!reps.length){ commSay('No generated reports for ' + commPeriodLabel() + ' - hit Generate first.'); return; }
+    var leads = {}; reps.forEach(function (r){ if (r.lead_id != null) leads[r.lead_id] = 1; });
+    var nLeads = Object.keys(leads).length;
+    if (!confirm('Email ' + reps.length + ' ' + commPeriodLabel() + ' report' + (reps.length === 1 ? '' : 's') + ' to ' + nLeads + ' lead' + (nLeads === 1 ? '' : 's') + ', each with their PDF attached?')) return;
+    // marking sent is cheap - do it in one pass (a chained-timeout animation
+    // would be throttled to a crawl in a backgrounded tab)
+    var now = new Date().toISOString();
+    reps.forEach(function (r){ r.sent = now; });
+    Promise.resolve(DB.persist('report', reps)).then(function (){
+      commSay('✓ ' + reps.length + ' reports emailed to ' + nLeads + ' leads. (Demo build: sends are recorded here - no mail server is connected.)');
+      renderComm();
+    });
+  }
+  function commSay(html){ var m = $('#commMsg'); if (m) m.innerHTML = html; }
+
+  // ---- Email draft tab: edit the template, preview a real example --------------
+  function commEmailEditor(){
+    var box = el('div', 'comm-mail');
+    var tpl = commTpl();
+    var left = el('div', 'comm-mail-edit');
+    left.appendChild(elHTML('div', 'cp-note', 'This is the email every Lead receives - their PDF rides along as an attachment. Placeholders fill in per lead: <b>{LEAD}</b> · <b>{MONTH}</b> · <b>{YEAR}</b> · <b>{ENTITY}</b> · <b>{CATEGORY}</b> · <b>{SUMMARY}</b> · <b>{SENDER}</b>.'));
+    var subj = el('input', 'comm-subj'); subj.type = 'text'; subj.value = tpl.subject;
+    var subjLab = el('label', 'comm-field'); subjLab.appendChild(el('span', '', 'Subject')); subjLab.appendChild(subj);
+    var bodyTa = el('textarea', 'comm-body'); bodyTa.rows = 16; bodyTa.value = tpl.body;
+    var bodyLab = el('label', 'comm-field'); bodyLab.appendChild(el('span', '', 'Body')); bodyLab.appendChild(bodyTa);
+    var btns = el('div', 'ufbtns');
+    var msg = el('span', 'ufmsg');
+    var reset = el('button', 'hbtn', 'Reset to default');
+    var save = el('button', 'hbtn primary', 'Save template');
+    save.onclick = function (){
+      try { localStorage.setItem(COMM_TPL_KEY, JSON.stringify({ subject: subj.value, body: bodyTa.value })); } catch (e) {}
+      msg.textContent = 'Template saved.'; preview();
+    };
+    reset.onclick = function (){
+      try { localStorage.removeItem(COMM_TPL_KEY); } catch (e) {}
+      var d = commDefaultTpl(); subj.value = d.subject; bodyTa.value = d.body;
+      msg.textContent = 'Back to the default template.'; preview();
+    };
+    btns.appendChild(msg); btns.appendChild(reset); btns.appendChild(save);
+    left.appendChild(subjLab); left.appendChild(bodyLab); left.appendChild(btns);
+    // live preview against a real lead (first entity that has one)
+    var right = el('div', 'comm-mail-prev');
+    function sampleEnt(){
+      for (var i = 0; i < COMM_CATS.length; i++){
+        var e = commEntities(COMM_CATS[i].key);
+        if (e.length) return e[0];
+      }
+      return null;
+    }
+    function preview(){
+      right.innerHTML = '';
+      var ent = sampleEnt();
+      if (!ent){ right.appendChild(el('div', 'cp-empty', 'Assign a Lead somewhere to preview the email.')); return; }
+      var rep = commFindReport(ent.ref, COMM.year, COMM.month);
+      var head = el('div', 'comm-prev-head');
+      head.innerHTML =
+        '<div class="comm-prev-lbl">PREVIEW - as ' + esc(userName(ent.leadId)) + ' will receive it</div>' +
+        '<div class="comm-prev-row"><b>From</b> ' + esc((CURRENT_USER ? CURRENT_USER.name : 'The Grassroots') + ' <' + (CURRENT_USER ? CURRENT_USER.username : 'noreply') + '@thegrassroots.org>') + '</div>' +
+        '<div class="comm-prev-row"><b>To</b> ' + esc(userName(ent.leadId) + ' <' + leadEmail(ent.leadId) + '>') + '</div>' +
+        '<div class="comm-prev-row comm-prev-subj"><b>Subject</b> ' + esc(commFill(subj.value, ent, rep)) + '</div>';
+      var bod = el('div', 'comm-prev-body');
+      commFill(bodyTa.value, ent, rep).split(/\n{2,}/).forEach(function (par){
+        var p = el('p', '', ''); p.textContent = par; bod.appendChild(p);
+      });
+      var att = el('div', 'comm-prev-att');
+      att.innerHTML = '<span class="comm-att-ic">📄</span><span>' + esc(commFileName({ category: ent.cat, ref_name: ent.name, year: COMM.year, month: COMM.month })) + '</span><span class="comm-att-k">PDF</span>';
+      right.appendChild(head); right.appendChild(bod); right.appendChild(att);
+    }
+    subj.oninput = preview; bodyTa.oninput = preview;
+    preview();
+    box.appendChild(left); box.appendChild(right);
+    return box;
   }
 
   // =========================================================================
@@ -3972,21 +4868,27 @@
       '<button class="hbtn primary fw-save" type="button">' + saveLabel + '</button></div>';
   }
   // Rename any Impact / Outcome / Output statement across every country instance.
+  // Impacts and Outcomes also carry a Lead (accountable user, stored as
+  // result.owner_id) - selectable here from the user list, never free-typed.
   function openFwRename(labelText, level, stmt, pillar){
     openFwPopup('Edit ' + labelText, function (){
+      var withLead = level === 'impact' || level === 'outcome';
+      var curLead = withLead ? frameworkLeadId(level, stmt, pillar) : null;
       var f = el('div', 'uform');
       f.innerHTML =
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
         '  <label><span>' + esc(labelText) + ' statement</span><input class="fw-stmt" type="text"></label>' +
+        (withLead ? '  <label><span>Lead</span><select class="fw-lead">' + userOptions(curLead, ['hq','co']) + '</select></label>' : '') +
         '</div>' + fwButtons('Save changes');
       f.querySelector('.fw-stmt').value = stmt;
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
       f.querySelector('.fw-save').onclick = function (){
         var v = f.querySelector('.fw-stmt').value.trim();
+        var leadId = withLead ? (f.querySelector('.fw-lead').value ? +f.querySelector('.fw-lead').value : null) : undefined;
         if (!v){ f.querySelector('.ufmsg').textContent = 'Statement is required.'; return; }
-        if (v === stmt){ closeFwEdit(); return; }
+        if (v === stmt && (!withLead || leadId === curLead)){ closeFwEdit(); return; }
         f.querySelector('.ufmsg').textContent = 'Saving…';
-        applyMutation(renameResults(level, stmt, v, pillar));
+        applyMutation(updateResults(level, stmt, pillar, v, leadId));
       };
       return f;
     });
@@ -3997,13 +4899,15 @@
       f.innerHTML =
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
         '  <label><span>New outcome statement</span><input class="fw-ostmt" type="text" placeholder="What this outcome will achieve"></label>' +
+        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(null, ['hq','co']) + '</select></label>' +
         '</div>' + fwButtons('Add outcome');
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
       f.querySelector('.fw-save').onclick = function (){
         var stmt = f.querySelector('.fw-ostmt').value.trim();
+        var leadId = f.querySelector('.fw-lead').value ? +f.querySelector('.fw-lead').value : null;
         if (!stmt){ f.querySelector('.ufmsg').textContent = 'Outcome statement is required.'; return; }
         f.querySelector('.ufmsg').textContent = 'Saving…';
-        applyMutation(addOutcome(pillar, stmt));
+        applyMutation(addOutcome(pillar, stmt, leadId));
       };
       return f;
     });
@@ -4015,13 +4919,15 @@
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
         '  <label><span>Impact name</span><input class="fw-pname" type="text" placeholder="e.g. Foresight & Strategy"></label>' +
         '  <label><span>Impact statement / description</span><input class="fw-pimpact" type="text" placeholder="What long-term change this impact describes"></label>' +
+        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(null, ['hq','co']) + '</select></label>' +
         '</div>' + fwButtons('Add impact');
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
       f.querySelector('.fw-save').onclick = function (){
         var name = f.querySelector('.fw-pname').value.trim(), impact = f.querySelector('.fw-pimpact').value.trim();
+        var leadId = f.querySelector('.fw-lead').value ? +f.querySelector('.fw-lead').value : null;
         if (!name || !impact){ f.querySelector('.ufmsg').textContent = 'Impact name and statement are required.'; return; }
         f.querySelector('.ufmsg').textContent = 'Saving…';
-        applyMutation(addPillar(name, impact));
+        applyMutation(addPillar(name, impact, leadId));
       };
       return f;
     });
@@ -4041,8 +4947,10 @@
     return p ? p.statement : '';
   }
   // One dialog for BOTH adding and editing an Output. The Pillar / Outcome /
-  // Output codes are shown read-only for context; only the Output statement is
-  // editable. KPIs are added and re-parented separately in the KPI Inventory.
+  // Output codes are shown read-only for context; the Output statement and its
+  // Lead (accountable user, stored as result.owner_id, selected from the user
+  // list) are editable. KPIs are added and re-parented separately in the KPI
+  // Inventory.
   //   mode 'add'  → outcomeStmt is the parent outcome; curStmt unused
   //   mode 'edit' → outcomeStmt is the parent outcome; curStmt is the output
   function openFwOutput(mode, pillar, outcomeStmt, curStmt){
@@ -4052,6 +4960,7 @@
       var ocCode = frameworkCode('outcome', outcomeStmt, pillar);
       var outcomeTxt = (ocCode ? ocCode + ' · ' : '') + outcomeStmt;
       var outCode = isEdit ? frameworkCode('output', curStmt, pillar) : (nextOutputCode(pillar, outcomeStmt) + ' (new)');
+      var curLead = isEdit ? frameworkLeadId('output', curStmt, pillar) : null;
       var f = el('div', 'uform');
       f.innerHTML =
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
@@ -4059,15 +4968,17 @@
         '  <label><span>Outcome</span><input type="text" value="' + esc(outcomeTxt) + '" readonly></label>' +
         '  <label><span>Output code</span><input type="text" value="' + esc(outCode) + '" readonly></label>' +
         '  <label><span>Output statement</span><input class="fw-stmt" type="text" placeholder="What this output delivers"></label>' +
+        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(curLead, ['hq','co']) + '</select></label>' +
         '</div>' + fwButtons(isEdit ? 'Save changes' : 'Add output');
       if (isEdit) f.querySelector('.fw-stmt').value = curStmt;
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
       f.querySelector('.fw-save').onclick = function (){
         var v = f.querySelector('.fw-stmt').value.trim();
+        var leadId = f.querySelector('.fw-lead').value ? +f.querySelector('.fw-lead').value : null;
         if (!v){ f.querySelector('.ufmsg').textContent = 'Output statement is required.'; return; }
-        if (isEdit && v === curStmt){ closeFwEdit(); return; }
+        if (isEdit && v === curStmt && leadId === curLead){ closeFwEdit(); return; }
         f.querySelector('.ufmsg').textContent = 'Saving…';
-        applyMutation(isEdit ? renameResults('output', curStmt, v, pillar) : addOutput(pillar, outcomeStmt, v));
+        applyMutation(isEdit ? updateResults('output', curStmt, pillar, v, leadId) : addOutput(pillar, outcomeStmt, v, leadId));
       };
       return f;
     });
@@ -4141,17 +5052,15 @@
     if (cur != null && cur !== '' && list.indexOf(cur) < 0) list = [cur].concat(list);
     return list.map(function (o){ return '<option value="' + esc(o) + '"' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
   }
-  // Project Lead - chosen from the user list, never free-typed. Stored as the
-  // user's display name (lead is a TEXT column); a legacy/unmatched value is kept
-  // as an option so it stays visible and selected until reassigned.
-  function leadOptions(cur){
-    var seen = {}, names = [];
-    DB.tables.user.filter(function (u){ return u.enabled; })
-      .sort(function (a, b){ return a.name < b.name ? -1 : 1; })
-      .forEach(function (u){ if (!seen[u.name]) { seen[u.name] = 1; names.push(u.name); } });
-    if (cur && names.indexOf(cur) < 0) names = [cur].concat(names);
-    return '<option value=""' + (cur ? '' : ' selected') + '>–</option>'
-      + names.map(function (n){ return '<option value="' + esc(n) + '"' + (n === cur ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+  // A project's Lead as a user id (people are ALWAYS referenced by id, never by
+  // a stored display name). Legacy rows persisted before lead_id existed carried
+  // the display name in `lead`; resolve that to the user list once so the
+  // dropdown still preselects correctly until the row is next saved.
+  function projectLeadId(p){
+    if (!p) return null;
+    if (p.lead_id != null) return +p.lead_id;
+    if (p.lead){ var u = DB.tables.user.filter(function (x){ return x.name === p.lead; })[0]; if (u) return u.id; }
+    return null;
   }
   // dropdown of EXISTING users (by id) for person references - users are never
   // created/renamed outside Users Management, only selected here
@@ -4453,11 +5362,11 @@
     enrich(); renderTicker(); renderAll(); renderPlanChip(); persist();
   }
   function nextPlanSeq(){ var m = 0; allPlans().forEach(function (p){ if ((p.seq || 0) > m) m = p.seq || 0; }); return m + 1; }
-  function addPlan(name, desc, start, end){
-    return DB.insert('plan', { name: name, description: desc || '', start_date: start || null, end_date: end || null, seq: nextPlanSeq(), is_default: 0 });
+  function addPlan(name, desc, start, end, leadId){
+    return DB.insert('plan', { name: name, description: desc || '', start_date: start || null, end_date: end || null, lead_id: leadId == null ? null : leadId, seq: nextPlanSeq(), is_default: 0 });
   }
-  function editPlan(p, name, desc, start, end){
-    p.name = name; p.description = desc || ''; p.start_date = start || null; p.end_date = end || null;
+  function editPlan(p, name, desc, start, end, leadId){
+    p.name = name; p.description = desc || ''; p.start_date = start || null; p.end_date = end || null; p.lead_id = leadId == null ? null : leadId;
     return DB.persist('plan', [p]);
   }
   /** Make one plan the default (the plan the app opens on). Exactly one carries
@@ -4497,25 +5406,31 @@
     ]);
   }
 
-  // rename every result row (across country instances) matching level+statement(+pillar)
+  // update every result row (across country instances) matching level+statement(+pillar)
   // WITHIN THE ACTIVE PLAN - a statement/pillar pair can recur in another plan.
-  function renameResults(level, oldStmt, newStmt, pillar){
+  // Renames the statement and/or (re)assigns the Lead (owner_id) in one persist.
+  // Pass leadId === undefined to leave the Lead untouched (impact rename has none).
+  function updateResults(level, oldStmt, pillar, newStmt, leadId){
     var changed = [];
     DB.tables.result.forEach(function (x){
-      if (x.plan_id === S.plan && x.level === level && x.statement === oldStmt && (pillar == null || x.sdg === pillar)) { x.statement = newStmt; changed.push(x); }
+      if (x.plan_id === S.plan && x.level === level && x.statement === oldStmt && (pillar == null || x.sdg === pillar)) {
+        if (newStmt != null) x.statement = newStmt;
+        if (leadId !== undefined) x.owner_id = leadId;
+        changed.push(x);
+      }
     });
     return changed.length ? DB.persist('result', changed) : Promise.resolve();
   }
 
   // add a new output under every instance of the parent outcome (active plan).
   // KPIs are NOT created here - they are added and attached in the KPI Inventory.
-  function addOutput(pillar, outcomeStmt, outStmt){
+  function addOutput(pillar, outcomeStmt, outStmt, leadId){
     var outcomes = DB.tables.result.filter(function (x){ return x.plan_id === S.plan && x.level === 'outcome' && x.statement === outcomeStmt && x.sdg === pillar; });
     if (!outcomes.length) return Promise.resolve();
     var newOuts = outcomes.map(function (oc){
       // `code` is system-generated in DB.insert (Output #.#.#) - never set here.
       return { plan_id: oc.plan_id, programme_id: oc.programme_id, parent_id: oc.id, level: 'output',
-        statement: outStmt, sdg: pillar, owner_id: null, assumptions: 'Delivery timelines are met; country offices and partners participate.',
+        statement: outStmt, sdg: pillar, owner_id: leadId == null ? null : leadId, assumptions: 'Delivery timelines are met; country offices and partners participate.',
         risks: '', risk_level: 'medium' };
     });
     return DB.insert('result', newOuts);
@@ -4527,7 +5442,7 @@
     DB.tables.result.forEach(function (r){ if (r.plan_id === S.plan && r.sdg != null && r.sdg > mx) mx = r.sdg; });
     return mx + 1;
   }
-  function addPillar(name, impactStmt){
+  function addPillar(name, impactStmt, leadId){
     var id = nextPillarId();
     var color = NEW_PILLAR_PALETTE[(id - 1) % NEW_PILLAR_PALETTE.length];
     PILLAR_NAMES[id] = name; PILLAR_COLORS[id] = color;
@@ -4535,18 +5450,20 @@
       // `code` is system-generated in DB.insert (Impact #) - never set here.
       return { plan_id: S.plan, programme_id: p.id, parent_id: null, level: 'impact',
         statement: impactStmt, sdg: id, pillar_name: name, pillar_color: color,
+        owner_id: leadId == null ? null : leadId,
         assumptions: '', risks: '', risk_level: 'low' };
     });
     return DB.insert('result', rows);
   }
   // add a new Outcome under every country instance of the pillar's impact (active plan)
-  function addOutcome(pillar, outcomeStmt){
+  function addOutcome(pillar, outcomeStmt, leadId){
     var impacts = DB.tables.result.filter(function (x){ return x.plan_id === S.plan && x.level === 'impact' && x.sdg === pillar; });
     if (!impacts.length) return Promise.resolve();
     var rows = impacts.map(function (im){
       // `code` is system-generated in DB.insert (Outcome #.#) - never set here.
       return { plan_id: im.plan_id, programme_id: im.programme_id, parent_id: im.id, level: 'outcome',
-        statement: outcomeStmt, sdg: pillar, assumptions: '', risks: '', risk_level: 'low' };
+        statement: outcomeStmt, sdg: pillar, owner_id: leadId == null ? null : leadId,
+        assumptions: '', risks: '', risk_level: 'low' };
     });
     return DB.insert('result', rows);
   }
@@ -4630,7 +5547,7 @@
       // it the default, so the checked plan is also the one loaded next visit
       var main = el('button', 'plan-mi-main');
       main.appendChild(el('span', 'plan-mi-nm', p.name));
-      main.appendChild(el('span', 'plan-mi-sub', planPeriod(p) + (planPhase(p) ? '  ·  ' + planPhase(p) : '')));
+      main.appendChild(el('span', 'plan-mi-sub', planPeriod(p) + (planPhase(p) ? '  ·  ' + planPhase(p) : '') + (p.lead_id != null ? '  ·  Lead: ' + userName(+p.lead_id) : '')));
       main.onclick = function (){
         setActivePlan(p.id);                    // switch view immediately
         if (admin && !isDef) setDefaultPlan(p.id); // and make it default for next visits
@@ -4687,6 +5604,7 @@
         '  <label><span>End date</span><input class="pl-end" type="date"></label>' +
         '</div>' +
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
+        '  <label><span>Lead</span><select class="pl-lead">' + userOptions(isEdit && plan.lead_id != null ? +plan.lead_id : null, ['hq','co']) + '</select></label>' +
         '  <label><span>Description</span><textarea class="pl-desc" rows="3" placeholder="What this plan covers"></textarea></label>' +
         '</div>' + fwButtons(isEdit ? 'Save changes' : 'Create plan');
       if (isEdit){
@@ -4701,16 +5619,17 @@
         var start = f.querySelector('.pl-start').value || null;
         var end = f.querySelector('.pl-end').value || null;
         var desc = f.querySelector('.pl-desc').value.trim();
+        var leadId = f.querySelector('.pl-lead').value ? +f.querySelector('.pl-lead').value : null;
         var msg = f.querySelector('.ufmsg');
         if (!name){ msg.textContent = 'Plan name is required.'; return; }
         if (start && end && end < start){ msg.textContent = 'End date must be on or after the start date.'; return; }
         msg.textContent = 'Saving…';
         if (isEdit){
-          Promise.resolve(editPlan(plan, name, desc, start, end)).then(function (){
+          Promise.resolve(editPlan(plan, name, desc, start, end, leadId)).then(function (){
             closeFwEdit(); refreshAfterPlan(); persist();
           });
         } else {
-          Promise.resolve(addPlan(name, desc, start, end)).then(function (rows){
+          Promise.resolve(addPlan(name, desc, start, end, leadId)).then(function (rows){
             var np = Array.isArray(rows) ? rows[0] : rows;
             closeFwEdit();
             S.plan = np ? np.id : S.plan;   // land on the new (empty) plan
@@ -4736,7 +5655,7 @@
     box.appendChild(banner);
     box.appendChild(el('div', 'cp-note', ro
       ? 'Read-only view of this plan’s Results Framework. Editing is limited to Admin status.'
-      : 'This is the Results Framework of the plan shown above (switch or manage plans from 🗂 Plan Management in the header). Use the Edit buttons to rename a statement and the ＋ controls to add Impacts, Outcomes and Outputs. Every change propagates across all country instances of this plan and is saved locally.'));
+      : 'This is the Results Framework of the plan shown above (switch or manage plans from 🗂 Plan Management in the header). Use the Edit buttons to rename a statement or assign its Lead, and the ＋ controls to add Impacts, Outcomes and Outputs. Every change propagates across all country instances of this plan and is saved locally.'));
 
     if (!FRAMEWORK.length){
       box.appendChild(el('div', 'cp-empty', 'This plan has no impacts yet. Use ＋ Add impact below to start building its results framework.'));
@@ -4784,6 +5703,20 @@
     var m = DB.tables.result.filter(function (x){ return x.plan_id === S.plan && x.level === level && x.statement === stmt && x.sdg === pillar; })[0];
     return m ? (m.code || '') : '';
   }
+  // The Lead (owner_id) of a framework node - every country instance carries the
+  // same Lead, so the first instance is authoritative.
+  function frameworkLeadId(level, stmt, pillar){
+    var m = DB.tables.result.filter(function (x){ return x.plan_id === S.plan && x.level === level && x.statement === stmt && (pillar == null || x.sdg === pillar); })[0];
+    return m && m.owner_id != null ? +m.owner_id : null;
+  }
+  // Small "👤 Name" chip shown next to a framework statement when a Lead is set.
+  function leadChip(level, stmt, pillar){
+    var id = frameworkLeadId(level, stmt, pillar);
+    if (id == null) return null;
+    var chip = el('span', 'cp-leadchip', '👤 ' + userName(id));
+    chip.title = 'Lead: ' + userName(id);
+    return chip;
+  }
   // Read-only statement row + an Edit button that opens the rename child popup –
   // no editing happens on the framework screen itself.
   function stmtRow(labelText, level, stmt, pillar){
@@ -4791,6 +5724,7 @@
     row.appendChild(el('span', 'cp-lab', labelText));
     var code = frameworkCode(level, stmt, pillar);
     var txt = el('span', 'cp-stmt', (code ? code + ' · ' : '') + stmt); txt.title = stmt; row.appendChild(txt);
+    if (level === 'impact' || level === 'outcome'){ var lc = leadChip(level, stmt, pillar); if (lc) row.appendChild(lc); }
     if (canEditFramework()){
       var edit = el('button', 'cp-mini', 'Edit');
       edit.onclick = function (){ openFwRename(labelText, level, stmt, pillar); };
@@ -4804,6 +5738,7 @@
     row.appendChild(el('span', 'cp-lab', 'Output'));
     var code = frameworkCode('output', op, pillar);
     var txt = el('span', 'cp-stmt', (code ? code + ' · ' : '') + op); txt.title = op; row.appendChild(txt);
+    var lc = leadChip('output', op, pillar); if (lc) row.appendChild(lc);
     if (canEditFramework()){
       var edit = el('button', 'cp-mini', 'Edit');
       edit.onclick = function (){ openFwOutput('edit', pillar, outcomeOfOutput(pillar, op), op); };
@@ -5076,6 +6011,534 @@
   function truncTxt(s, n){ s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
   // =========================================================================
+  //  FORECAST - scenario projections toward targets (senior-management view)
+  // =========================================================================
+  // The engine works in ACHIEVEMENT space: a = (value − baseline) / (target −
+  // baseline), so 0 is the baseline, 1 is the target, and every KPI - counts
+  // and levels alike - is comparable and can be averaged into an entity. Per
+  // KPI it derives the recent monthly velocity (OLS slope over the last 12
+  // monthly positions) and its volatility (std-dev of month-over-month moves):
+  // REALISTIC continues at that velocity; BEST / WORST run at velocity ± one
+  // volatility, so the cone widens with how erratic delivery has been, not by
+  // an arbitrary %. Projections freeze at each KPI's own target date - no
+  // progress is assumed beyond the plan window.
+
+  var FC_DIMS = [['plans','Plans'],['impacts','Impacts'],['outcomes','Outcomes'],['outputs','Outputs'],['projects','Projects'],['regions','Regions'],['countries','Countries']];
+  var FC_SING = { plans:'Plan', impacts:'Impact', outcomes:'Outcome', outputs:'Output', projects:'Project', regions:'Region', countries:'Country' };
+  var FC_HORIZONS = [['plan','End of plan'],['6m','+6 months'],['12m','+12 months'],['24m','+24 months']];
+  var FC_MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var FC_COL = { hi:'#16a34a', mid:'#2563eb', lo:'#ef4444' };
+
+  function fcMi(ms){ var d = new Date(ms); return d.getFullYear() * 12 + d.getMonth(); }
+  function fcNowMi(){ return fcMi(TODAY.getTime()); }
+  function fcMiLab(mi){ return FC_MONS[((mi % 12) + 12) % 12] + ' ' + String(Math.floor(mi / 12)).slice(2); }
+  function fcMiFull(mi){ return FC_MONS[((mi % 12) + 12) % 12] + ' ' + Math.floor(mi / 12); }
+  function fcPct(a){ return a == null ? '–' : Math.round(a * 100) + '%'; }
+  function fcClamp(a){ return Math.max(-0.25, Math.min(1.6, a)); }
+  function fcDimLabel(){ var l = ''; FC_DIMS.forEach(function (d){ if (d[0] === S.fcDim) l = d[1]; }); return l; }
+  /** Horizon as a phrase that follows a verb: "at end of plan" / "in 12 months". */
+  function fcHorizonLabel(){ return S.fcHorizon === 'plan' ? 'at end of plan' : 'in ' + parseInt(S.fcHorizon, 10) + ' months'; }
+
+  function fcOlsSlope(arr){
+    var n = arr.length; if (n < 2) return 0;
+    var sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for (var i = 0; i < n; i++){ sx += i; sy += arr[i]; sxy += i * arr[i]; sxx += i * i; }
+    var d = n * sxx - sx * sx;
+    return d ? (n * sxy - sx * sy) / d : 0;
+  }
+  function fcDeltaSd(arr){
+    if (arr.length < 3) return 0;
+    var ds = [], i, m = 0, v = 0;
+    for (i = 1; i < arr.length; i++) ds.push(arr[i] - arr[i - 1]);
+    ds.forEach(function (d){ m += d; }); m /= ds.length;
+    ds.forEach(function (d){ v += (d - m) * (d - m); }); v /= (ds.length - 1);
+    return Math.sqrt(v);
+  }
+
+  /** Per-KPI forecast. Needs only r.raw (baseline/target/dates/unit) + r.series,
+   *  so it also works on the lightweight rows built for non-active plans. */
+  function kpiForecast(r){
+    var ind = r.raw, b = +ind.baseline_value, t = +ind.target_value;
+    if (!isFinite(b) || !isFinite(t) || t === b) return null;            // unmeasurable
+    var series = r.series || [];
+    if (!series.length) return { nodata: true };
+    var span = t - b;
+    var startY = ind.baseline_year || 2025, endY = ind.target_year || (startY + 2);
+    var m0 = fcMi(ind.baseline_date ? Date.parse(ind.baseline_date) : new Date(startY, 0, 1).getTime());
+    var mEnd = fcMi(ind.target_date ? Date.parse(ind.target_date) : new Date(endY, 11, 31).getTime());
+    if (mEnd <= m0) mEnd = m0 + 1;
+    var mNow = Math.max(fcNowMi(), m0);
+    // monthly achievement positions from the baseline month to now (carry-forward)
+    var acc = ind.unit === 'count', sumBy = {}, lvlBy = {};
+    series.forEach(function (m){
+      var mi = fcMi(Date.parse(m.date)); if (!isFinite(mi)) return;
+      if (acc) sumBy[mi] = (sumBy[mi] || 0) + (+m.value || 0);
+      else lvlBy[mi] = +m.value;              // chronological series → keeps the month's last report
+    });
+    var aArr = [], cum = b, lvl = null, k;
+    for (k = m0; k <= mNow; k++){
+      if (acc){ cum += (sumBy[k] || 0); aArr.push((cum - b) / span); }
+      else { if (lvlBy[k] != null) lvl = lvlBy[k]; aArr.push(lvl == null ? 0 : (lvl - b) / span); }
+    }
+    var a0 = aArr[aArr.length - 1];
+    var w = aArr.slice(Math.max(0, aArr.length - 12));   // the recent pace matters most
+    var slope = fcOlsSlope(w), sd = fcDeltaSd(w);
+    if (!(sd > 0)) sd = Math.abs(slope) * 0.25 || 0.008; // flat history → assume ±25% (min ±0.8pp/mo)
+    var monthsLeft = Math.max(0, mEnd - mNow);
+    return {
+      ok: true, a0: a0, aArr: aArr, m0: m0, mEnd: mEnd, mNow: mNow,
+      slope: slope, slopeHi: slope + sd, slopeLo: slope - sd,
+      monthsLeft: monthsLeft,
+      needSlope: a0 >= 1 ? 0 : (monthsLeft > 0 ? (1 - a0) / monthsLeft : Infinity),
+      reps: series.length,
+      lastMi: fcMi(Date.parse(series[series.length - 1].date))
+    };
+  }
+
+  /** Scenario position of one KPI at month mi. Frozen past its own plan end. */
+  function fcAt(f, which, mi){
+    var m = Math.min(mi, Math.max(f.mEnd, f.mNow));
+    var sl = which === 'hi' ? f.slopeHi : which === 'lo' ? f.slopeLo : f.slope;
+    return fcClamp(f.a0 + sl * (m - f.mNow));
+  }
+
+  // ---- entities: the six dimensions -----------------------------------------
+  function fcEntity(key, label, sub, color, members){
+    var fcs = [], nodata = 0;
+    members.forEach(function (r){
+      var f = kpiForecast(r);
+      if (f && f.ok) fcs.push(f); else if (f && f.nodata) nodata++;
+    });
+    return { key: key, label: label, sub: sub, color: color, n: members.length, fcs: fcs, nodataN: nodata };
+  }
+
+  function fcHorizonMi(ent){
+    var mNow = fcNowMi();
+    if (S.fcHorizon !== 'plan') return mNow + { '6m': 6, '12m': 12, '24m': 24 }[S.fcHorizon];
+    var mx = mNow + 1;
+    ent.fcs.forEach(function (f){ if (f.mEnd > mx) mx = f.mEnd; });
+    return mx;
+  }
+  /** Mean scenario position of an entity's KPIs at month mi. */
+  function fcMean(ent, which, mi){
+    if (!ent.fcs.length) return null;
+    var s = 0; ent.fcs.forEach(function (f){ s += fcAt(f, which, mi); });
+    return s / ent.fcs.length;
+  }
+  /** Mean HISTORICAL position at a past month (0 before a KPI's window opens). */
+  function fcHist(ent, mi){
+    if (!ent.fcs.length) return null;
+    var s = 0;
+    ent.fcs.forEach(function (f){ s += mi < f.m0 ? 0 : f.aArr[Math.min(mi - f.m0, f.aArr.length - 1)]; });
+    return s / ent.fcs.length;
+  }
+
+  /** Headline numbers for one entity, at its own horizon. */
+  function fcCompute(ent){
+    var mNow = fcNowMi(), mH = ent.mH = fcHorizonMi(ent);
+    if (!ent.fcs.length){
+      ent.aNow = ent.aW = ent.aR = ent.aB = ent.exp = null; ent.code = 'nodata';
+      ent.slope = 0; ent.mEnd = null; ent.needSlope = null; ent.paceX = null; ent.etaMi = null;
+      ent.reps = 0; ent.staleN = 0; ent.regressN = 0; ent.winsN = 0; ent.unreachN = 0; ent.conf = '–';
+      return;
+    }
+    ent.aNow = fcMean(ent, 'mid', mNow);
+    ent.aW = fcMean(ent, 'lo', mH); ent.aR = fcMean(ent, 'mid', mH); ent.aB = fcMean(ent, 'hi', mH);
+    // expected-by-horizon share of each KPI's window → projected RAG (Performance logic)
+    var ex = 0;
+    ent.fcs.forEach(function (f){ ex += Math.max(0.02, Math.min(1, (Math.min(mH, f.mEnd) - f.m0) / (f.mEnd - f.m0))); });
+    ent.exp = ex / ent.fcs.length;
+    ent.code = ratioToCode(ent.aR / ent.exp);
+    // pace: the monthly velocity the target needs (by plan end) vs the current one
+    var slope = 0, mEndMax = mNow + 1;
+    ent.fcs.forEach(function (f){ slope += f.slope; if (f.mEnd > mEndMax) mEndMax = f.mEnd; });
+    slope /= ent.fcs.length;
+    ent.slope = slope; ent.mEnd = mEndMax;
+    var left = Math.max(0, mEndMax - mNow);
+    ent.needSlope = ent.aNow >= 1 ? 0 : (left > 0 ? (1 - ent.aNow) / left : Infinity);
+    ent.paceX = ent.needSlope === 0 ? 0
+      : (ent.needSlope !== Infinity && slope > 1e-6 ? ent.needSlope / slope : null);
+    ent.etaMi = ent.aNow >= 1 ? mNow : (slope > 1e-6 ? mNow + Math.ceil((1 - ent.aNow) / slope) : null);
+    var reps = 0, stale = 0, regress = 0, wins = 0, unreach = 0;
+    ent.fcs.forEach(function (f){
+      reps += f.reps;
+      if (mNow - f.lastMi >= 3) stale++;
+      if (f.slope < -1e-4) regress++;
+      var r = fcAt(f, 'mid', mH); if (r >= 0.85 && r < 1) wins++;
+      if (fcAt(f, 'hi', f.mEnd) < 1) unreach++;
+    });
+    ent.reps = reps; ent.staleN = stale; ent.regressN = regress; ent.winsN = wins; ent.unreachN = unreach;
+    var mean = reps / ent.fcs.length;
+    ent.conf = mean >= 6 ? 'High' : mean >= 3 ? 'Medium' : 'Low';
+  }
+
+  function fcEntities(){
+    var rows = filtered(), ents = [];
+    if (S.fcDim === 'plans'){
+      // the whole app is scoped to ONE active plan - forecast it alone
+      var ap = activePlan();
+      if (ap){
+        var period = (ap.start_date ? yearOf(ap.start_date) : '?') + '–' + (ap.end_date ? yearOf(ap.end_date) : '?');
+        ents.push(fcEntity('plan:' + ap.id, ap.name, period + ' · active plan', '#2563eb', rows));
+      }
+    } else if (S.fcDim === 'impacts'){
+      var bySdg = {};
+      rows.forEach(function (r){ if (r.sdg != null) (bySdg[r.sdg] = bySdg[r.sdg] || []).push(r); });
+      Object.keys(bySdg).forEach(function (s){
+        var sdg = +s, stmt = '';
+        FRAMEWORK.forEach(function (g){ if (g.sdg === sdg) stmt = g.impact; });
+        ents.push(fcEntity('impact:' + sdg,
+          pillarLabel(sdg) + (PILLAR_NAMES[sdg] ? ' · ' + PILLAR_NAMES[sdg] : ''), stmt,
+          PILLAR_COLORS[sdg] || '#94a3b8', bySdg[sdg]));
+      });
+    } else if (S.fcDim === 'outcomes' || S.fcDim === 'outputs'){
+      var lvl = S.fcDim === 'outcomes' ? 'outcome' : 'output', pre = lvl + SEP, by = {};
+      rows.forEach(function (r){
+        (r.chainKeys || []).forEach(function (k){
+          if (k.indexOf(pre) !== 0) return;
+          var g = by[k.slice(pre.length)] = by[k.slice(pre.length)] || { rows: [], sdg: r.sdg };
+          g.rows.push(r);
+        });
+      });
+      Object.keys(by).forEach(function (stmt){
+        var g = by[stmt];
+        ents.push(fcEntity(lvl + ':' + stmt, stmt,
+          g.sdg ? pillarLabel(g.sdg) + (PILLAR_NAMES[g.sdg] ? ' · ' + PILLAR_NAMES[g.sdg] : '') : cap(lvl),
+          g.sdg ? PILLAR_COLORS[g.sdg] : '#94a3b8', g.rows));
+      });
+    } else if (S.fcDim === 'projects'){
+      var inSet = {}; rows.forEach(function (r){ inSet[r.id] = 1; });
+      var progIso = progIsoSet();
+      PROJECTS.forEach(function (p){
+        if (!projectPassesFacets(p, false, progIso)) return;
+        var mem = p.kpis.filter(function (r){ return inSet[r.id]; });
+        if (!mem.length) return;
+        ents.push(fcEntity('project:' + p.id, (p.code ? p.code + ' · ' : '') + p.name,
+          (p.country ? p.country.name : '') + (p.donor ? ' · ' + (p.donor.short_name || p.donor.name) : ''),
+          p.iso ? countryColor(p.iso) : '#94a3b8', mem));
+      });
+    } else if (S.fcDim === 'regions'){
+      var byReg = {};
+      rows.forEach(function (r){
+        if (!r.region) return;
+        var g = byReg[r.region] = byReg[r.region] || { rows: [], isos: {} };
+        g.rows.push(r);
+        if (r.iso) g.isos[r.iso] = 1;
+      });
+      REGION_ORDER.concat(Object.keys(byReg)).forEach(function (reg){
+        var g = byReg[reg]; if (!g || g.done) return; g.done = true;
+        var nCo = Object.keys(g.isos).length;
+        ents.push(fcEntity('region:' + reg, reg, nCo + (nCo === 1 ? ' country' : ' countries'),
+          regionColor(reg), g.rows));
+      });
+    } else {   // countries
+      var byIso = {};
+      rows.forEach(function (r){ if (r.iso) (byIso[r.iso] = byIso[r.iso] || []).push(r); });
+      Object.keys(byIso).forEach(function (iso){
+        var co = DB._idx.countryByIso[iso];
+        ents.push(fcEntity('country:' + iso, co ? co.name : iso, co ? co.region : '', countryColor(iso), byIso[iso]));
+      });
+    }
+    ents.forEach(fcCompute);
+    // risk first: the lowest realistic forecast leads the table
+    ents.sort(function (a, b){ return (a.aR == null ? 2 : a.aR) - (b.aR == null ? 2 : b.aR); });
+    return ents;
+  }
+
+  // ---- render ---------------------------------------------------------------
+  function renderForecast(){
+    var host = $('#forecastView'); if (!host) return;
+    host.innerHTML = '';
+    var ents = fcEntities();
+    var sel = null;
+    if (S.fcSel){
+      ents.forEach(function (e){ if (e.key === S.fcSel) sel = e; });
+      if (!sel) S.fcSel = null;
+    }
+    var scope = sel;
+    if (!scope){
+      var ap = activePlan();
+      scope = fcEntity('__all__', 'Whole portfolio' + (ap ? ' · ' + ap.name : ''), '', '#2563eb', filtered());
+      fcCompute(scope);
+    }
+    host.appendChild(fcControls(sel));
+    var body = el('div', 'fc-body');
+    var strip = filterStripHTML();
+    if (strip) body.appendChild(elHTML('div', 'fc-strip', strip));
+    body.appendChild(fcTiles(scope, ents));
+    var mid = el('div', 'fc-mid');
+    mid.appendChild(fcChartCard(scope));
+    mid.appendChild(fcAdviceCard(scope, ents, !!sel));
+    body.appendChild(mid);
+    body.appendChild(fcTableCard(ents, sel));
+    host.appendChild(body);
+  }
+
+  function fcControls(sel){
+    var bar = el('div', 'fc-ctrl');
+    var seg = el('span', 'fc-seg');
+    FC_DIMS.forEach(function (d){
+      var b = el('button', S.fcDim === d[0] ? 'on' : null, d[1]);
+      b.onclick = function (){ if (S.fcDim === d[0]) return; S.fcDim = d[0]; S.fcSel = null; renderForecast(); persist(); };
+      seg.appendChild(b);
+    });
+    bar.appendChild(seg);
+    bar.appendChild(el('span', 'fc-lbl', 'Horizon'));
+    var hs = el('select');
+    FC_HORIZONS.forEach(function (h){ var o = el('option', null, h[1]); o.value = h[0]; if (h[0] === S.fcHorizon) o.selected = true; hs.appendChild(o); });
+    hs.onchange = function (){ S.fcHorizon = hs.value; renderForecast(); persist(); };
+    bar.appendChild(hs);
+    if (sel){
+      var chip = el('button', 'fc-selchip');
+      chip.title = 'Focused on ' + sel.label + ' - click to return to the whole portfolio';
+      var dt = el('span', 'dot'); dt.style.background = sel.color || '#94a3b8';
+      chip.appendChild(dt);
+      chip.appendChild(document.createTextNode(truncTxt(sel.label, 44)));
+      chip.appendChild(el('span', 'x', '×'));
+      chip.onclick = function (){ S.fcSel = null; renderForecast(); };
+      bar.appendChild(chip);
+    }
+    var leg = el('span', 'fc-scen');
+    [['hi','Best case'],['mid','Realistic'],['lo','Worst case']].forEach(function (s){
+      var li = el('span', 'li'); var sq = el('span', 'sq'); sq.style.background = FC_COL[s[0]];
+      li.appendChild(sq); li.appendChild(document.createTextNode(s[1])); leg.appendChild(li);
+    });
+    bar.appendChild(leg);
+    return bar;
+  }
+
+  function fcTiles(scope, ents){
+    var grid = el('div', 'fc-tiles');
+    function tile(lbl, val, sub, chipColor){
+      var t = el('div', 'fc-tile');
+      t.appendChild(el('div', 'tl', lbl));
+      t.appendChild(el('div', 'tv', val));
+      var s = el('div', 'ts');
+      if (sub != null){
+        if (chipColor){ var c = el('span', 'chip', sub); c.style.background = chipColor; s.appendChild(c); }
+        else s.textContent = sub;
+      }
+      t.appendChild(s);
+      return t;
+    }
+    var st = STATUS[scope.code] || STATUS.nodata;
+    grid.appendChild(tile('Forecast ' + fcHorizonLabel(), fcPct(scope.aR), st.label, st.c));
+    grid.appendChild(tile('Scenario range', scope.aW == null ? '–' : fcPct(scope.aW) + ' – ' + fcPct(scope.aB), 'worst → best case'));
+    var on = 0, tot = 0;
+    ents.forEach(function (e){ if (e.aR == null) return; tot++; if (e.code === 'green' || e.code === 'blue') on++; });
+    grid.appendChild(tile(fcDimLabel() + ' on course', tot ? on + ' / ' + tot : '–', 'projected On/Over Track at horizon'));
+    var etaTxt = scope.aNow != null && scope.aNow >= 1 ? 'Achieved'
+      : scope.etaMi == null ? (scope.aR == null ? '–' : 'Not at this pace')
+      : fcMiFull(scope.etaMi) + (scope.mEnd != null && scope.etaMi > scope.mEnd ? ' ⚠' : '');
+    grid.appendChild(tile('Target attained (realistic)', etaTxt, scope.mEnd != null ? 'plan ends ' + fcMiFull(scope.mEnd) : null));
+    var paceTxt, paceSub = null;
+    if (scope.aR == null){ paceTxt = '–'; }
+    else if (scope.paceX === 0){ paceTxt = '✓'; paceSub = 'target already met'; }
+    else if (scope.paceX == null){ paceTxt = 'Stalled'; paceSub = 'no positive pace to scale'; }
+    else {
+      paceTxt = '×' + (scope.paceX >= 10 ? Math.round(scope.paceX) : scope.paceX.toFixed(1));
+      paceSub = (scope.needSlope * 100).toFixed(1) + 'pp/mo needed · now ' + (scope.slope * 100).toFixed(1);
+    }
+    grid.appendChild(tile('Pace to hit target', paceTxt, paceSub));
+    grid.appendChild(tile('Forecast confidence', scope.conf,
+      scope.fcs.length ? fmt(scope.fcs.length) + ' KPIs · ' + fmt(scope.reps) + ' reports' + (scope.nodataN ? ' · ' + fmt(scope.nodataN) + ' no data' : '')
+                       : 'no measurable KPIs in this slice'));
+    return grid;
+  }
+
+  function fcChartCard(scope){
+    var card = el('div', 'fc-card fc-chartcard');
+    card.appendChild(el('div', 'fc-h', 'Trajectory · ' + truncTxt(scope.label, 70) + ' · actuals, then scenarios ' +
+      (S.fcHorizon === 'plan' ? 'to end of plan' : 'for the next ' + parseInt(S.fcHorizon, 10) + ' months')));
+    var wrap = el('div', 'fc-chart');
+    wrap.innerHTML = fcChartSvg(scope);
+    card.appendChild(wrap);
+    return card;
+  }
+
+  function fcChartSvg(scope){
+    if (!scope.fcs.length) return '<div class="empty">No measurable KPIs under the current filters.</div>';
+    var mNow = fcNowMi(), mH = Math.max(scope.mH, mNow + 1), k;
+    var m0 = mNow; scope.fcs.forEach(function (f){ if (f.m0 < m0) m0 = f.m0; });
+    var hist = [];
+    for (k = m0; k <= mNow; k++) hist.push(fcHist(scope, k));
+    var fu = { lo: [], mid: [], hi: [] };
+    for (k = mNow; k <= mH; k++){ fu.lo.push(fcMean(scope, 'lo', k)); fu.mid.push(fcMean(scope, 'mid', k)); fu.hi.push(fcMean(scope, 'hi', k)); }
+    var maxV = 1.12, minV = 0;
+    hist.concat(fu.hi, fu.lo).forEach(function (v){ if (v > maxV - 0.08) maxV = v + 0.08; if (v < minV) minV = v - 0.04; });
+    var W = 900, H = 400, padL = 44, padR = 76, padT = 16, padB = 30;
+    var plotW = W - padL - padR, plotH = H - padT - padB, nM = mH - m0;
+    function X(mi){ return padL + (mi - m0) / nM * plotW; }
+    function Y(a){ return padT + plotH - (a - minV) / (maxV - minV) * plotH; }
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">';
+    for (var g = Math.ceil(minV / 0.25) * 0.25; g <= maxV + 1e-9; g += 0.25){
+      var gy = Y(g);
+      svg += '<line class="gridline" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + gy.toFixed(1) + '" y2="' + gy.toFixed(1) + '"/>';
+      svg += '<text class="axlabel" x="' + (padL - 7) + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end">' + Math.round(g * 100) + '%</text>';
+    }
+    var ty = Y(1);
+    svg += '<line class="fc-target" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + ty.toFixed(1) + '" y2="' + ty.toFixed(1) + '"/>';
+    svg += '<text class="fc-tlab" x="' + (W - padR - 4) + '" y="' + (ty - 5).toFixed(1) + '" text-anchor="end">TARGET 100%</text>';
+    var step = Math.max(1, Math.round(nM / 8));
+    for (k = m0; k <= mH; k += step)
+      svg += '<text class="xlab" x="' + X(k).toFixed(1) + '" y="' + (H - padB + 16) + '" text-anchor="middle">' + fcMiLab(k) + '</text>';
+    // uncertainty cone (worst → best), then the three scenario lines
+    var cone = [];
+    for (k = mNow; k <= mH; k++) cone.push(X(k).toFixed(1) + ',' + Y(fu.hi[k - mNow]).toFixed(1));
+    for (k = mH; k >= mNow; k--) cone.push(X(k).toFixed(1) + ',' + Y(fu.lo[k - mNow]).toFixed(1));
+    svg += '<polygon class="fc-cone" points="' + cone.join(' ') + '"/>';
+    var hp = hist.map(function (v, i){ return X(m0 + i).toFixed(1) + ',' + Y(v).toFixed(1); });
+    svg += '<polyline class="fc-hist" points="' + hp.join(' ') + '"/>';
+    // end-point labels, nudged apart when scenarios converge
+    var ends = [['hi', fu.hi[fu.hi.length - 1]], ['mid', fu.mid[fu.mid.length - 1]], ['lo', fu.lo[fu.lo.length - 1]]];
+    ends.forEach(function (e){ e[2] = Y(e[1]) + 3; });
+    ends.sort(function (a, b){ return a[2] - b[2]; });
+    for (var i = 1; i < ends.length; i++) if (ends[i][2] - ends[i - 1][2] < 11) ends[i][2] = ends[i - 1][2] + 11;
+    [['hi', fu.hi], ['mid', fu.mid], ['lo', fu.lo]].forEach(function (sc){
+      var pts = sc[1].map(function (v, i){ return X(mNow + i).toFixed(1) + ',' + Y(v).toFixed(1); });
+      svg += '<polyline class="fc-scen-ln' + (sc[0] === 'mid' ? ' mid' : '') + '" points="' + pts.join(' ') + '" stroke="' + FC_COL[sc[0]] + '"/>';
+      var e = null; ends.forEach(function (x){ if (x[0] === sc[0]) e = x; });
+      svg += '<text class="fc-end" x="' + (X(mH) + 5).toFixed(1) + '" y="' + e[2].toFixed(1) + '" fill="' + FC_COL[sc[0]] + '">' + fcPct(e[1]) + '</text>';
+    });
+    var tx = X(mNow);
+    svg += '<line class="fc-today" x1="' + tx.toFixed(1) + '" x2="' + tx.toFixed(1) + '" y1="' + padT + '" y2="' + (H - padB) + '"/>';
+    svg += '<text class="fc-tdlab" x="' + (tx + 4).toFixed(1) + '" y="' + (padT + 9) + '">TODAY</text>';
+    svg += '</svg>';
+    return svg;
+  }
+
+  function fcAdviceCard(scope, ents, isEntity){
+    var card = el('div', 'fc-card fc-advice');
+    card.appendChild(el('div', 'fc-h', 'To meet the targets'));
+    var list = el('div', 'fc-recs');
+    fcRecs(scope, ents, isEntity).forEach(function (r){
+      var it = el('div', 'fc-rec ' + r.tone);
+      it.appendChild(el('div', 'rt', r.t));
+      it.appendChild(el('div', 'rb', r.b));
+      list.appendChild(it);
+    });
+    card.appendChild(list);
+    return card;
+  }
+
+  /** Plain-language, prioritised advice derived from the numbers on screen. */
+  function fcRecs(scope, ents, isEntity){
+    var recs = [];
+    if (!scope.fcs.length){
+      recs.push({ tone: 'info', t: 'No measurable KPIs in this slice',
+        b: 'Widen the filters, or give these KPIs baselines, targets and a first report so the engine has a trajectory to project.' });
+      return recs;
+    }
+    var needPP = scope.needSlope == null || scope.needSlope === Infinity ? null : Math.round(scope.needSlope * 1000) / 10;
+    var nowPP = Math.round(scope.slope * 1000) / 10;
+    var aEndR = fcMean(scope, 'mid', scope.mEnd), aEndB = fcMean(scope, 'hi', scope.mEnd);
+    if (scope.aNow >= 1){
+      recs.push({ tone: 'good', t: 'Target already achieved',
+        b: 'Protect the gains: keep reporting so any regression surfaces early, and consider a stretch target for the remaining period.' });
+    } else if (aEndR >= 1){
+      recs.push({ tone: 'good', t: 'On course at the current pace',
+        b: 'The realistic scenario reaches the target by ' + (scope.etaMi != null ? fcMiFull(Math.min(scope.etaMi, scope.mEnd)) : 'plan end') +
+           '. Maintain the delivery cadence (' + nowPP + 'pp of target per month) and watch that the worst case stays above the glide path.' });
+    } else if (aEndB >= 1){
+      recs.push({ tone: 'warn', t: 'Achievable - but only with acceleration',
+        b: 'Reaching the target by ' + fcMiFull(scope.mEnd) + ' needs ' +
+           (scope.paceX != null && scope.paceX > 0 ? '×' + scope.paceX.toFixed(1) + ' the current pace - ' : '') +
+           needPP + 'pp/month against ' + nowPP + ' now. Front-load activities and unblock the slowest results this quarter, before the required pace grows further.' });
+    } else {
+      recs.push({ tone: 'risk', t: 'Target out of reach on current trends',
+        b: 'Even the best case lands at ' + fcPct(aEndB) + ' by ' + fcMiFull(scope.mEnd) +
+           '. Escalate now: re-scope or re-phase the targets, re-allocate budget from saturated results to the laggards, or agree a timeline extension.' });
+    }
+    if (!isEntity){
+      var focus = ents.filter(function (e){ return e.aR != null && e.aR < 1; }).slice(0, 3);
+      if (focus.length) recs.push({ tone: 'warn', t: 'Concentrate support here first',
+        b: focus.map(function (e){ return truncTxt(e.label, 36) + ' (' + fcPct(e.aR) + (e.paceX != null && e.paceX > 0 ? ', needs ×' + e.paceX.toFixed(1) : '') + ')'; }).join('  ·  ') });
+    }
+    if (scope.regressN) recs.push({ tone: 'risk', t: scope.regressN + ' KPI' + (scope.regressN > 1 ? 's are' : ' is') + ' moving backwards',
+      b: 'Recent reports fall below the earlier level. Verify the data first; if the regression is real these need corrective action, not more of the same.' });
+    if (scope.winsN) recs.push({ tone: 'good', t: scope.winsN + ' quick win' + (scope.winsN > 1 ? 's' : '') + ' within reach',
+      b: 'Forecast to land at 85–99% of target. A small, targeted push converts them into achieved targets and lifts the headline rate cheaply.' });
+    if (scope.staleN) recs.push({ tone: 'info', t: scope.staleN + ' KPI' + (scope.staleN > 1 ? 's' : '') + ' silent for 3+ months',
+      b: 'Their trajectories are projected from old data. Chase the reporting before the next review - the true position may differ.' });
+    if (scope.nodataN) recs.push({ tone: 'info', t: scope.nodataN + ' KPI' + (scope.nodataN > 1 ? 's have' : ' has') + ' no reports yet',
+      b: 'Excluded from this forecast entirely. First measurements would firm up every number on this page.' });
+    return recs;
+  }
+
+  function fcSparkSvg(e){
+    if (!e.fcs.length) return '<span class="mut">–</span>';
+    var mNow = fcNowMi(), vals = [], k, v, mn = Infinity, mx = -Infinity;
+    for (k = mNow - 11; k <= mNow; k++){ v = fcHist(e, k); vals.push(v); if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 0.02){ mx += 0.01; mn -= 0.01; }
+    var W = 64, H = 18, pts = [];
+    vals.forEach(function (val, i){
+      pts.push((i / (vals.length - 1) * (W - 2) + 1).toFixed(1) + ',' + (H - 2 - (val - mn) / (mx - mn) * (H - 4)).toFixed(1));
+    });
+    var c = (STATUS[e.code] || STATUS.nodata).c;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><polyline points="' + pts.join(' ') +
+      '" fill="none" stroke="' + c + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  }
+
+  function fcRangeBar(e){
+    if (e.aR == null) return '<span class="mut">no data</span>';
+    function pos(a){ return Math.max(0, Math.min(1, (Math.max(-0.1, Math.min(1.5, a)) + 0.1) / 1.6)) * 100; }
+    var lo = pos(e.aW), hi = pos(e.aB), md = pos(e.aR), tg = pos(1);
+    var tt = 'worst ' + fcPct(e.aW) + ' · realistic ' + fcPct(e.aR) + ' · best ' + fcPct(e.aB) + ' · target 100%';
+    return '<span class="fc-range" title="' + esc(tt) + '">' +
+      '<i class="band" style="left:' + lo.toFixed(1) + '%;width:' + Math.max(1.5, hi - lo).toFixed(1) + '%"></i>' +
+      '<i class="tgt" style="left:' + tg.toFixed(1) + '%"></i>' +
+      '<i class="dotr" style="left:' + md.toFixed(1) + '%"></i></span>';
+  }
+
+  function fcTableCard(ents, sel){
+    var card = el('div', 'fc-card fc-tablecard');
+    card.appendChild(el('div', 'fc-h', fcDimLabel() + ' · forecast ' + fcHorizonLabel() + ' · riskiest first · click a row to focus the chart and advice'));
+    if (!ents.length){ card.appendChild(el('div', 'empty', 'Nothing to forecast under the current filters.')); return card; }
+    var tbl = el('table', 'fc-tbl');
+    var thead = el('thead'), hr = el('tr');
+    [[FC_SING[S.fcDim] || 'Entity',''],['KPIs','num'],['Now','num'],['Trend',''],['Outlook',''],['Realistic','num'],['Projected status',''],['Pace','num'],['Target by','num']]
+      .forEach(function (c){ hr.appendChild(el('th', c[1] || null, c[0])); });
+    thead.appendChild(hr); tbl.appendChild(thead);
+    var tbody = el('tbody');
+    ents.forEach(function (e){
+      var st = STATUS[e.code] || STATUS.nodata;
+      var tr = el('tr', sel && sel.key === e.key ? 'on' : null);
+      tr.onclick = function (){ S.fcSel = S.fcSel === e.key ? null : e.key; renderForecast(); };
+      var td = el('td', 'ent');
+      var dt = el('span', 'dot'); dt.style.background = e.color || '#94a3b8'; td.appendChild(dt);
+      var nm = el('span', 'nm', truncTxt(e.label, 52)); nm.title = e.label; td.appendChild(nm);
+      if (e.sub) td.appendChild(el('span', 'sub', truncTxt(e.sub, 48)));
+      tr.appendChild(td);
+      tr.appendChild(el('td', 'num', fmt(e.n)));
+      tr.appendChild(el('td', 'num', fcPct(e.aNow)));
+      var sp = el('td', 'spark'); sp.innerHTML = fcSparkSvg(e); tr.appendChild(sp);
+      var ol = el('td', 'outlook'); ol.innerHTML = fcRangeBar(e); tr.appendChild(ol);
+      var rl = el('td', 'num', fcPct(e.aR)); rl.style.color = st.c; rl.style.fontWeight = '550'; tr.appendChild(rl);
+      var stc = el('td'); var chip = el('span', 'fc-chip', st.label); chip.style.background = st.c; stc.appendChild(chip); tr.appendChild(stc);
+      var pc = el('td', 'num');
+      if (e.aR == null) pc.textContent = '–';
+      else if (e.paceX === 0) pc.textContent = '✓';
+      else if (e.paceX == null) pc.textContent = 'stalled';
+      else {
+        pc.textContent = '×' + (e.paceX >= 10 ? Math.round(e.paceX) : e.paceX.toFixed(1));
+        pc.style.color = e.paceX > 2 ? STATUS.red.c : e.paceX > 1.15 ? STATUS.amber.c : STATUS.green.c;
+      }
+      pc.title = 'Acceleration needed on the current pace to reach the target by plan end';
+      tr.appendChild(pc);
+      var eta = el('td', 'num');
+      if (e.aNow != null && e.aNow >= 1) eta.textContent = 'done';
+      else if (e.etaMi == null) eta.textContent = '–';
+      else { eta.textContent = fcMiLab(e.etaMi) + (e.mEnd != null && e.etaMi > e.mEnd ? ' ⚠' : '');
+        if (e.mEnd != null && e.etaMi > e.mEnd) eta.title = 'At the current pace the target lands AFTER the plan ends (' + fcMiFull(e.mEnd) + ')'; }
+      tr.appendChild(eta);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    card.appendChild(tbl);
+    return card;
+  }
+
+  // =========================================================================
   //  TICKER
   // =========================================================================
   function renderTicker() {
@@ -5185,6 +6648,7 @@
   // =========================================================================
   function renderAll() {
     if (S.tab === 'map') { renderBubbles(); renderList(); }
+    else if (S.tab === 'forecast') { renderForecast(); renderList(); }
     else { renderInsights(); renderList(); }
     renderFacets();
     persist();
@@ -5225,6 +6689,7 @@
       Array.prototype.forEach.call($('#tabs').children,function(x){x.classList.toggle('on',x===b);});
       $('#mapView').classList.toggle('hide', S.tab!=='map');
       $('#insightsView').classList.toggle('hide', S.tab!=='insights');
+      $('#forecastView').classList.toggle('hide', S.tab!=='forecast');
       renderAll();
     });
 
@@ -5295,6 +6760,15 @@
     $('#btnTheme').onclick=toggleTheme;
     $('#btnControl').onclick=openControl;
     $('#btnResults').onclick=openResults;
+    var bCm=$('#btnComms'); if(bCm) bCm.onclick=openComms;
+
+    // Communication modal: close + category tab switching
+    $('#commClose').onclick=closeComms;
+    $('#commModal').addEventListener('click',function(e){ if(e.target===$('#commModal')) closeComms(); });
+    $('#commTabs').addEventListener('click',function(e){
+      var b=e.target.closest('button'); if(!b) return;
+      COMM.tab=b.dataset.commtab; renderCommTabs(); renderComm();
+    });
 
     // Plan header chip - switch active plan + manage plans (default/edit/delete/new)
     var pChip=$('#planChip'); if(pChip) pChip.onclick=function(e){ e.stopPropagation(); togglePlanMenu(); };
@@ -5393,6 +6867,7 @@
         if ($('#newActivityOverlay').classList.contains('on')) { closeNewActivity(); return; }
         if ($('#aboutModal').classList.contains('on')) { closeAbout(); return; }
         if ($('#projectModal').classList.contains('on')) { closeProject(); return; }
+        if ($('#commModal').classList.contains('on')) { closeComms(); return; }
         if ($('#rmModal').classList.contains('on')) { closeResults(); return; }
         closeDetail(); closeControl();
       }
@@ -5405,6 +6880,9 @@
     var L = m.classList.contains('no-left')  ? 0 : (S.leftW  != null ? S.leftW  : defPaneW());
     var R = m.classList.contains('no-right') ? 0 : (S.rightW != null ? S.rightW : defPaneW());
     m.style.gridTemplateColumns = L + 'px 1fr ' + R + 'px';
+    // the pane-collapse buttons live on .main and anchor to these widths
+    m.style.setProperty('--paneL', L + 'px');
+    m.style.setProperty('--paneR', R + 'px');
   }
   function initResizers(){
     wireResizer($('#rzLeft'), 'left');
@@ -5590,6 +7068,7 @@
         expandKpiPillar: Array.from(S.expandKpiPillar), expandUserRole: Array.from(S.expandUserRole),
         facetOrder: S.facetOrder, facetCollapsed: S.facetCollapsed,
         insX: S.insX, insTopX: S.insTopX, insY: S.insY, insTopY: S.insTopY, insMode: S.insMode,
+        fcDim: S.fcDim, fcHorizon: S.fcHorizon,
         leftW: S.leftW, rightW: S.rightW,
         noLeft: main.classList.contains('no-left'),
         noRight: main.classList.contains('no-right'),
@@ -5656,6 +7135,8 @@
       if (DIM_LIST.indexOf(S.insX) < 0) S.insX = 'sdg';       // migrate removed dims (e.g. 'level')
       if (DIM_LIST.indexOf(S.insY) < 0) S.insY = 'region';
       if (p.insMode) S.insMode = p.insMode;
+      if (['plans','impacts','outcomes','outputs','projects','regions','countries'].indexOf(p.fcDim) >= 0) S.fcDim = p.fcDim;
+      if (['plan','6m','12m','24m'].indexOf(p.fcHorizon) >= 0) S.fcHorizon = p.fcHorizon;
       if (p.leftW) S.leftW = p.leftW; if (p.rightW) S.rightW = p.rightW;
       if (p.expandRegion) S.expandRegion = new Set(p.expandRegion);
       S._noLeft = !!p.noLeft; S._noRight = !!p.noRight; S._legendMin = !!p.legendMin;
@@ -5671,6 +7152,7 @@
     syncBasisToggles();   // set the two single-button toggle labels to the restored basis
     $('#mapView').classList.toggle('hide', S.tab !== 'map');
     $('#insightsView').classList.toggle('hide', S.tab !== 'insights');
+    $('#forecastView').classList.toggle('hide', S.tab !== 'forecast');
     // custom dates + searches
     if (S.from) $('#dFrom').value = S.from;
     if (S.to) $('#dTo').value = S.to;
@@ -5978,8 +7460,10 @@
         var c = s.charCodeAt(i), o;
         if (c === 0x2019 || c === 0x2018) o = 39;
         else if (c === 0x201C || c === 0x201D) o = 34;
-        else if (c === 0x2013 || c === 0x2014) o = 45;
-        else if (c === 0x2192 || c === 0x21B3) o = 45;
+        else if (c === 0x2013) o = 150;                    // en dash (WinAnsi 0x96)
+        else if (c === 0x2014) o = 151;                    // em dash (WinAnsi 0x97)
+        else if (c === 0x2192 || c === 0x21B3) o = 150;    // arrows read as an en dash in print
+        else if (c === 0x2026) o = 133;                    // ellipsis (WinAnsi 0x85)
         else if (c === 0x2022) o = 149;
         else if (c === 0x00B7) o = 183;
         else if (c <= 255) o = c;
@@ -5992,18 +7476,27 @@
       if (code >= 32 && code <= 126) return (bold ? HELB_W : HELV_W)[code - 32];
       if (code === 183) return 278;
       if (code === 149) return 350;
+      if (code === 150) return 556;   // en dash
+      if (code === 151) return 1000;  // em dash
+      if (code === 133) return 1000;  // ellipsis
       return bold ? 611 : 556;
     }
     function textWEnc(s, size, bold){ var w = 0; for (var i = 0; i < s.length; i++) w += cw(s.charCodeAt(i), bold); return w / 1000 * size; }
     function textW(s, size, bold){ return textWEnc(enc(s), size, bold); }
     function escPdf(s){ return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)'); }
+    // Build the content-stream op for a text run (baseline at x, y); used by
+    // text() while drawing and by save() to stamp the per-page footer.
+    function textOp(str, x, y, opt){
+      opt = opt || {}; var s = enc(str); if (!s) return '';
+      var col = opt.color || [0, 0, 0];
+      var font = opt.bold ? 'F2' : (opt.italic ? 'F3' : 'F1');
+      return 'BT /' + font + ' ' + (opt.size || 10) + ' Tf '
+        + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg 1 0 0 1 ' + f(x) + ' ' + f(y) + ' Tm ('
+        + escPdf(s) + ') Tj ET';
+    }
     // Draw text with its baseline at (x, y).
     function text(str, x, y, opt){
-      opt = opt || {}; var s = enc(str); if (!s) return;
-      var col = opt.color || [0, 0, 0];
-      op('BT /' + (opt.bold ? 'F2' : 'F1') + ' ' + (opt.size || 10) + ' Tf '
-        + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg 1 0 0 1 ' + f(x) + ' ' + f(y) + ' Tm ('
-        + escPdf(s) + ') Tj ET');
+      var o = textOp(str, x, y, opt); if (o) op(o);
     }
     function rect(x, y, w, h, col){ op('q ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg ' + f(x) + ' ' + f(y) + ' ' + f(w) + ' ' + f(h) + ' re f Q'); }
     function rectStroke(x, y, w, h, col, lw){ op('q ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' RG ' + (lw || 0.5) + ' w ' + f(x) + ' ' + f(y) + ' ' + f(w) + ' ' + f(h) + ' re S Q'); }
@@ -6050,17 +7543,30 @@
     }
     function pad10(n){ n = '' + n; while (n.length < 10) n = '0' + n; return n; }
     function save(name){
+      // Per-page footer: hairline, document title on the left, "Page n of N" on
+      // the right - stamped here because only now is the page count known.
+      if (writer.footer){
+        var fMut = rgb('#98a2b3'), fRule = rgb('#e3e7ee');
+        pages.forEach(function (pg, i){
+          pg.ops.push('q ' + fRule[0] + ' ' + fRule[1] + ' ' + fRule[2] + ' RG 0.6 w '
+            + f(margin) + ' 31 m ' + f(PW - margin) + ' 31 l S Q');
+          pg.ops.push(textOp(writer.footer, margin, 21, { size: 7, color: fMut }));
+          var pn = 'Page ' + (i + 1) + ' of ' + pages.length;
+          pg.ops.push(textOp(pn, PW - margin - textW(pn, 7, false), 21, { size: 7, color: fMut }));
+        });
+      }
       var objs = [];
       function put(s){ objs.push(s); return objs.length; }
       var catalogN = put(''), pagesN = put('');
       var f1 = put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
       var f2 = put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+      var f3 = put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
       var kids = [];
       pages.forEach(function (pg){
         var stream = pg.ops.join('\n');
         var contentN = put('<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream');
         var pageN = put('<< /Type /Page /Parent ' + pagesN + ' 0 R /MediaBox [0 0 ' + PW + ' ' + PH
-          + '] /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R >> >> /Contents ' + contentN + ' 0 R >>');
+          + '] /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R /F3 ' + f3 + ' 0 R >> >> /Contents ' + contentN + ' 0 R >>');
         kids.push(pageN);
       });
       objs[catalogN - 1] = '<< /Type /Catalog /Pages ' + pagesN + ' 0 R >>';
@@ -6079,8 +7585,10 @@
       document.body.appendChild(a); a.click();
       setTimeout(function (){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
     }
-    return { PW: PW, PH: PH, margin: margin, addPage: addPage, text: text, rect: rect, rectStroke: rectStroke,
-             roundRect: roundRect, hline: hline, rgb: rgb, enc: enc, wrap: wrap, textW: textW, textWEnc: textWEnc, save: save };
+    var writer = { PW: PW, PH: PH, margin: margin, addPage: addPage, text: text, rect: rect, rectStroke: rectStroke,
+                   roundRect: roundRect, hline: hline, rgb: rgb, enc: enc, wrap: wrap, textW: textW, textWEnc: textWEnc,
+                   save: save, footer: '' };
+    return writer;
   }
 
   // Render a results table (auto-fit columns, wrapping, page breaks). Returns the y
@@ -6091,6 +7599,7 @@
     opts = opts || {};
     var C = { ink: doc.rgb('#39424f'), head: doc.rgb('#5b6675'), headBg: doc.rgb('#eef1f5'),
               rule: doc.rgb('#c9d0da'), soft: doc.rgb('#eaedf2'), grid: doc.rgb('#e3e7ee'),
+              zebra: doc.rgb('#f6f8fb'),
               pillEdge: doc.rgb('#8792a3'), pillEmptyEdge: doc.rgb('#dfe4ec') };
     var grid = !!opts.grid;
     var pad = 6, hF = 7.5, dF = 8.5, lineH = 11, vpad = 4, n = cols.length;
@@ -6138,29 +7647,59 @@
       if (a === 'center') return xs[i] + (colW[i] - tw) / 2;
       return xs[i] + pad;
     }
+    // Non-grid header labels print as small caps; grid headers keep their case
+    // (heat-map column names can be long and uppercasing would overflow them).
+    function headLabel(i){ return grid ? cols[i].t : String(cols[i].t || '').toUpperCase(); }
+    var headH = grid ? 15 : 17;
     function header(){
-      if (!grid) doc.rect(x, y - 15, availW, 15, C.headBg);   // gridded tables use a white header, like on screen
+      if (!grid) doc.rect(x, y - headH, availW, headH, C.headBg);
       for (var i = 0; i < n; i++){
-        doc.text(cols[i].t, xAlign(i, doc.textW(cols[i].t, hF, true)), y - 10.5, { size: hF, bold: true, color: C.head });
-        if (grid) doc.rectStroke(xs[i], y - 15, colW[i], 15, C.grid, 0.5);
+        var hs = grid ? hF : 6.5;
+        doc.text(headLabel(i), xAlign(i, doc.textW(headLabel(i), hs, true)), y - headH + 5, { size: hs, bold: true, color: C.head });
+        if (grid) doc.rectStroke(xs[i], y - headH, colW[i], headH, C.grid, 0.5);
       }
-      y -= 15; if (!grid) doc.hline(x, x + availW, y, C.rule, 0.8);
+      y -= headH; if (!grid) doc.hline(x, x + availW, y, C.rule, 0.8);
     }
     header();
     if (!rows.length){ doc.text('No rows.', x + pad, y - 11, { size: dF, color: doc.rgb('#8792a3') }); return y - 16; }
+    var zebra = false;   // alternate-row tint replaces the old per-row hairlines
     rows.forEach(function (row){
-      var cellLines = [], maxLines = 1;
+      var cellLines = [], cellFit = [], maxLines = 1;
       for (var i = 0; i < n; i++){
         var cell = row[i] || { t: '' };
-        var lines = wrapCol[i] ? doc.wrap(cell.t, colW[i] - pad * 2 - (cell.dot ? 10 : 0), dF, false) : [doc.enc(cell.t)];
-        cellLines.push(lines); if (lines.length > maxLines) maxLines = lines.length;
+        var availTW = colW[i] - pad * 2 - (cell.dot ? 10 : 0);
+        // tag cells render as a one-line tinted badge, never as wrapped text
+        var lines = cell.tag ? [''] : (wrapCol[i] ? doc.wrap(cell.t, availTW, dF, false) : [doc.enc(cell.t)]);
+        var fit = null;
+        // A lone word that misses the column by a little ("Secondary" in a narrow
+        // Type column) reads far better shrunk to fit than hard-broken mid-word.
+        if (lines.length > 1 && !/\s/.test(String(cell.t == null ? '' : cell.t).trim())){
+          var fs = dF;
+          while (fs > 6 && doc.textW(cell.t, fs, false) > availTW) fs -= 0.25;
+          lines = [doc.enc(cell.t)]; fit = fs;
+        }
+        cellLines.push(lines); cellFit.push(fit);
+        if (lines.length > maxLines) maxLines = lines.length;
       }
       var rowH = vpad * 2 + maxLines * lineH;
-      if (y - rowH < doc.margin){ doc.addPage(); y = doc.PH - doc.margin; header(); }
+      if (y - rowH < doc.margin){ doc.addPage(); y = doc.PH - doc.margin; header(); zebra = false; }
+      if (!grid && zebra) doc.rect(x, y - rowH, availW, rowH, C.zebra);
+      zebra = !zebra;
       for (i = 0; i < n; i++){
         var cell = row[i] || { t: '' }, lines = cellLines[i];
         var col = cell.color ? doc.rgb(cell.color) : C.ink, bold = !!cell.color;
         var indent = (cell.dot ? 10 : 0);
+        // tag cell: a small tinted badge with coloured uppercase text, mirroring the
+        // on-screen .kpi-type badges (cell.tag = { bg, fg }).
+        if (cell.tag){
+          var tg = doc.enc(String(cell.t || '').toUpperCase());
+          var tf = 6.5, maxTW = Math.max(colW[i] - pad * 2 - 8, 12);
+          while (tf > 5 && doc.textWEnc(tg, tf, true) > maxTW) tf -= 0.25;
+          var tgw = doc.textWEnc(tg, tf, true), tpw = tgw + 8, tph = 11;
+          var tpx = xs[i] + pad, tpy = (y - vpad - dF) + dF * 0.34 - tph / 2;
+          doc.roundRect(tpx, tpy, tpw, tph, 3, doc.rgb(cell.tag.bg));
+          doc.text(cell.t.toUpperCase(), tpx + 4, tpy + 3.4, { size: tf, bold: true, color: doc.rgb(cell.tag.fg) });
+        }
         // filled / hollow / empty pill: a uniform-width rounded badge (stadium shape)
         // holding the centred number - mirrors the on-screen pills.
         if (cell.pill || cell.pillHollow || cell.pillEmpty){
@@ -6169,10 +7708,10 @@
           if (cell.pill) doc.roundRect(px, py, pw, ph, ph / 2, doc.rgb(cell.pill));
           else doc.roundRect(px, py, pw, ph, ph / 2, cell.pillEmpty ? C.pillEmptyEdge : C.pillEdge, 0.7);
         }
-        if (cell.dot) doc.rect(xs[i] + pad, y - vpad - dF + 1, 6, 6, doc.rgb(cell.dot));
+        if (cell.dot) doc.roundRect(xs[i] + pad, y - vpad - dF + 1, 6, 6, 3, doc.rgb(cell.dot));
         // pill (number) cells render one point smaller than the body text; pill geometry
         // above stays keyed to dF so only the digits shrink, mirroring the on-screen table.
-        var tF = (cell.pill || cell.pillHollow || cell.pillEmpty) ? dF - 1 : dF;
+        var tF = (cell.pill || cell.pillHollow || cell.pillEmpty) ? dF - 1 : (cellFit[i] || dF);
         for (var li = 0; li < lines.length; li++){
           var ln = lines[li], by = y - vpad - dF - li * lineH;
           var tw = doc.textWEnc(ln, tF, bold);
@@ -6183,8 +7722,9 @@
         }
         if (grid) doc.rectStroke(xs[i], y - rowH, colW[i], rowH, C.grid, 0.5);
       }
-      y -= rowH; if (!grid) doc.hline(x, x + availW, y, C.soft, 0.4);
+      y -= rowH;
     });
+    if (!grid) doc.hline(x, x + availW, y, C.rule, 0.8);   // closing rule under the last row
     return y;
   }
 
@@ -6205,23 +7745,30 @@
     });
     var capH = 12;
     var boxH = padY * 2 + capH + lines.length * lineH;
-    doc.rect(M, y - boxH, AW, boxH, doc.rgb('#f4f6f9'));
-    doc.rect(M, y - boxH, 2.5, boxH, doc.rgb('#0c447c'));       // accent rule, as on screen
+    doc.roundRect(M, y - boxH, AW, boxH, 5, doc.rgb('#f4f6f9'));
+    doc.roundRect(M, y - boxH, AW, boxH, 5, doc.rgb('#e3e8f0'), 0.7);
+    doc.roundRect(M + 6, y - boxH + 6, 2.5, boxH - 12, 1.25, doc.rgb('#0c447c'));   // accent rule, as on screen
     // Caption: without it the panel reads as page furniture rather than as the
     // statement that these numbers are a slice.
-    doc.text('FILTERED BY', M + padX, y - padY - 7, { size: labelF, bold: true, color: doc.rgb('#0c447c') });
+    doc.text('FILTERED BY', M + padX + 5, y - padY - 7, { size: labelF, bold: true, color: doc.rgb('#0c447c') });
     var ly = y - padY - 8 - capH;
     lines.forEach(function (ln){
-      if (ln.label) doc.text(ln.label, M + padX, ly, { size: labelF, bold: true, color: doc.rgb('#8792a3') });
-      doc.text(ln.text, M + padX + ln.lw, ly, { size: valF, color: doc.rgb('#1a2230') });
+      if (ln.label) doc.text(ln.label, M + padX + 5, ly, { size: labelF, bold: true, color: doc.rgb('#8792a3') });
+      doc.text(ln.text, M + padX + 5 + ln.lw, ly, { size: valF, color: doc.rgb('#1a2230') });
       ly -= lineH;
     });
-    return y - boxH - 12;
+    return y - boxH - 14;
   }
 
   function pdfFileName(p){
     var base = (p.title || 'results').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
     return 'grassroots-' + (base || 'results') + '-' + TODAY.toISOString().slice(0, 10) + '.pdf';
+  }
+
+  // "13 July 2026" - a printed report deserves a human date, not an ISO stamp.
+  function pdfDate(d){
+    var MO = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return d.getUTCDate() + ' ' + MO[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
   }
 
   // Build and download the PDF for the results box currently on screen.
@@ -6231,73 +7778,93 @@
     var doc = pdfWriter({ landscape: !!p.grid }), PW = doc.PW, M = doc.margin, AW = PW - 2 * M;
     doc.addPage();
     var y = doc.PH - M;
-    var INK = doc.rgb('#1a2230'), MUT = doc.rgb('#8792a3'), SUB = doc.rgb('#5b6675');
+    var INK = doc.rgb('#1a2230'), MUT = doc.rgb('#8792a3'), SUB = doc.rgb('#5b6675'),
+        NAVY = doc.rgb('#0c447c');
+    doc.footer = 'The Grassroots  ·  ' + (p.title || 'Results');
 
-    // running header
-    doc.text('THE GRASSROOTS', M, y - 9, { size: 9, bold: true, color: doc.rgb('#0c447c') });
-    var rt = 'Results export · ' + TODAY.toISOString().slice(0, 10);
-    doc.text(rt, PW - M - doc.textW(rt, 8.5, false), y - 9, { size: 8.5, color: MUT });
-    y -= 15; doc.hline(M, PW - M, y, doc.rgb('#d9dee6'), 0.7); y -= 16;
+    // letterhead: full-bleed brand band across the top, wordmark + export date under it
+    doc.rect(0, doc.PH - 5, PW, 5, NAVY);
+    doc.text('THE', M, y - 11, { size: 10, bold: true, color: INK });
+    doc.text('GRASSROOTS', M + doc.textW('THE', 10, true) + 2.5, y - 11, { size: 10, bold: true, color: NAVY });
+    var rt = 'Results Export  ·  ' + pdfDate(TODAY);
+    doc.text(rt, PW - M - doc.textW(rt, 8.5, false), y - 11, { size: 8.5, color: MUT });
+    y -= 18; doc.hline(M, PW - M, y, doc.rgb('#d9dee6'), 0.7); y -= 15;
 
     // active development plan - stamped on every export
     var _ap = activePlan();
     if (_ap){
-      var planLine = 'PLAN · ' + _ap.name + (planPeriod(_ap) ? '    ' + planPeriod(_ap) : '');
-      doc.text(planLine, M, y - 8, { size: 8.5, bold: true, color: doc.rgb('#0c447c') });
-      y -= 16;
+      var px = M;
+      doc.text('PLAN', px, y - 8, { size: 6.5, bold: true, color: MUT });
+      px += doc.textW('PLAN', 6.5, true) + 7;
+      doc.text(_ap.name, px, y - 8, { size: 9, bold: true, color: NAVY });
+      if (planPeriod(_ap)){
+        px += doc.textW(_ap.name, 9, true) + 7;
+        doc.text('·  ' + planPeriod(_ap), px, y - 8, { size: 8.5, color: MUT });
+      }
+      y -= 17;
     }
-    y -= 6;
+    y -= 7;
 
-    // badge + title
+    // badge (rounded tag, as on screen) + title
     var badge = (p.badge || '').toUpperCase();
     if (badge){
-      var bw = doc.textW(badge, 8, true) + 16;
-      doc.rect(M, y - 12, bw, 16, doc.rgb(p.badgeColor || '#7c8aa5'));
-      doc.text(badge, M + 8, y - 8, { size: 8, bold: true, color: [1, 1, 1] });
-      doc.text(p.title || '', M + bw + 10, y - 8, { size: 14, bold: true, color: INK });
+      var bw = doc.textW(badge, 7.5, true) + 16;
+      doc.roundRect(M, y - 12.5, bw, 16, 8, doc.rgb(p.badgeColor || '#7c8aa5'));
+      doc.text(badge, M + 8, y - 8, { size: 7.5, bold: true, color: [1, 1, 1] });
+      doc.text(p.title || '', M + bw + 10, y - 9.5, { size: 16, bold: true, color: INK });
     } else {
-      doc.text(p.title || '', M, y - 8, { size: 14, bold: true, color: INK });
+      doc.text(p.title || '', M, y - 9.5, { size: 16, bold: true, color: INK });
     }
-    y -= 22;
+    y -= 24;
     if (p.sub){ doc.text(p.sub, M, y - 8, { size: 9.5, color: SUB }); y -= 13; }
-    if (p.summary){ doc.text('↳ ' + p.summary, M, y - 8, { size: 9.5, color: MUT }); y -= 14; }
-    y -= 8;
+    if (p.summary){ doc.text(p.summary, M, y - 8, { size: 9, italic: true, color: MUT }); y -= 14; }
+    y -= 9;
 
     // Active filters - the on-screen strip, redrawn. A printed export outlives the
     // screen it came from, so without this the reader cannot tell whether "7
     // projects" is the whole portfolio or one country's slice of it.
     y = pdfFilterStrip(doc, p.filters, M, AW, y);
 
-    // stat cards
+    // stat cards - bordered rounded panels, label / value / status chip
     if (p.stats && p.stats.length){
-      var nS = p.stats.length, gap = 8, cardW = (AW - gap * (nS - 1)) / nS, cardH = 48;
+      var nS = p.stats.length, gap = 10, cardW = (AW - gap * (nS - 1)) / nS, cardH = 50;
       for (var i = 0; i < nS; i++){
         var sx = M + i * (cardW + gap), st = p.stats[i];
-        doc.rect(sx, y - cardH, cardW, cardH, doc.rgb('#f4f6f9'));
-        doc.text((st.label || '').toUpperCase(), sx + 8, y - 14, { size: 7, bold: true, color: MUT });
-        doc.text(st.value || '', sx + 8, y - 31, { size: 13, bold: true, color: INK });
+        doc.roundRect(sx, y - cardH, cardW, cardH, 6, doc.rgb('#f7f9fc'));
+        doc.roundRect(sx, y - cardH, cardW, cardH, 6, doc.rgb('#e3e8f0'), 0.8);
+        doc.text((st.label || '').toUpperCase(), sx + 9, y - 15, { size: 6.5, bold: true, color: MUT });
+        // long values (e.g. a Timeline date range) shrink to fit rather than clip
+        var vF = 14;
+        while (vF > 8 && doc.textW(st.value || '', vF, true) > cardW - 18) vF -= 0.5;
+        doc.text(st.value || '', sx + 9, y - 32, { size: vF, bold: true, color: INK });
         if (st.sub){
           if (st.color){
-            var chW = doc.textW(st.sub, 6.5, true) + 11;
-            doc.rect(sx + 8, y - 44, Math.min(chW, cardW - 16), 12, doc.rgb(st.color));
-            doc.text(st.sub, sx + 13.5, y - 41, { size: 6.5, bold: true, color: [1, 1, 1] });
+            var chW = doc.textW(st.sub, 6.5, true) + 12;
+            doc.roundRect(sx + 9, y - 46.5, Math.min(chW, cardW - 18), 12, 6, doc.rgb(st.color));
+            doc.text(st.sub, sx + 15, y - 43, { size: 6.5, bold: true, color: [1, 1, 1] });
           } else {
-            doc.text(st.sub, sx + 8, y - 41, { size: 7.5, color: MUT });
+            doc.text(st.sub, sx + 9, y - 43, { size: 7.5, color: MUT });
           }
         }
       }
-      y -= cardH + 18;
+      y -= cardH + 20;
     }
 
-    if (p.section){ doc.text(p.section.toUpperCase(), M, y - 9, { size: 8.5, bold: true, color: SUB }); y -= 15; }
+    // section headings read as "PROJECTS · 5 OF 13" - the on-screen " - " separator
+    // looks like a minus once uppercased on paper.
+    function sectionHead(s){ return String(s || '').toUpperCase().replace(/\s+-\s+/g, '  ·  '); }
+    if (p.section){
+      doc.text(sectionHead(p.section), M, y - 9, { size: 8.5, bold: true, color: SUB });
+      y -= 15;
+    }
     y = pdfTable(doc, p.columns || [], p.rows || [], M, AW, y, { grid: !!p.grid });
-    if (p.note){ y -= 6; doc.text(p.note, M, y - 8, { size: 8, color: MUT }); }
+    if (p.note){ y -= 8; doc.text(p.note, M, y - 8, { size: 8, italic: true, color: MUT }); }
 
     // optional second table (e.g. the beneficiaries heat-map) - always gridded
     if (p.table2 && p.table2.columns && p.table2.rows && p.table2.rows.length){
-      y -= 22;
+      y -= 24;
       if (y < M + 90){ doc.addPage(); y = doc.PH - M; }
-      doc.text(p.table2.section.toUpperCase(), M, y - 9, { size: 8.5, bold: true, color: SUB }); y -= 15;
+      doc.text(sectionHead(p.table2.section), M, y - 9, { size: 8.5, bold: true, color: SUB }); y -= 15;
       y = pdfTable(doc, p.table2.columns, p.table2.rows, M, AW, y, { grid: true });
     }
 

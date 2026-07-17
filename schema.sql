@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS plan (
     description TEXT,
     start_date  TEXT,                   -- ISO 8601
     end_date    TEXT,                   -- ISO 8601
+    lead_id     INTEGER REFERENCES user(id),  -- accountable Lead, selected from the user list
     seq         INTEGER                 -- display order
 );
 
@@ -39,9 +40,10 @@ CREATE TABLE IF NOT EXISTS plan (
 -- country associates to exactly one region via a FOREIGN key (country.region_id),
 -- so the region taxonomy is defined here once and referenced, never restated.
 CREATE TABLE IF NOT EXISTS region (
-    id   INTEGER PRIMARY KEY,            -- 1..6
-    name TEXT NOT NULL UNIQUE,           -- Africa | Asia | Europe | North America | South America | Oceania
-    seq  INTEGER                         -- display order
+    id      INTEGER PRIMARY KEY,         -- 1..6
+    name    TEXT NOT NULL UNIQUE,        -- Africa | Asia | Europe | North America | South America | Oceania
+    lead_id INTEGER REFERENCES user(id), -- accountable Lead, selected from the user list
+    seq     INTEGER                      -- display order
 );
 
 -- Country reference (centroids come from data/world.js at render time) -----------
@@ -53,7 +55,8 @@ CREATE TABLE IF NOT EXISTS country (
     iso3      TEXT PRIMARY KEY,          -- e.g. 'KEN'
     name      TEXT NOT NULL,
     region    TEXT,                      -- denormalised region name (mirror of region.name)
-    region_id INTEGER REFERENCES region(id)   -- FOREIGN key -> region(id)
+    region_id INTEGER REFERENCES region(id),  -- FOREIGN key -> region(id)
+    lead_id   INTEGER REFERENCES user(id)     -- accountable Lead, selected from the user list
 );
 
 -- Application users. Activities are attributed to the logged-in user, never a
@@ -82,7 +85,7 @@ CREATE TABLE IF NOT EXISTS programme (
     short_name   TEXT,
     region       TEXT,
     country_iso3 TEXT REFERENCES country(iso3),
-    lead         TEXT,                   -- responsible officer / unit
+    lead_id      INTEGER REFERENCES user(id),  -- accountable Lead, selected from the user list
     budget_usd   REAL,
     start_date   TEXT,                   -- ISO 8601
     end_date     TEXT
@@ -94,7 +97,8 @@ CREATE TABLE IF NOT EXISTS donor (
     name       TEXT NOT NULL,
     short_name TEXT,
     type       TEXT CHECK (type IN ('Bilateral','Multilateral','Foundation')),
-    color      TEXT                      -- identity colour
+    color      TEXT,                     -- identity colour
+    lead_id    INTEGER REFERENCES user(id)  -- accountable Lead, selected from the user list
 );
 
 -- Project: a country-scoped, donor-funded initiative carrying a set of KPIs --------
@@ -109,7 +113,7 @@ CREATE TABLE IF NOT EXISTS project (
     country_iso3 TEXT REFERENCES country(iso3),
     region       TEXT,
     budget_usd   REAL,
-    lead         TEXT,
+    lead_id      INTEGER REFERENCES user(id),  -- accountable Lead, selected from the user list
     start_date   TEXT,                   -- ISO 8601
     end_date     TEXT,
     description  TEXT
@@ -126,7 +130,7 @@ CREATE TABLE IF NOT EXISTS result (
     code         TEXT,                   -- SYSTEM-GENERATED hierarchy code (read-only): 'Pillar 3' / 'Outcome 1.2' / 'Output 1.2.1'
     statement    TEXT NOT NULL,          -- past-tense change language
     sdg          INTEGER,                -- REPURPOSED: holds the Pillar id (1-4+)
-    owner_id     INTEGER REFERENCES user(id),  -- accountable owner (outputs); people are referenced by id
+    owner_id     INTEGER REFERENCES user(id),  -- accountable Lead (impacts, outcomes & outputs); people are referenced by id, shown as "Lead" in the app
     pillar_name  TEXT,                   -- (impact rows only) display name of a custom pillar
     pillar_color TEXT,                   -- (impact rows only) identity colour of a custom pillar
     assumptions  TEXT,
@@ -202,6 +206,26 @@ CREATE TABLE IF NOT EXISTS beneficiary (
     type_id        INTEGER NOT NULL REFERENCES beneficiary_type(id),
     value          REAL
 );
+
+-- Monthly results report for a Lead (Communication panel) ------------------------
+-- One row = one monthly PDF report for a (category, entity, year, month). The PDF
+-- itself is a generated artefact stored base64-encoded in the browser store so a
+-- generated report is a fixed snapshot; DB.exportSQL() omits the blob column.
+CREATE TABLE IF NOT EXISTS report (
+    id        INTEGER PRIMARY KEY,
+    category  TEXT NOT NULL CHECK (category IN ('plan','impact','outcome','output','project','donor','region','country')),
+    ref       TEXT NOT NULL,             -- entity key, e.g. 'country:KEN' / 'donor:3' / 'outcome:1|<statement>'
+    ref_name  TEXT,                      -- entity display name at generation time
+    lead_id   INTEGER REFERENCES user(id),  -- the Lead the report is addressed to
+    year      INTEGER NOT NULL,
+    month     INTEGER NOT NULL,          -- 1..12
+    enabled   INTEGER NOT NULL DEFAULT 1,   -- 0 = excluded from batch generate & send
+    generated TEXT,                      -- ISO timestamp of last (re)generation
+    sent      TEXT,                      -- ISO timestamp of last email send
+    summary   TEXT,                      -- one-line content summary (feeds the email's {SUMMARY})
+    pdf       TEXT                       -- the report PDF, base64 (browser store only)
+);
+CREATE INDEX IF NOT EXISTS idx_report_period ON report(year, month);
 
 CREATE INDEX IF NOT EXISTS idx_beneficiary_measure ON beneficiary(measurement_id);
 CREATE INDEX IF NOT EXISTS idx_beneficiary_type    ON beneficiary(type_id);

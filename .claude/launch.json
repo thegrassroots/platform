@@ -48,6 +48,30 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8799"],
       "port": 8799
+    },
+    {
+      "name": "promon-leads",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8803"],
+      "port": 8803
+    },
+    {
+      "name": "promon-pdf",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8807"],
+      "port": 8807
+    },
+    {
+      "name": "promon-panes",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8809"],
+      "port": 8809
+    },
+    {
+      "name": "promon-forecast",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8811"],
+      "port": 8811
     }
   ]
 }

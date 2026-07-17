@@ -10,14 +10,16 @@
   'use strict';
 
   var DB_NAME = 'grassroots_v1';   // bump to force every browser to drop and reseed
-  var DB_VERSION = 5;              // v5 adds the `region` store (all-world country reference)
+  var DB_VERSION = 6;              // v6 adds the `report` store (monthly Lead reports); v5 added `region`
   var STAMP_KEY = 'ddi_seed_stamp'; // localStorage key: content stamp of last-seeded data (auto-reseed)
   // `plan` is the top of the results chain (Plan > Impact > Outcome > Output > KPI);
   // results & projects carry a plan_id. DB_NAME is unchanged - the content stamp
   // above auto-reseeds every browser when the seed (now two plans) regenerates.
   // `region` is a universal reference table (the six continents); country carries
   // a region_id FOREIGN key into it.
-  var TABLES = ['plan', 'region', 'country', 'user', 'donor', 'programme', 'project', 'project_kpi', 'result', 'indicator', 'measurement', 'beneficiary_type', 'beneficiary'];
+  // `report` holds the Communication panel's generated monthly Lead reports
+  // (metadata + the PDF itself, base64-encoded). Never seeded - user-generated.
+  var TABLES = ['plan', 'region', 'country', 'user', 'donor', 'programme', 'project', 'project_kpi', 'result', 'indicator', 'measurement', 'beneficiary_type', 'beneficiary', 'report'];
 
   // In-memory mirror of every table (array of row objects).
   var mem = {};
@@ -258,7 +260,8 @@
       var lines = ['PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;'];
       TABLES.forEach(function (t) {
         mem[t].forEach(function (row) {
-          var cols = Object.keys(row).filter(function (k) { return k !== 'id' || t !== 'country'; });
+          // the report PDF blob (base64) is an artefact, not relational data - skip it
+          var cols = Object.keys(row).filter(function (k) { return (k !== 'id' || t !== 'country') && !(t === 'report' && k === 'pdf'); });
           var vals = cols.map(function (k) { return sqlVal(row[k]); });
           lines.push('INSERT INTO ' + t + ' (' + cols.join(',') + ') VALUES (' + vals.join(',') + ');');
         });

@@ -186,9 +186,19 @@ for _iso, _nm, _rg in COUNTRIES + WORLD_EXTRA:
     _seen_iso.add(_iso)
     assert _rg in region_id_by_name, f"unknown region {_rg!r} for {_iso}"
 
-# Country-office leads (country-team level)
+# Country-office leads (country-team level). One name per programme country,
+# drawn WITHOUT replacement so every seeded user has a distinct display name
+# (Lead dropdowns label users by name - duplicates are indistinguishable).
+# Keep this pool >= len(COUNTRIES) and every surname unique.
 LEADS = ["A. Mwangi","S. Rahman","T. Eriksson","M. Okonkwo","L. Petrova","J. Alvarez",
- "N. Haile","R. Santos","F. Ndiaye","P. Gurung","K. Nasser","E. Bryant","C. Dlamini","H. Tran"]
+ "N. Haile","R. Santos","F. Ndiaye","P. Gurung","K. Nasser","E. Bryant","C. Dlamini","H. Tran",
+ "B. Kamau","D. Osei","G. Abebe","W. Banda","S. Diallo","M. Toure","R. Chirwa","A. Farah",
+ "L. Mensah","K. Sow","J. Moyo","C. Nkosi","T. Gebre","H. Mansour","R. Khalil","S. Barakat",
+ "N. Aziz","F. Hamdan","L. Saleh","A. Sharma","P. Thapa","S. Fernando","M. Chowdhury",
+ "R. Iyer","K. Bhatti","D. Nguyen","L. Phan","T. Aung","B. Ganbold","C. Reyes","I. Kovacs",
+ "O. Marchenko","D. Ivanova","A. Hoxha","N. Beridze","Z. Osmonov","G. Rustamov","E. Popescu",
+ "V. Jovanovic","C. Mendoza","P. Vargas","R. Quispe","L. Castillo","J. Fuentes","M. Herrera",
+ "A. Paredes"]
 
 # ---- Place seeding: REAL settlements per country ----------------------------
 # tools/cities.json holds real cities/towns per country (name, type, lat, lng),
@@ -592,28 +602,61 @@ for _fw in (PILLARS_2021, PILLARS_2026):
                 if _owner not in hq_by_name:
                     hq_by_name[_owner] = add_user(_owner.lower().replace(" ", "."), _owner, "hq")
 
+# ---- Leads for every category (deterministic - NO RNG, so nothing else churns) --
+# The Communication panel reports to a Lead per plan/impact/outcome/output/project/
+# donor/region/country. Outputs (owner per framework spec), projects, programmes and
+# programme countries are assigned elsewhere; here the rest get one:
+#   plans / impacts / outcomes -> the HQ officer who owns the MOST outputs beneath
+#   them (ties break by first appearance), so the Lead is whoever carries the most
+#   of that scope's delivery;  donors / regions -> rotate through the HQ pool.
+def _majority(names):
+    counts = {}
+    for n in names: counts[n] = counts.get(n, 0) + 1
+    best = None
+    for n in names:
+        if best is None or counts[n] > counts[best]: best = n
+    return best
+def _impact_owner(t):
+    return hq_by_name.get(_majority([o[1] for (_os, _outs) in t["outcomes"] for o in _outs]))
+def _outcome_owner(outs):
+    return hq_by_name.get(_majority([o[1] for o in outs]))
+for _p, _row in zip(PLANS, plans):
+    _row["lead_id"] = hq_by_name.get(_majority(
+        [o[1] for t in _p["framework"] for (_os, _outs) in t["outcomes"] for o in _outs]))
+hq_uids = list(hq_by_name.values())
+for _i, _r in enumerate(regions):
+    _r["lead_id"] = hq_uids[_i % len(hq_uids)]
+
 # ---- country programmes (UNIVERSAL - shared across plans) -------------------
 prog_by_iso = {}
 co_by_iso = {}
 lead_name_by_iso = {}
+_lead_pool = LEADS[:]   # sample without replacement -> unique names
 for iso, cname, region in COUNTRIES:
     pid += 1
-    lead = pick(LEADS)
+    lead = _lead_pool.pop(int(rnd() * len(_lead_pool)))
     co_uid = add_user(iso.lower(), lead, "co", region, iso)   # username = iso3
     co_by_iso[iso] = co_uid
     lead_name_by_iso[iso] = lead
     programmes.append({
         "id":pid,"name":cname,"short_name":iso,"region":region,
-        "country_iso3":iso,"lead":lead,
+        "country_iso3":iso,"lead_id":co_uid,
         "budget_usd": ri(1,9)*100_000,
         "start_date":"2021-01-01","end_date":"2030-12-31",
     })
     prog_by_iso[iso] = pid
 
+# Lead dropdowns label users by display name - duplicates would be
+# indistinguishable, so every seeded user's name must be unique.
+assert len({u["name"] for u in users}) == len(users), "duplicate user display names in seed"
+
 # Country reference table: the 56 programme countries PLUS every other country in
 # the world (reference-only). Each carries the region NAME (denormalised mirror
 # the app filters on) AND a region_id FOREIGN key into the `region` table.
-countries = [{"iso3":i,"name":n,"region":r,"region_id":region_id_by_name[r]}
+# Programme countries carry their country-office user as the accountable Lead
+# (co_by_iso is keyed by iso3; reference-only countries have no lead yet).
+countries = [{"iso3":i,"name":n,"region":r,"region_id":region_id_by_name[r],
+              "lead_id":co_by_iso.get(i)}
              for (i,n,r) in COUNTRIES + WORLD_EXTRA]
 
 # ---- results framework - rolled out per PLAN x country ----------------------
@@ -630,6 +673,7 @@ for plan in PLANS:
             results.append({"id":rid,"plan_id":plan["id"],"programme_id":prog_id,"parent_id":None,"level":"impact",
                 "code":f"Impact {t['pillar']}","statement":t["impact"],"sdg":t["pillar"],
                 "pillar_name":t["tag"],"pillar_color":color,
+                "owner_id":_impact_owner(t),
                 "assumptions":"Leadership engagement sustained; Steering group priorities hold; resourcing confirmed.",
                 "risks":pick(["Resourcing constraints under prioritisation.","Uneven partner engagement.",
                     "Seasonal access constraints.","Capacity gaps at field level."]),
@@ -638,6 +682,7 @@ for plan in PLANS:
                 rid += 1; outcome_id = rid
                 results.append({"id":rid,"plan_id":plan["id"],"programme_id":prog_id,"parent_id":impact_id,"level":"outcome",
                     "code":f"Outcome {t['pillar']}.{oi}","statement":o_stmt,"sdg":t["pillar"],
+                    "owner_id":_outcome_owner(outputs),
                     "assumptions":"Regional and country counterparts remain engaged; enabling policy environment holds.",
                     "risks":pick(["Institutional turnover weakens ownership.","Delayed decisions slow delivery.",
                         "Capacity gaps in implementing teams.","Access constraints in remote districts."]),
@@ -675,7 +720,9 @@ DONOR_DEFS = [
 ]
 DONOR_PAL = ["#4FA9E8","#33C2B4","#9D7BEE","#F5A04D","#EC7BA6","#5399EA","#2CC4A0","#E0A93B",
  "#6FBF73","#EA8A5B","#C58BE0","#48B0C4","#D98CA0","#8FB84E","#E2B54A","#7E9BEA"]
-donors = [{"id":i+1,"name":n,"short_name":s,"type":t,"color":DONOR_PAL[i % len(DONOR_PAL)]}
+# each donor gets an HQ relationship Lead (offset so the rotation differs from regions')
+donors = [{"id":i+1,"name":n,"short_name":s,"type":t,"color":DONOR_PAL[i % len(DONOR_PAL)],
+           "lead_id":hq_uids[(i + 2) % len(hq_uids)]}
           for i,(n,s,t) in enumerate(DONOR_DEFS)]
 
 # ---- Projects (plan-SCOPED) -------------------------------------------------
@@ -767,7 +814,7 @@ for plan in PLANS:
                 "id":prj,"plan_id":plan["id"],"code":code,"name":f"{theme} - {p['name']}",
                 "budget_usd": ri(3, 45) * 100_000,
                 "donor_id":donor["id"],"country_iso3":iso,"region":region,
-                "lead":p["lead"],"start_date":pick(plan["proj_starts"]),"end_date":pick(plan["proj_ends"]),
+                "lead_id":reporter_id,"start_date":pick(plan["proj_starts"]),"end_date":pick(plan["proj_ends"]),
                 "description":f"{theme} initiative in {p['name']}, supported by {donor['name']}, "
                               f"strengthening capacity and delivery in the field.",
             })
