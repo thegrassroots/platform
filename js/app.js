@@ -4753,7 +4753,8 @@
       var scope = fcEntity(ent.ref, (ent.code ? ent.code + ' - ' : '') + ent.name,
         commCatOne(ent.cat), COMM_BRAND, toRows(commIndicators(ent)));
       fcCompute(scope);
-      var ents = [], dimLabel = null, entityLabel = null;
+      var ents = [], groups = null, dimLabel = null, entityLabel = null;
+      var byRisk = function (a, b){ return (a.aR == null ? 2 : a.aR) - (b.aR == null ? 2 : b.aR); };
       if (ent.cat === 'project'){
         // exception: a project lead gets the per-KPI forecast of their project
         dimLabel = 'KPIs'; entityLabel = 'KPI';
@@ -4762,17 +4763,31 @@
             r.unit || '', r.sdg ? (PILLAR_COLORS[r.sdg] || '#94a3b8') : '#94a3b8', [r]));
         });
       } else {
-        commProjectsFor(ent).forEach(function (row){
+        var projRows = commProjectsFor(ent), entByPid = {};
+        projRows.forEach(function (row){
           var p = row.p, co = DB._idx.countryByIso[p.country_iso3], dn = DB._idx.donorById[p.donor_id];
-          ents.push(fcEntity('project:' + p.id, (p.code ? p.code + ' · ' : '') + p.name,
+          var e = fcEntity('project:' + p.id, (p.code ? p.code + ' · ' : '') + p.name,
             (co ? co.name : (p.country_iso3 || '')) + (dn ? ' · ' + (dn.short_name || dn.name) : ''),
-            p.country_iso3 ? countryColor(p.country_iso3) : '#94a3b8', toRows(row.kpis || [])));
+            p.country_iso3 ? countryColor(p.country_iso3) : '#94a3b8', toRows(row.kpis || []));
+          entByPid[p.id] = e; ents.push(e);
         });
       }
       ents.forEach(fcCompute);
+      // section groups one level down the chain, exactly like the results
+      // report: Plan -> Impact, Impact -> Outcome, Outcome -> Output, Region ->
+      // country; Output / Donor / Country stay flat (commGroups returns null)
+      if (ent.cat !== 'project'){
+        var rawGroups = commGroups(ent, projRows);
+        if (rawGroups) groups = rawGroups.map(function (g){
+          var ge = g.rows.map(function (row){ return entByPid[row.p.id]; });
+          ge.sort(byRisk);
+          return { title: g.title, color: g.color, ents: ge };
+        });
+      }
       // riskiest first, same ordering as the Forecast tab
-      ents.sort(function (a, b){ return (a.aR == null ? 2 : a.aR) - (b.aR == null ? 2 : b.aR); });
+      ents.sort(byRisk);
       var doc = fcPdfDoc(scope, ents, null, {
+        groups: groups,
         tag: 'Forecast Brief  ·  ' + period,
         preparedFor: ent,
         noFilters: true,
@@ -7312,22 +7327,20 @@
     });
     y -= 10;
 
-    // entity table - the same columns as on screen (the sparkline becomes a
-    // 3-month delta, the outlook bar a worst-best range)
-    var mNow = fcNowMi(), hasLate = false;
+    // entity table - the same columns as on screen minus the sparkline (the
+    // outlook bar becomes a worst-best range). The per-KPI drill-down (comm
+    // project briefs) also drops the KPI-count column - a count of 1 says nothing.
+    var hasLate = false;
+    var perKpi = opts.entityLabel === 'KPI';
     var cols = [
       { t: opts.entityLabel || FC_SING[S.fcDim] || 'Entity' }, { t: 'KPIs', align: 'right' },
-      { t: 'Now', align: 'right' }, { t: 'Trend 3 mo', align: 'right' },
+      { t: 'Now', align: 'right' },
       { t: 'Realistic', align: 'right' }, { t: 'Worst - best', align: 'right' },
       { t: 'Status' }, { t: 'Pace', align: 'right' }, { t: 'Target by', align: 'right' }
     ];
-    var rows = ents.map(function (e){
+    if (perKpi) cols.splice(1, 1);
+    function rowFor(e){
       var st = STATUS[e.code] || STATUS.nodata;
-      var trend = '–';
-      if (e.fcs.length){
-        var d = (fcHist(e, mNow) - fcHist(e, mNow - 3)) * 100;
-        trend = (d >= 0 ? '+' : '') + (Math.abs(d) >= 10 ? Math.round(d) : d.toFixed(1)) + 'pp';
-      }
       var pace, paceCol = null;
       if (e.aR == null) pace = '–';
       else if (e.paceX === 0) pace = 'met';
@@ -7340,22 +7353,40 @@
       if (e.aNow != null && e.aNow >= 1) eta = 'done';
       else if (e.etaMi == null) eta = '–';
       else { eta = fcMiLab(e.etaMi); if (e.mEnd != null && e.etaMi > e.mEnd){ eta += ' *'; hasLate = true; } }
-      return [
+      var cells = [
         { t: e.label + (e.sub ? '  ·  ' + e.sub : ''), dot: e.color },
-        { t: fmt(e.n) }, { t: fcPct(e.aNow) }, { t: trend },
+        { t: fmt(e.n) }, { t: fcPct(e.aNow) },
         { t: fcPct(e.aR), color: e.aR == null ? null : st.c },
         { t: e.aR == null ? '–' : fcPct(e.aW) + ' – ' + fcPct(e.aB) },
         { t: st.label, tag: { bg: st.c, fg: '#ffffff' } },
         { t: pace, color: paceCol },
         { t: eta }
       ];
-    });
+      if (perKpi) cells.splice(1, 1);
+      return cells;
+    }
     if (y < M + 80){ doc.addPage(); y = doc.PH - M; }
     doc.text(((opts.dimLabel || fcDimLabel()) + '  ·  FORECAST ' + fcHorizonLabel() + '  ·  RISKIEST FIRST').toUpperCase(),
       M, y - 9, { size: 8.5, bold: true, color: SUB });
     y -= 15;
-    y = pdfTable(doc, cols, rows, M, AW, y);
-    y -= 12;
+    if (opts.groups && opts.groups.length){
+      // sectioned table - one sub-table per group, with the accent-bar header
+      // language of the results report (riskiest first inside each group)
+      opts.groups.forEach(function (g){
+        if (y < M + 95){ doc.addPage(); y = doc.PH - M; }
+        if (g.color) doc.rect(M, y - 12.5, 2.5, 10.5, doc.rgb(g.color));
+        doc.text(truncTxt(g.title, 95), M + (g.color ? 8 : 0), y - 10.5, { size: 9.5, bold: true, color: INK });
+        var cnt = g.ents.length + ' project' + (g.ents.length === 1 ? '' : 's');
+        doc.text(cnt, PW - M - doc.textW(cnt, 7.5, false), y - 10.5, { size: 7.5, color: MUT });
+        y -= 19;
+        y = pdfTable(doc, cols, g.ents.map(rowFor), M, AW, y);
+        y -= 14;
+      });
+      y += 2;
+    } else {
+      y = pdfTable(doc, cols, ents.map(rowFor), M, AW, y);
+      y -= 12;
+    }
     var note = "Scenarios project each KPI's recent monthly pace (±1 sd) forward from today; entities are ordered riskiest first."
              + (hasLate ? '  * At the current pace the target lands after the plan ends.' : '');
     doc.wrap(note, AW, 8, false).forEach(function (ln){
