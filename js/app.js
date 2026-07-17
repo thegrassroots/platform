@@ -3768,8 +3768,116 @@
   function openResults(){ renderResults('framework'); $('#rmModal').classList.add('on'); }
   function closeResults(){ $('#rmModal').classList.remove('on'); }
 
-  function openAbout(){ $('#aboutModal').classList.add('on'); }
+  function openAbout(tab){
+    aboutTab(tab || 'grass');
+    $('#aboutModal').classList.add('on');
+  }
   function closeAbout(){ $('#aboutModal').classList.remove('on'); }
+  function aboutTab(tab){
+    var org = tab === 'org';
+    $('#aboutTabG').classList.toggle('on', !org);
+    $('#aboutTabO').classList.toggle('on', org);
+    $('#aboutPaneG').style.display = org ? 'none' : '';
+    $('#aboutPaneO').style.display = org ? '' : 'none';
+    if (org) renderOrgPane();
+  }
+
+  // ---- About - "Your organization" tab ----------------------------------------
+  //  Edits the org profile (see orgProfile above). Every change persists straight
+  //  to localStorage - there is nothing to lose by closing the modal.
+  function renderOrgPane(){
+    var host = $('#aboutPaneO');
+    var o = orgProfile();
+    host.innerHTML =
+      '<div class="cp-note" style="margin-top:0">Tell the platform who <b>you</b> are. When the profile is ' +
+      'activated, every PDF export - results, forecasts and the monthly Lead reports - carries your ' +
+      'organization\'s name on the letterhead, footer and file name, and your logo replaces the Grassroots ' +
+      'mark. Deactivate it at any time to fall back to The Grassroots branding. Everything here stays in ' +
+      'this browser only - it is never written to the database or the SQL export.</div>' +
+      '<label class="org-onoff"><input type="checkbox" class="org-enabled"' + (o.enabled ? ' checked' : '') + '> ' +
+      '<b>Use this profile on all PDF exports</b><span class="org-status"></span></label>' +
+      '<div class="uform">' +
+      '  <div class="ufgrid" style="grid-template-columns:2fr 1fr">' +
+      '    <label><span>Organization name *</span><input class="org-name" type="text" maxlength="120" value="' + esc(o.name || '') + '" placeholder="e.g. Sahel Development Trust"></label>' +
+      '    <label><span>Acronym</span><input class="org-acronym" type="text" maxlength="20" value="' + esc(o.acronym || '') + '" placeholder="e.g. SDT"></label>' +
+      '  </div>' +
+      '  <div class="ufgrid" style="grid-template-columns:1fr 1fr 1fr">' +
+      '    <label><span>Email</span><input class="org-email" type="email" maxlength="120" value="' + esc(o.email || '') + '" placeholder="info@example.org"></label>' +
+      '    <label><span>Phone</span><input class="org-phone" type="text" maxlength="40" value="' + esc(o.phone || '') + '" placeholder="+00 000 000 000"></label>' +
+      '    <label><span>Website</span><input class="org-web" type="text" maxlength="120" value="' + esc(o.website || '') + '" placeholder="www.example.org"></label>' +
+      '  </div>' +
+      '  <div class="ufgrid" style="grid-template-columns:1fr">' +
+      '    <label><span>Address</span><input class="org-addr" type="text" maxlength="200" value="' + esc(o.address || '') + '" placeholder="Street, city, country"></label>' +
+      '  </div>' +
+      '  <div class="org-logo-row">' +
+      '    <div class="org-logo-prev">' + (o.logo && o.logo.jpeg ? '<img alt="Organization logo" src="' + o.logo.jpeg + '">' : '<span>No logo yet</span>') + '</div>' +
+      '    <div class="org-logo-btns">' +
+      '      <div class="org-logo-hint">PNG, JPEG or SVG. Transparency is flattened onto white; on the PDF letterhead the logo sits on a white chip inside the brand band.</div>' +
+      '      <input class="org-logo-file" type="file" accept="image/*" style="display:none">' +
+      '      <button class="hbtn org-logo-up" type="button">↥ Upload logo</button>' +
+      (o.logo && o.logo.jpeg ? '<button class="hbtn danger org-logo-rm" type="button">Remove logo</button>' : '') +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="ufbtns"><span class="ufmsg org-msg"></span><button class="hbtn primary org-save" type="button">Save profile</button></div>' +
+      '</div>';
+    var msg = host.querySelector('.org-msg');
+    function status(){
+      var st = host.querySelector('.org-status'), cur = orgProfile();
+      st.textContent = !cur.enabled ? 'Disabled - exports carry The Grassroots branding'
+        : (String(cur.name || '').trim() ? 'Active - "' + orgShort() + '" appears on every PDF export'
+                                         : 'Waiting for a name - enter the organization name below');
+      st.className = 'org-status' + (orgActive() ? ' ok' : '');
+    }
+    function collect(){
+      var cur = orgProfile();
+      return {
+        enabled: host.querySelector('.org-enabled').checked ? 1 : 0,
+        name: host.querySelector('.org-name').value.trim(),
+        acronym: host.querySelector('.org-acronym').value.trim(),
+        email: host.querySelector('.org-email').value.trim(),
+        phone: host.querySelector('.org-phone').value.trim(),
+        website: host.querySelector('.org-web').value.trim(),
+        address: host.querySelector('.org-addr').value.trim(),
+        logo: cur.logo || null
+      };
+    }
+    function persist(note){
+      var c = collect();
+      if (c.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email)){
+        msg.textContent = 'Enter a valid email address (or leave it empty).'; msg.classList.remove('ok'); return;
+      }
+      orgSaveProfile(c);
+      msg.textContent = note || '✓ Saved.'; msg.classList.add('ok');
+      status();
+    }
+    host.querySelector('.org-save').onclick = function (){ persist('✓ Profile saved.'); };
+    host.querySelector('.org-enabled').onchange = function (){
+      persist(this.checked ? '✓ Activated - PDF exports now carry this profile.' : '✓ Deactivated - exports are back to The Grassroots branding.');
+    };
+    Array.prototype.forEach.call(host.querySelectorAll('.uform input[type=text],.uform input[type=email]'),
+      function (inp){ inp.addEventListener('change', function (){ persist(); }); });
+    var file = host.querySelector('.org-logo-file');
+    host.querySelector('.org-logo-up').onclick = function (){ file.click(); };
+    file.onchange = function (){
+      var f = file.files && file.files[0];
+      if (!f) return;
+      orgReadLogo(f, function (logo){
+        if (!logo){ msg.textContent = 'Could not read that image - try a PNG or JPEG.'; msg.classList.remove('ok'); return; }
+        var c = collect(); c.logo = logo; orgSaveProfile(c);
+        renderOrgPane();
+        var m2 = host.querySelector('.org-msg');
+        m2.textContent = '✓ Logo saved.'; m2.classList.add('ok');
+      });
+    };
+    var rm = host.querySelector('.org-logo-rm');
+    if (rm) rm.onclick = function (){
+      var c = collect(); c.logo = null; orgSaveProfile(c);
+      renderOrgPane();
+      var m2 = host.querySelector('.org-msg');
+      m2.textContent = '✓ Logo removed - the letterhead falls back to the Grassroots mark.'; m2.classList.add('ok');
+    };
+    status();
+  }
 
   function renderControl(tab){
     tab = tab || 'donors';
@@ -4099,6 +4207,127 @@
     return { value: v, progress: progress, perf: perf, code: ratioToCode(perf), acts: inMonth.length, ben: ben };
   }
 
+  // ---- organization profile ---------------------------------------------------
+  //  The About modal's "Your organization" tab. Lives ONLY in localStorage (like
+  //  the Brevo mail settings) - never in the DB or the SQL export. When the
+  //  profile is ACTIVATED (and carries a name), every PDF export swaps The
+  //  Grassroots identity for the organization's: band title, footer, file name,
+  //  and - when a logo was uploaded - the logo instead of the orbit mark.
+  var ORG_KEY = 'gr_org_profile_v1';
+  var _orgCache;
+  function orgProfile(){
+    if (_orgCache === undefined){
+      _orgCache = null;
+      try { var o = JSON.parse(localStorage.getItem(ORG_KEY)); if (o && typeof o === 'object') _orgCache = o; } catch (e) {}
+    }
+    return _orgCache || {};
+  }
+  function orgSaveProfile(o){
+    _orgCache = o;
+    try { localStorage.setItem(ORG_KEY, JSON.stringify(o)); } catch (e) {}
+  }
+  function orgActive(){ var o = orgProfile(); return !!(o.enabled && String(o.name || '').trim()); }
+  // Long form ("Sahel Development Trust") - band titles, footers, sender names.
+  function orgBrand(){ return orgActive() ? String(orgProfile().name).trim() : 'The Grassroots'; }
+  // Short form (acronym when given) - file names, tight spots.
+  function orgShort(){
+    var o = orgProfile();
+    return orgActive() ? (String(o.acronym || '').trim() || String(o.name).trim()) : 'The Grassroots';
+  }
+  // Uploaded logo decoded to raw JPEG bytes for PDF embedding; null when the
+  // profile is off or has no logo. Cached per data-URL.
+  var _orgLogoBin = null;
+  function orgLogo(){
+    if (!orgActive()) return null;
+    var o = orgProfile();
+    if (!o.logo || !o.logo.jpeg) return null;
+    if (!_orgLogoBin || _orgLogoBin.src !== o.logo.jpeg){
+      try { _orgLogoBin = { src: o.logo.jpeg, data: atob(String(o.logo.jpeg).split(',')[1]), w: o.logo.w, h: o.logo.h }; }
+      catch (e) { return null; }
+    }
+    return _orgLogoBin;
+  }
+  // Read an uploaded image file, flatten any transparency onto white (JPEG has
+  // no alpha) and downscale - big enough for a 300 dpi letterhead, small enough
+  // for localStorage.
+  function orgReadLogo(file, done){
+    var rd = new FileReader();
+    rd.onload = function (){
+      var img = new Image();
+      img.onload = function (){
+        var s = Math.min(1, 160 / img.height, 480 / img.width);
+        var w = Math.max(1, Math.round(img.width * s)), h = Math.max(1, Math.round(img.height * s));
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        var cx = cv.getContext('2d');
+        cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, w, h);
+        cx.drawImage(img, 0, 0, w, h);
+        done({ jpeg: cv.toDataURL('image/jpeg', 0.92), w: w, h: h });
+      };
+      img.onerror = function (){ done(null); };
+      img.src = rd.result;
+    };
+    rd.onerror = function (){ done(null); };
+    rd.readAsDataURL(file);
+  }
+
+  // ---- brand mark for the PDF letterheads -------------------------------------
+  // The orbit mark from assets/icon.svg, redrawn as raw content-stream ops
+  // (both PDF writers speak the same op syntax): a ring, a satellite dot on the
+  // upper-right rim, and a soft centre dot. The centre dot is 55% opacity on
+  // screen; neither writer supports alpha, so its colour is pre-flattened
+  // against the navy band. (cx, cy) is the ring centre in page points (y up);
+  // u scales the 512-unit icon geometry.
+  function pdfMarkOps(cx, cy, u){
+    function n(v){ return (Math.round(v * 100) / 100).toString(); }
+    function cv(hex){
+      var h = parseInt(hex.slice(1), 16);
+      return ((h >> 16 & 255) / 255).toFixed(3) + ' ' + ((h >> 8 & 255) / 255).toFixed(3) + ' ' + ((h & 255) / 255).toFixed(3);
+    }
+    function circle(x, y, r){
+      var c = r * 0.5523;
+      return n(x - r) + ' ' + n(y) + ' m '
+        + n(x - r) + ' ' + n(y + c) + ' ' + n(x - c) + ' ' + n(y + r) + ' ' + n(x) + ' ' + n(y + r) + ' c '
+        + n(x + c) + ' ' + n(y + r) + ' ' + n(x + r) + ' ' + n(y + c) + ' ' + n(x + r) + ' ' + n(y) + ' c '
+        + n(x + r) + ' ' + n(y - c) + ' ' + n(x + c) + ' ' + n(y - r) + ' ' + n(x) + ' ' + n(y - r) + ' c '
+        + n(x - c) + ' ' + n(y - r) + ' ' + n(x - r) + ' ' + n(y - c) + ' ' + n(x - r) + ' ' + n(y) + ' c h';
+    }
+    return [
+      'q ' + cv('#ffffff') + ' RG ' + n(36 * u) + ' w ' + circle(cx, cy, 178 * u) + ' S Q',
+      'q ' + cv('#92abc4') + ' rg ' + circle(cx, cy, 34 * u) + ' f Q',
+      'q ' + cv('#ffffff') + ' rg ' + circle(cx + 126 * u, cy + 126 * u, 58 * u) + ' f Q'
+    ];
+  }
+
+  // Letterhead identity for the pdfWriter docs (results + forecast exports):
+  // navy band, gold root-line, then either the Grassroots orbit mark + wordmark
+  // or - when the organization profile is active - the org's logo (on a white
+  // chip, so any logo reads on the navy) and name, shrunk to fit and falling
+  // back to the acronym when even that is too long. maxRight caps the title so
+  // it never collides with the caller's right-hand band text.
+  function pdfBrandHead(doc, M, maxRight){
+    doc.rect(0, doc.PH - 44, doc.PW, 44, doc.rgb('#0c447c'));
+    doc.rect(0, doc.PH - 48, doc.PW, 4, doc.rgb('#FCC30B'));   // a grassroots accent root-line
+    var x = M + 34, logo = orgLogo();
+    if (logo){
+      var lh = 26, lw = lh * logo.w / logo.h;
+      if (lw > 84){ lw = 84; lh = lw * logo.h / logo.w; }
+      doc.roundRect(M, doc.PH - 22 - lh / 2 - 4, lw + 8, lh + 8, 3, [1, 1, 1]);
+      doc.image(logo, M + 4, doc.PH - 22 - lh / 2, lw, lh);
+      x = M + lw + 8 + 10;
+    } else if (!orgActive()){
+      pdfMarkOps(M + 13, doc.PH - 22, 0.065).forEach(function (o){ doc.raw(o); });
+    } else {
+      x = M;   // active profile without a logo: the name starts at the margin
+    }
+    var name = orgBrand().toUpperCase(), sz = 11, avail = maxRight - x;
+    while (sz > 8 && doc.textW(name, sz, true) > avail) sz -= 0.5;
+    if (doc.textW(name, sz, true) > avail && orgActive() && String(orgProfile().acronym || '').trim()){
+      name = String(orgProfile().acronym).trim().toUpperCase(); sz = 11;
+      while (sz > 8 && doc.textW(name, sz, true) > avail) sz -= 0.5;
+    }
+    doc.text(name, x, doc.PH - 26, { size: sz, bold: true, color: [1, 1, 1] });
+  }
+
   // ---- a tiny PDF writer (PDF 1.4, Helvetica, zero dependencies) --------------
   var PDF_W = 595.28, PDF_H = 841.89;   // A4 portrait, points
   function PdfDoc(){ this.pagesOps = []; this.ops = null; this.newPage(); }
@@ -4124,6 +4353,14 @@
   PdfDoc.prototype.line = function (x1, y1, x2, y2, color, w){
     this.ops.push(pdfCol(color) + ' RG ' + (w || 0.7) + ' w ' + x1.toFixed(2) + ' ' + y1.toFixed(2) + ' m ' + x2.toFixed(2) + ' ' + y2.toFixed(2) + ' l S');
   };
+  // Place a JPEG (img = { data: raw bytes as a binary string, w, h }) - the org
+  // logo on the letterhead. Registered once per doc, referenced as /ImN.
+  PdfDoc.prototype.image = function (img, x, y, w, h){
+    this.images = this.images || [];
+    var i = this.images.indexOf(img);
+    if (i < 0){ i = this.images.length; this.images.push(img); }
+    this.ops.push('q ' + w.toFixed(2) + ' 0 0 ' + h.toFixed(2) + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' cm /Im' + (i + 1) + ' Do Q');
+  };
   // Helvetica width approximation (avg ~0.5em) - good enough to truncate/right-align.
   function pdfW(s, size){ return String(s == null ? '' : s).length * size * 0.5; }
   function pdfTrunc(s, size, maxW){
@@ -4142,14 +4379,21 @@
     return lines;
   }
   PdfDoc.prototype.build = function (){
-    var n = this.pagesOps.length, objs = [], kids = [];
-    for (var i = 0; i < n; i++) kids.push((5 + i * 2) + ' 0 R');
+    // objects: 1 catalog · 2 pages · 3-4 fonts · 5..4+k images · then page/content pairs
+    var n = this.pagesOps.length, imgs = this.images || [], k = imgs.length, objs = [], kids = [];
+    for (var i = 0; i < n; i++) kids.push((5 + k + i * 2) + ' 0 R');
     objs.push('<< /Type /Catalog /Pages 2 0 R >>');
     objs.push('<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + n + ' >>');
     objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    imgs.forEach(function (im){
+      objs.push('<< /Type /XObject /Subtype /Image /Width ' + im.w + ' /Height ' + im.h
+        + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + im.data.length
+        + ' >>\nstream\n' + im.data + '\nendstream');
+    });
+    var xres = k ? ' /XObject << ' + imgs.map(function (_, j){ return '/Im' + (j + 1) + ' ' + (5 + j) + ' 0 R'; }).join(' ') + ' >>' : '';
     this.pagesOps.forEach(function (ops, i){
-      objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PDF_W + ' ' + PDF_H + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + (6 + i * 2) + ' 0 R >>');
+      objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PDF_W + ' ' + PDF_H + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>' + xres + ' >> /Contents ' + (6 + k + i * 2) + ' 0 R >>');
       var stream = ops.join('\n');
       objs.push('<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream');
     });
@@ -4169,7 +4413,7 @@
   //    Plan -> projects under each Impact · Impact -> under each Outcome ·
   //    Outcome -> under each Output · Region -> under each country ·
   //    Output / Donor / Country -> a flat project list.
-  var COMM_BRAND = '#3F7E44';   // grassroots green (the wordmark's T)
+  var COMM_BRAND = '#0c447c';   // brand dark blue (matches the results-export letterhead)
   function commProjectKpis(p){
     var prim = (DB._idx.projectKpiByProject[p.id] || []).map(function (pk){ return DB._idx.indicatorById[pk.indicator_id]; }).filter(Boolean);
     return prim.concat(DB._idx.secondaryByProject[p.id] || []);
@@ -4302,17 +4546,42 @@
 
     var doc = new PdfDoc(), M = 46, y;
     var ink = '#1e293b', mut = '#64748b', faint = '#f1f5f9';
-    // header band
-    doc.rect(0, PDF_H - 92, PDF_W, 92, COMM_BRAND);
-    doc.rect(0, PDF_H - 96, PDF_W, 4, '#FCC30B');   // a grassroots accent root-line
-    doc.text(M, PDF_H - 40, 'THE GRASSROOTS', 17, true, '#ffffff');
-    doc.text(M, PDF_H - 58, 'Monthly Results Report', 10.5, false, '#e7f0e9');
-    var pw = pdfW(period, 15);
-    doc.text(PDF_W - M - pw, PDF_H - 40, period, 15, true, '#ffffff');
+    // header band - a slim brand strip
+    doc.rect(0, PDF_H - 44, PDF_W, 44, COMM_BRAND);
+    doc.rect(0, PDF_H - 48, PDF_W, 4, '#FCC30B');   // a grassroots accent root-line
+    // pdfW's 0.5em/char average runs short on bold uppercase (~0.67em) and mixed
+    // case (~0.58em) - widen those estimates so the band's labels never collide.
+    var pw = pdfW(period, 10.5) * 1.15;
+    doc.text(PDF_W - M - pw, PDF_H - 26, period, 10.5, true, '#ffffff');
     var scopeTxt = catLabel.toUpperCase() + (ent.code ? ' - ' + ent.code : '');
-    doc.text(PDF_W - M - pdfW(scopeTxt, 8.5), PDF_H - 57, scopeTxt, 8.5, false, '#e7f0e9');
+    var scopeX = PDF_W - M - pw - 14 - pdfW(scopeTxt, 7.5) * 1.2;
+    doc.text(scopeX, PDF_H - 26, scopeTxt, 7.5, false, '#d7e3f0');
+    // brand identity: the org logo + name when the profile is active, the
+    // Grassroots mark otherwise (same fallbacks as pdfBrandHead)
+    var bx = M + 34, logo = orgLogo();
+    if (logo){
+      var lgH = 26, lgW = lgH * logo.w / logo.h;
+      if (lgW > 84){ lgW = 84; lgH = lgW * logo.h / logo.w; }
+      doc.rect(M, PDF_H - 22 - lgH / 2 - 4, lgW + 8, lgH + 8, '#ffffff');
+      doc.image(logo, M + 4, PDF_H - 22 - lgH / 2, lgW, lgH);
+      bx = M + lgW + 8 + 10;
+    } else if (!orgActive()){
+      pdfMarkOps(M + 13, PDF_H - 22, 0.065).forEach(function (o){ doc.ops.push(o); });
+    } else {
+      bx = M;
+    }
+    var bandNm = orgBrand().toUpperCase();
+    var bandAvail = scopeX - 14 - bx - (pdfW('Monthly Results Report', 8.5) * 1.15 + 12);
+    var bandF = 11;
+    while (bandF > 8 && pdfW(bandNm, bandF) * 1.4 > bandAvail) bandF -= 0.5;
+    if (pdfW(bandNm, bandF) * 1.4 > bandAvail && orgActive() && String(orgProfile().acronym || '').trim()){
+      bandNm = String(orgProfile().acronym).trim().toUpperCase(); bandF = 11;
+      while (bandF > 8 && pdfW(bandNm, bandF) * 1.4 > bandAvail) bandF -= 0.5;
+    }
+    doc.text(bx, PDF_H - 26, bandNm, bandF, true, '#ffffff');
+    doc.text(bx + pdfW(bandNm, bandF) * 1.4 + 12, PDF_H - 26, 'Monthly Results Report', 8.5, false, '#d7e3f0');
     // prepared-for block
-    y = PDF_H - 126;
+    y = PDF_H - 78;
     doc.text(M, y, 'PREPARED FOR', 7, true, mut);
     doc.text(M, y - 15, leadNm, 12.5, true, ink);
     doc.text(M, y - 28, leadEmail(ent.leadId), 8.5, false, mut);
@@ -4393,7 +4662,7 @@
       doc.pagesOps.forEach(function (ops, i){
         var save = doc.ops; doc.ops = ops;
         doc.line(M, 42, PDF_W - M, 42, '#e2e8f0', 0.6);
-        doc.text(M, 30, 'The Grassroots - ' + catLabel + ' report - ' + pdfTrunc(ent.name, 7.5, 260) + ' - ' + period, 7.5, false, mut);
+        doc.text(M, 30, orgBrand() + ' - ' + catLabel + ' report - ' + pdfTrunc(ent.name, 7.5, 260) + ' - ' + period, 7.5, false, mut);
         var pg = 'Page ' + (i + 1) + ' of ' + doc.pagesOps.length;
         doc.text(PDF_W - M - pdfW(pg, 7.5), 30, pg, 7.5, false, mut);
         doc.ops = save;
@@ -4466,27 +4735,67 @@
     };
   }
 
+  // The forecast companion that rides along with every results report - the SAME
+  // detailed brief the Forecast tab exports (letterhead, plan stamp, headline
+  // tiles, trajectory chart, advice and the full dimension table), focused on
+  // the lead's entity, always projected to the end of the active plan and free
+  // of any on-screen filters. Returns the PDF base64-encoded for the email.
+  function commBuildForecastPdf(ent, year, month){
+    var period = MONTH_NAMES[month - 1] + ' ' + year;
+    var dimMap = { plan:'plans', impact:'impacts', outcome:'outcomes', output:'outputs',
+                   project:'projects', donor:'donors', region:'regions', country:'countries' };
+    var savedH = S.fcHorizon, savedD = S.fcDim;
+    S.fcHorizon = 'plan'; S.fcDim = dimMap[ent.cat] || 'projects';
+    try {
+      var ents = fcEntities(IND);   // every sibling in the dimension, unfiltered
+      // the comm entity, focused within its dimension (key formats differ per cat)
+      var selKey = ent.cat === 'impact' ? 'impact:' + ent.sdg
+        : (ent.cat === 'outcome' || ent.cat === 'output') ? ent.cat + ':' + ent.stmt
+        : ent.cat === 'region' ? 'region:' + ent.region.name
+        : ent.ref;
+      var sel = null;
+      ents.forEach(function (e){ if (e.key === selKey) sel = e; });
+      if (!sel){
+        // entity outside the active plan's forecast universe (e.g. a past plan's
+        // lead) - build its scope directly so the brief still goes out
+        sel = fcEntity(ent.ref, ent.name, commCatOne(ent.cat), COMM_BRAND,
+          commIndicators(ent).map(function (i){ return INDBYID[i.id]; }).filter(Boolean));
+        fcCompute(sel);
+      }
+      var doc = fcPdfDoc(sel, ents, sel, {
+        tag: 'Forecast Brief  ·  ' + period,
+        preparedFor: ent,
+        noFilters: true,
+        ctx: commCatOne(ent.cat) + '  ·  forecast to end of plan  ·  generated ' + pdfDate(TODAY)
+      });
+      return btoa(doc.build());
+    } finally {
+      S.fcHorizon = savedH; S.fcDim = savedD;
+    }
+  }
+
   // ---- report rows (the `report` table) ---------------------------------------
   function commFindReport(ref, y, m){
     return DB.tables.report.filter(function (r){ return r.ref === ref && r.year === y && r.month === m; })[0];
   }
   function commGenerate(ent, y, m){
-    var built = commBuildPdf(ent, y, m);
+    var built = commBuildPdf(ent, y, m), fcB64 = commBuildForecastPdf(ent, y, m);
     var rep = commFindReport(ent.ref, y, m), now = new Date().toISOString();
     if (rep){
       rep.category = ent.cat; rep.ref_name = ent.name; rep.lead_id = ent.leadId;
-      rep.generated = now; rep.sent = null; rep.summary = built.summary; rep.pdf = built.b64;
+      rep.generated = now; rep.sent = null; rep.summary = built.summary; rep.pdf = built.b64; rep.pdf_fc = fcB64;
       return DB.persist('report', [rep]);
     }
     return DB.insert('report', { category: ent.cat, ref: ent.ref, ref_name: ent.name, lead_id: ent.leadId,
-      year: y, month: m, enabled: 1, generated: now, sent: null, summary: built.summary, pdf: built.b64 });
+      year: y, month: m, enabled: 1, generated: now, sent: null, summary: built.summary, pdf: built.b64, pdf_fc: fcB64 });
   }
-  function commFileName(rep){
+  function commFileName(rep, forecast){
     var safe = String(rep.ref_name || 'report').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-    return 'Grassroots_' + cap(rep.category) + '_' + safe + '_' + rep.year + '-' + p2(rep.month) + '.pdf';
+    var brand = orgActive() ? (String(orgShort()).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'Grassroots') : 'Grassroots';
+    return brand + '_' + (forecast ? 'Forecast_' : '') + cap(rep.category) + '_' + safe + '_' + rep.year + '-' + p2(rep.month) + '.pdf';
   }
-  function commPdfBlobUrl(rep){
-    var bin = atob(rep.pdf), arr = new Uint8Array(bin.length);
+  function commPdfBlobUrl(rep, forecast){
+    var bin = atob(forecast ? rep.pdf_fc : rep.pdf), arr = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     return URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
   }
@@ -4497,8 +4806,8 @@
     return {
       subject: 'Your {MONTH} {YEAR} results report - {ENTITY}',
       body: 'Dear {LEAD},\n\n' +
-        'I hope this finds you well. Attached is your monthly results report for {MONTH} {YEAR}, covering {ENTITY} - the {CATEGORY} you lead on The Grassroots.\n\n' +
-        'The month at a glance: {SUMMARY}. Inside you will find each KPI\'s value against its baseline and target, its progress, and its performance status as of the end of {MONTH}, alongside the activities logged and the people reached during the month.\n\n' +
+        'I hope this finds you well. Attached are two PDFs for {MONTH} {YEAR}, covering {ENTITY} - the {CATEGORY} you lead on The Grassroots: your monthly results report, and the forecast brief for the same scope.\n\n' +
+        'The month at a glance: {SUMMARY}. In the results report you will find each KPI\'s value against its baseline and target, its progress, and its performance status as of the end of {MONTH}, alongside the activities logged and the people reached during the month. The forecast brief adds where your KPIs are projected to land by the end of the plan - best, realistic and worst case - and what to do now to keep every target on track.\n\n' +
         'If anything looks off - or you would like the underlying activity detail - just reply to this email, or open The Grassroots and drill into your scope.\n\n' +
         'Thank you for everything you and your team put into this. It shows.\n\n' +
         'Warm regards,\n{SENDER}\nThe Grassroots - Monitoring & Evaluation'
@@ -4609,8 +4918,8 @@
       : cat === 'outcome' ? 'the projects contributing to it, grouped by Output'
       : cat === 'region' ? 'the region\'s projects, grouped by country'
       : 'its projects';
-    note.innerHTML = 'Each row is one <b>' + commCatOne(cat) + '</b> with a Lead, and the monthly PDF report they will receive for <b>' +
-      esc(commPeriodLabel()) + '</b>. The report shows ' + contentTxt + ' - point-in-time snapshots of the same results the app derives: progress and performance as of month end, plus the month\'s activities and reach.' +
+    note.innerHTML = 'Each row is one <b>' + commCatOne(cat) + '</b> with a Lead, and the monthly PDFs they will receive for <b>' +
+      esc(commPeriodLabel()) + '</b>. The results report shows ' + contentTxt + ' - point-in-time snapshots of the same results the app derives: progress and performance as of month end, plus the month\'s activities and reach. A <b>forecast brief</b> for the same scope rides along in every email: best/realistic/worst trajectories to the end of the plan, and what to do to keep the targets on track.' +
       (un ? ' <b>' + un + '</b> ' + (un === 1 ? 'entry has' : 'entries have') + ' no Lead yet - assign them to include them here.' : '');
     body.appendChild(note);
     if (!ents.length){
@@ -4658,10 +4967,12 @@
       if (commIsFuture(COMM.year, COMM.month)) return;
       Promise.resolve(commGenerate(ent, COMM.year, COMM.month)).then(renderComm);
     }, !enabled || future);
-    btn('👁', 'View PDF', function (){ if (rep && rep.pdf) window.open(commPdfBlobUrl(rep), '_blank'); }, !(rep && rep.pdf));
-    btn('⬇', 'Download PDF', function (){
+    btn('👁', 'View results PDF', function (){ if (rep && rep.pdf) window.open(commPdfBlobUrl(rep), '_blank'); }, !(rep && rep.pdf));
+    btn('↗', 'View forecast PDF', function (){ if (rep && rep.pdf_fc) window.open(commPdfBlobUrl(rep, true), '_blank'); }, !(rep && rep.pdf_fc));
+    btn('⬇', 'Download the PDFs (results + forecast)', function (){
       if (!(rep && rep.pdf)) return;
       var a = document.createElement('a'); a.href = commPdfBlobUrl(rep); a.download = commFileName(rep); a.click();
+      if (rep.pdf_fc){ var a2 = document.createElement('a'); a2.href = commPdfBlobUrl(rep, true); a2.download = commFileName(rep, true); a2.click(); }
     }, !(rep && rep.pdf));
     btn(enabled ? '✓' : '✗', enabled ? 'Enabled - click to exclude from batch generate & send' : 'Disabled - click to include again', function (){
       if (rep){ rep.enabled = enabled ? 0 : 1; Promise.resolve(DB.persist('report', [rep])).then(renderComm); }
@@ -4713,18 +5024,20 @@
     var i = 0;
     function step(){
       // batch the DB writes per chunk - DB.insert/persist rebuild indexes per call,
-      // so one call per chunk (not per report) keeps 170+ reports fast
-      var n = Math.min(i + 20, ents.length), news = [], upds = [], now = new Date().toISOString();
+      // so one call per chunk (not per report) keeps 170+ reports fast (chunks of
+      // 10 now that every row builds two PDFs: results + forecast)
+      var n = Math.min(i + 10, ents.length), news = [], upds = [], now = new Date().toISOString();
       for (; i < n; i++){
         var ent = ents[i], built = commBuildPdf(ent, COMM.year, COMM.month);
+        var fcB64 = commBuildForecastPdf(ent, COMM.year, COMM.month);
         var rep = commFindReport(ent.ref, COMM.year, COMM.month);
         if (rep){
           rep.category = ent.cat; rep.ref_name = ent.name; rep.lead_id = ent.leadId;
-          rep.generated = now; rep.sent = null; rep.summary = built.summary; rep.pdf = built.b64;
+          rep.generated = now; rep.sent = null; rep.summary = built.summary; rep.pdf = built.b64; rep.pdf_fc = fcB64;
           upds.push(rep);
         } else {
           news.push({ category: ent.cat, ref: ent.ref, ref_name: ent.name, lead_id: ent.leadId,
-            year: COMM.year, month: COMM.month, enabled: 1, generated: now, sent: null, summary: built.summary, pdf: built.b64 });
+            year: COMM.year, month: COMM.month, enabled: 1, generated: now, sent: null, summary: built.summary, pdf: built.b64, pdf_fc: fcB64 });
         }
       }
       if (news.length) DB.insert('report', news);
@@ -4757,7 +5070,7 @@
     var destTxt = cfg.live
       ? 'each lead\'s profile email address'
       : 'YOUR OWN inbox (' + cfg.senderEmail + ') - test mode is on';
-    if (!confirm('Send ' + reps.length + ' ' + commPeriodLabel() + ' report' + (reps.length === 1 ? '' : 's') + ' (' + nLeads + ' lead' + (nLeads === 1 ? '' : 's') + ') via Brevo, each with its PDF attached?\n\nDelivery goes to ' + destTxt + '.')) return;
+    if (!confirm('Send ' + reps.length + ' ' + commPeriodLabel() + ' report' + (reps.length === 1 ? '' : 's') + ' (' + nLeads + ' lead' + (nLeads === 1 ? '' : 's') + ') via Brevo, each with its results and forecast PDFs attached?\n\nDelivery goes to ' + destTxt + '.')) return;
     COMM.busy = true;
     var i = 0, ok = 0, fail = 0, firstErr = null, now = new Date().toISOString();
     function next(){
@@ -4802,12 +5115,14 @@
     var ent = { cat: rep.category, code: '', name: rep.ref_name, leadId: rep.lead_id };
     var tpl = commTpl();
     var live = !!cfg.live;
+    var atts = [{ name: commFileName(rep), content: rep.pdf }];
+    if (rep.pdf_fc) atts.push({ name: commFileName(rep, true), content: rep.pdf_fc });
     var payload = {
-      sender: { name: cfg.senderName || 'The Grassroots', email: cfg.senderEmail },
+      sender: { name: cfg.senderName || orgBrand(), email: cfg.senderEmail },
       to: [{ email: live ? leadEmail(rep.lead_id) : cfg.senderEmail, name: userName(rep.lead_id) }],
       subject: commFill(tpl.subject, ent, rep) + (live ? '' : '  [test - would go to ' + userName(rep.lead_id) + ']'),
       textContent: commFill(tpl.body, ent, rep),
-      attachment: [{ name: commFileName(rep), content: rep.pdf }]
+      attachment: atts
     };
     return fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
@@ -4874,7 +5189,7 @@
     var box = el('div', 'comm-mail');
     var tpl = commTpl();
     var left = el('div', 'comm-mail-edit');
-    left.appendChild(elHTML('div', 'cp-note', 'This is the email every Lead receives - their PDF rides along as an attachment. Placeholders fill in per lead: <b>{LEAD}</b> · <b>{MONTH}</b> · <b>{YEAR}</b> · <b>{ENTITY}</b> · <b>{CATEGORY}</b> · <b>{SUMMARY}</b> · <b>{SENDER}</b>.'));
+    left.appendChild(elHTML('div', 'cp-note', 'This is the email every Lead receives - two PDFs ride along as attachments: the monthly results report and the forecast brief. Placeholders fill in per lead: <b>{LEAD}</b> · <b>{MONTH}</b> · <b>{YEAR}</b> · <b>{ENTITY}</b> · <b>{CATEGORY}</b> · <b>{SUMMARY}</b> · <b>{SENDER}</b>.'));
     var subj = el('input', 'comm-subj'); subj.type = 'text'; subj.value = tpl.subject;
     var subjLab = el('label', 'comm-field'); subjLab.appendChild(el('span', '', 'Subject')); subjLab.appendChild(subj);
     var bodyTa = el('textarea', 'comm-body'); bodyTa.rows = 16; bodyTa.value = tpl.body;
@@ -4912,16 +5227,19 @@
       var head = el('div', 'comm-prev-head');
       head.innerHTML =
         '<div class="comm-prev-lbl">PREVIEW - as ' + esc(userName(ent.leadId)) + ' will receive it</div>' +
-        '<div class="comm-prev-row"><b>From</b> ' + esc((CURRENT_USER ? CURRENT_USER.name : 'The Grassroots') + ' <' + (CURRENT_USER ? leadEmail(CURRENT_USER.id) : 'noreply@thegrassroots.org') + '>') + '</div>' +
+        '<div class="comm-prev-row"><b>From</b> ' + esc((CURRENT_USER ? CURRENT_USER.name : orgBrand()) + ' <' + (CURRENT_USER ? leadEmail(CURRENT_USER.id) : (orgActive() && orgProfile().email ? orgProfile().email : 'noreply@thegrassroots.org')) + '>') + '</div>' +
         '<div class="comm-prev-row"><b>To</b> ' + esc(userName(ent.leadId) + ' <' + leadEmail(ent.leadId) + '>') + '</div>' +
         '<div class="comm-prev-row comm-prev-subj"><b>Subject</b> ' + esc(commFill(subj.value, ent, rep)) + '</div>';
       var bod = el('div', 'comm-prev-body');
       commFill(bodyTa.value, ent, rep).split(/\n{2,}/).forEach(function (par){
         var p = el('p', '', ''); p.textContent = par; bod.appendChild(p);
       });
+      var stub = { category: ent.cat, ref_name: ent.name, year: COMM.year, month: COMM.month };
       var att = el('div', 'comm-prev-att');
-      att.innerHTML = '<span class="comm-att-ic">📄</span><span>' + esc(commFileName({ category: ent.cat, ref_name: ent.name, year: COMM.year, month: COMM.month })) + '</span><span class="comm-att-k">PDF</span>';
-      right.appendChild(head); right.appendChild(bod); right.appendChild(att);
+      att.innerHTML = '<span class="comm-att-ic">📄</span><span>' + esc(commFileName(stub)) + '</span><span class="comm-att-k">PDF</span>';
+      var attFc = el('div', 'comm-prev-att');
+      attFc.innerHTML = '<span class="comm-att-ic">📈</span><span>' + esc(commFileName(stub, true)) + '</span><span class="comm-att-k">PDF</span>';
+      right.appendChild(head); right.appendChild(bod); right.appendChild(att); right.appendChild(attFc);
     }
     subj.oninput = preview; bodyTa.oninput = preview;
     preview();
@@ -6190,8 +6508,8 @@
   // an arbitrary %. Projections freeze at each KPI's own target date - no
   // progress is assumed beyond the plan window.
 
-  var FC_DIMS = [['plans','Plans'],['impacts','Impacts'],['outcomes','Outcomes'],['outputs','Outputs'],['projects','Projects'],['regions','Regions'],['countries','Countries']];
-  var FC_SING = { plans:'Plan', impacts:'Impact', outcomes:'Outcome', outputs:'Output', projects:'Project', regions:'Region', countries:'Country' };
+  var FC_DIMS = [['plans','Plans'],['impacts','Impacts'],['outcomes','Outcomes'],['outputs','Outputs'],['projects','Projects'],['donors','Donors'],['regions','Regions'],['countries','Countries']];
+  var FC_SING = { plans:'Plan', impacts:'Impact', outcomes:'Outcome', outputs:'Output', projects:'Project', donors:'Donor', regions:'Region', countries:'Country' };
   var FC_HORIZONS = [['plan','End of plan'],['6m','+6 months'],['12m','+12 months'],['24m','+24 months']];
   var FC_MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var FC_COL = { hi:'#16a34a', mid:'#2563eb', lo:'#ef4444' };
@@ -6306,7 +6624,7 @@
     if (!ent.fcs.length){
       ent.aNow = ent.aW = ent.aR = ent.aB = ent.exp = null; ent.code = 'nodata';
       ent.slope = 0; ent.mEnd = null; ent.needSlope = null; ent.paceX = null; ent.etaMi = null;
-      ent.reps = 0; ent.staleN = 0; ent.regressN = 0; ent.winsN = 0; ent.unreachN = 0; ent.conf = '–';
+      ent.reps = 0; ent.staleN = 0; ent.regressN = 0; ent.winsN = 0; ent.unreachN = 0; ent.overN = 0; ent.conf = '–';
       return;
     }
     ent.aNow = fcMean(ent, 'mid', mNow);
@@ -6326,21 +6644,24 @@
     ent.paceX = ent.needSlope === 0 ? 0
       : (ent.needSlope !== Infinity && slope > 1e-6 ? ent.needSlope / slope : null);
     ent.etaMi = ent.aNow >= 1 ? mNow : (slope > 1e-6 ? mNow + Math.ceil((1 - ent.aNow) / slope) : null);
-    var reps = 0, stale = 0, regress = 0, wins = 0, unreach = 0;
+    var reps = 0, stale = 0, regress = 0, wins = 0, unreach = 0, over = 0;
     ent.fcs.forEach(function (f){
       reps += f.reps;
       if (mNow - f.lastMi >= 3) stale++;
       if (f.slope < -1e-4) regress++;
       var r = fcAt(f, 'mid', mH); if (r >= 0.85 && r < 1) wins++;
       if (fcAt(f, 'hi', f.mEnd) < 1) unreach++;
+      // Over Track per KPI: realistic forecast ahead of that KPI's expected-by-horizon share
+      var exf = Math.max(0.02, Math.min(1, (Math.min(mH, f.mEnd) - f.m0) / (f.mEnd - f.m0)));
+      if (r / exf > 1) over++;
     });
-    ent.reps = reps; ent.staleN = stale; ent.regressN = regress; ent.winsN = wins; ent.unreachN = unreach;
+    ent.reps = reps; ent.staleN = stale; ent.regressN = regress; ent.winsN = wins; ent.unreachN = unreach; ent.overN = over;
     var mean = reps / ent.fcs.length;
     ent.conf = mean >= 6 ? 'High' : mean >= 3 ? 'Medium' : 'Low';
   }
 
-  function fcEntities(){
-    var rows = filtered(), ents = [];
+  function fcEntities(rowsOverride){
+    var rows = rowsOverride || filtered(), ents = [];
     if (S.fcDim === 'plans'){
       // the whole app is scoped to ONE active plan - forecast it alone
       var ap = activePlan();
@@ -6383,6 +6704,17 @@
         ents.push(fcEntity('project:' + p.id, (p.code ? p.code + ' · ' : '') + p.name,
           (p.country ? p.country.name : '') + (p.donor ? ' · ' + (p.donor.short_name || p.donor.name) : ''),
           p.iso ? countryColor(p.iso) : '#94a3b8', mem));
+      });
+    } else if (S.fcDim === 'donors'){
+      var byDon = {};
+      rows.forEach(function (r){
+        (r.donorIds || []).forEach(function (id){ (byDon[id] = byDon[id] || []).push(r); });
+      });
+      Object.keys(byDon).forEach(function (idS){
+        var d = DB._idx.donorById[+idS];
+        ents.push(fcEntity('donor:' + idS, d ? d.name : 'Donor ' + idS,
+          d ? (d.short_name ? d.short_name + ' · ' : '') + cap(d.type || '') + (d.type ? ' donor' : '') : '',
+          (d && d.color) || '#94a3b8', byDon[idS]));
       });
     } else if (S.fcDim === 'regions'){
       var byReg = {};
@@ -6465,39 +6797,29 @@
       chip.onclick = function (){ S.fcSel = null; renderForecast(); };
       bar.appendChild(chip);
     }
-    var leg = el('span', 'fc-scen');
-    [['hi','Best case'],['mid','Realistic'],['lo','Worst case']].forEach(function (s){
-      var li = el('span', 'li'); var sq = el('span', 'sq'); sq.style.background = FC_COL[s[0]];
-      li.appendChild(sq); li.appendChild(document.createTextNode(s[1])); leg.appendChild(li);
-    });
-    bar.appendChild(leg);
+    var ex = el('button', 'fc-export');
+    ex.type = 'button';
+    ex.title = 'Export this forecast view as a PDF report';
+    ex.innerHTML = '<span class="ic">⤓</span>Export PDF';
+    ex.onclick = function (){ try { exportForecastPDF(); } catch (e){ console.error(e); alert('Could not build the PDF: ' + (e && e.message || e)); } };
+    bar.appendChild(ex);
     return bar;
   }
 
-  function fcTiles(scope, ents){
-    var grid = el('div', 'fc-tiles');
-    function tile(lbl, val, sub, chipColor){
-      var t = el('div', 'fc-tile');
-      t.appendChild(el('div', 'tl', lbl));
-      t.appendChild(el('div', 'tv', val));
-      var s = el('div', 'ts');
-      if (sub != null){
-        if (chipColor){ var c = el('span', 'chip', sub); c.style.background = chipColor; s.appendChild(c); }
-        else s.textContent = sub;
-      }
-      t.appendChild(s);
-      return t;
-    }
-    var st = STATUS[scope.code] || STATUS.nodata;
-    grid.appendChild(tile('Forecast ' + fcHorizonLabel(), fcPct(scope.aR), st.label, st.c));
-    grid.appendChild(tile('Scenario range', scope.aW == null ? '–' : fcPct(scope.aW) + ' – ' + fcPct(scope.aB), 'worst → best case'));
-    var on = 0, tot = 0;
-    ents.forEach(function (e){ if (e.aR == null) return; tot++; if (e.code === 'green' || e.code === 'blue') on++; });
-    grid.appendChild(tile(fcDimLabel() + ' on course', tot ? on + ' / ' + tot : '–', 'projected On/Over Track at horizon'));
+  /** The six headline tiles as plain data - one source for the on-screen grid
+   *  AND the PDF export, so the two can never drift apart. */
+  function fcTileData(scope, ents){
+    var tiles = [], st = STATUS[scope.code] || STATUS.nodata;
+    tiles.push({ l: 'Forecast ' + fcHorizonLabel(), v: fcPct(scope.aR), s: st.label, chip: st.c });
+    tiles.push({ l: 'Scenario range', v: scope.aW == null ? '–' : fcPct(scope.aW) + ' – ' + fcPct(scope.aB), s: 'worst → best case' });
+    var on = 0, over = 0, tot = 0;
+    ents.forEach(function (e){ if (e.aR == null) return; tot++; if (e.code === 'green') on++; else if (e.code === 'blue') over++; });
+    tiles.push({ l: fcDimLabel() + ' on course', v: tot ? on + ' / ' + tot : '–',
+      s: over ? 'On Track at horizon · ' + over + ' Over Track (ease off)' : 'projected On Track at horizon' });
     var etaTxt = scope.aNow != null && scope.aNow >= 1 ? 'Achieved'
       : scope.etaMi == null ? (scope.aR == null ? '–' : 'Not at this pace')
       : fcMiFull(scope.etaMi) + (scope.mEnd != null && scope.etaMi > scope.mEnd ? ' ⚠' : '');
-    grid.appendChild(tile('Target attained (realistic)', etaTxt, scope.mEnd != null ? 'plan ends ' + fcMiFull(scope.mEnd) : null));
+    tiles.push({ l: 'Target attained (realistic)', v: etaTxt, s: scope.mEnd != null ? 'plan ends ' + fcMiFull(scope.mEnd) : null });
     var paceTxt, paceSub = null;
     if (scope.aR == null){ paceTxt = '–'; }
     else if (scope.paceX === 0){ paceTxt = '✓'; paceSub = 'target already met'; }
@@ -6506,17 +6828,48 @@
       paceTxt = '×' + (scope.paceX >= 10 ? Math.round(scope.paceX) : scope.paceX.toFixed(1));
       paceSub = (scope.needSlope * 100).toFixed(1) + 'pp/mo needed · now ' + (scope.slope * 100).toFixed(1);
     }
-    grid.appendChild(tile('Pace to hit target', paceTxt, paceSub));
-    grid.appendChild(tile('Forecast confidence', scope.conf,
-      scope.fcs.length ? fmt(scope.fcs.length) + ' KPIs · ' + fmt(scope.reps) + ' reports' + (scope.nodataN ? ' · ' + fmt(scope.nodataN) + ' no data' : '')
-                       : 'no measurable KPIs in this slice'));
+    tiles.push({ l: 'Pace to hit target', v: paceTxt, s: paceSub });
+    tiles.push({ l: 'Forecast confidence', v: scope.conf,
+      s: scope.fcs.length ? fmt(scope.fcs.length) + ' KPIs · ' + fmt(scope.reps) + ' reports' + (scope.nodataN ? ' · ' + fmt(scope.nodataN) + ' no data' : '')
+                          : 'no measurable KPIs in this slice' });
+    return tiles;
+  }
+
+  function fcTiles(scope, ents){
+    var grid = el('div', 'fc-tiles');
+    fcTileData(scope, ents).forEach(function (d){
+      var t = el('div', 'fc-tile');
+      t.appendChild(el('div', 'tl', d.l));
+      t.appendChild(el('div', 'tv', d.v));
+      var s = el('div', 'ts');
+      if (d.s != null){
+        if (d.chip){ var c = el('span', 'chip', d.s); c.style.background = d.chip; s.appendChild(c); }
+        else s.textContent = d.s;
+      }
+      t.appendChild(s);
+      grid.appendChild(t);
+    });
     return grid;
+  }
+
+  /** The Best/Realistic/Worst legend - lives on the chart card, whose lines it
+   *  explains (it used to crowd the control bar). */
+  function fcScenLegend(){
+    var leg = el('span', 'fc-scen');
+    [['hi','Best case'],['mid','Realistic'],['lo','Worst case']].forEach(function (s){
+      var li = el('span', 'li'); var sq = el('span', 'sq'); sq.style.background = FC_COL[s[0]];
+      li.appendChild(sq); li.appendChild(document.createTextNode(s[1])); leg.appendChild(li);
+    });
+    return leg;
   }
 
   function fcChartCard(scope){
     var card = el('div', 'fc-card fc-chartcard');
-    card.appendChild(el('div', 'fc-h', 'Trajectory · ' + truncTxt(scope.label, 70) + ' · actuals, then scenarios ' +
+    var head = el('div', 'fc-chart-head');
+    head.appendChild(el('div', 'fc-h', 'Trajectory · ' + truncTxt(scope.label, 70) + ' · actuals, then scenarios ' +
       (S.fcHorizon === 'plan' ? 'to end of plan' : 'for the next ' + parseInt(S.fcHorizon, 10) + ' months')));
+    head.appendChild(fcScenLegend());
+    card.appendChild(head);
     var wrap = el('div', 'fc-chart');
     wrap.innerHTML = fcChartSvg(scope);
     card.appendChild(wrap);
@@ -6602,6 +6955,17 @@
     if (scope.aNow >= 1){
       recs.push({ tone: 'good', t: 'Target already achieved',
         b: 'Protect the gains: keep reporting so any regression surfaces early, and consider a stretch target for the remaining period.' });
+    } else if (scope.code === 'blue'){
+      // one decimal here: whole-percent rounding can make forecast and expected look equal
+      var p1 = function (a){ return (Math.round(a * 1000) / 10) + '%'; };
+      recs.push({ tone: 'warn', t: 'Over Track - ease off to land On Track',
+        b: 'Forecast ' + p1(scope.aR) + ' against ' + p1(scope.exp) + ' expected ' + fcHorizonLabel() +
+           ' - ahead of the glide path, which usually means targets were set too low or resources are over-concentrated here. ' +
+           (scope.paceX != null && scope.paceX > 0 && scope.paceX < 1
+             ? 'Delivery can slow to ×' + scope.paceX.toFixed(1) + ' of the current pace (' + needPP + 'pp/month against ' + nowPP +
+               ' now) and still land exactly on target by ' + fcMiFull(scope.mEnd) + '. '
+             : '') +
+           'Verify the reports behind the surge first; if the over-delivery is real, shift the surplus budget and effort to the lagging results below, or raise the target so the plan reflects true ambition.' });
     } else if (aEndR >= 1){
       recs.push({ tone: 'good', t: 'On course at the current pace',
         b: 'The realistic scenario reaches the target by ' + (scope.etaMi != null ? fcMiFull(Math.min(scope.etaMi, scope.mEnd)) : 'plan end') +
@@ -6620,7 +6984,13 @@
       var focus = ents.filter(function (e){ return e.aR != null && e.aR < 1; }).slice(0, 3);
       if (focus.length) recs.push({ tone: 'warn', t: 'Concentrate support here first',
         b: focus.map(function (e){ return truncTxt(e.label, 36) + ' (' + fcPct(e.aR) + (e.paceX != null && e.paceX > 0 ? ', needs ×' + e.paceX.toFixed(1) : '') + ')'; }).join('  ·  ') });
+      var overEnts = ents.filter(function (e){ return e.code === 'blue' && !(e.aNow != null && e.aNow >= 1); }).slice(0, 3);
+      if (overEnts.length) recs.push({ tone: 'warn', t: 'Running ahead - ease these back to On Track',
+        b: overEnts.map(function (e){ return truncTxt(e.label, 36) + ' (' + fcPct(e.aR) + (e.paceX != null && e.paceX > 0 && e.paceX < 1 ? ', can slow to ×' + e.paceX.toFixed(1) : '') + ')'; }).join('  ·  ') +
+           '. Redirect their slack budget and effort to the entries above.' });
     }
+    if (scope.overN && scope.code !== 'blue') recs.push({ tone: 'warn', t: scope.overN + ' KPI' + (scope.overN > 1 ? 's' : '') + ' ahead of the glide path',
+      b: 'Forecast past where they need to be by the horizon. Check for over-reporting, then throttle their delivery pace or raise their targets - the freed capacity is better spent on the KPIs falling behind.' });
     if (scope.regressN) recs.push({ tone: 'risk', t: scope.regressN + ' KPI' + (scope.regressN > 1 ? 's are' : ' is') + ' moving backwards',
       b: 'Recent reports fall below the earlier level. Verify the data first; if the regression is real these need corrective action, not more of the same.' });
     if (scope.winsN) recs.push({ tone: 'good', t: scope.winsN + ' quick win' + (scope.winsN > 1 ? 's' : '') + ' within reach',
@@ -6688,9 +7058,9 @@
       else if (e.paceX == null) pc.textContent = 'stalled';
       else {
         pc.textContent = '×' + (e.paceX >= 10 ? Math.round(e.paceX) : e.paceX.toFixed(1));
-        pc.style.color = e.paceX > 2 ? STATUS.red.c : e.paceX > 1.15 ? STATUS.amber.c : STATUS.green.c;
+        pc.style.color = e.paceX > 2 ? STATUS.red.c : e.paceX > 1.15 ? STATUS.amber.c : e.paceX < 0.85 ? STATUS.blue.c : STATUS.green.c;
       }
-      pc.title = 'Acceleration needed on the current pace to reach the target by plan end';
+      pc.title = 'Acceleration needed on the current pace to reach the target by plan end · below ×1 = running faster than needed, room to ease off';
       tr.appendChild(pc);
       var eta = el('td', 'num');
       if (e.aNow != null && e.aNow >= 1) eta.textContent = 'done';
@@ -6703,6 +7073,277 @@
     tbl.appendChild(tbody);
     card.appendChild(tbl);
     return card;
+  }
+
+  // ---- PDF export -----------------------------------------------------------
+  //  One A4 portrait brief mirroring the on-screen panel - headline tiles,
+  //  trajectory chart, advice list and the entity table - drawn with the shared
+  //  results-export writer so every Grassroots export carries the same
+  //  letterhead and table language.
+  function fcToneColor(t){ return { good: '#16a34a', warn: '#f59e0b', risk: '#ef4444', info: '#94a3b8' }[t] || '#94a3b8'; }
+  // '✓' and '⚠' have no WinAnsi glyph - swap them for words before printing.
+  function fcPdfSafe(s){ return String(s == null ? '' : s).replace(/\s*⚠/g, ' (late)').replace(/✓/g, 'Met'); }
+
+  /** The on-screen trajectory chart, redrawn in page ops (history line, the
+   *  worst→best uncertainty cone, three scenario lines, target and today
+   *  markers). Returns the y cursor below the chart. */
+  function fcChartPdf(doc, scope, x0, w, yTop, h){
+    var MUT = doc.rgb('#8792a3');
+    if (!scope.fcs.length){
+      doc.text('No measurable KPIs under the current filters.', x0, yTop - 12, { size: 9, italic: true, color: MUT });
+      return yTop - 22;
+    }
+    var mNow = fcNowMi(), mH = Math.max(scope.mH, mNow + 1), k;
+    var m0 = mNow; scope.fcs.forEach(function (f){ if (f.m0 < m0) m0 = f.m0; });
+    var hist = [];
+    for (k = m0; k <= mNow; k++) hist.push(fcHist(scope, k));
+    var fu = { lo: [], mid: [], hi: [] };
+    for (k = mNow; k <= mH; k++){ fu.lo.push(fcMean(scope, 'lo', k)); fu.mid.push(fcMean(scope, 'mid', k)); fu.hi.push(fcMean(scope, 'hi', k)); }
+    var maxV = 1.12, minV = 0;
+    hist.concat(fu.hi, fu.lo).forEach(function (v){ if (v > maxV - 0.08) maxV = v + 0.08; if (v < minV) minV = v - 0.04; });
+    var padL = 32, padR = 36, padT = 10, padB = 16;
+    var plotW = w - padL - padR, plotH = h - padT - padB, nM = mH - m0;
+    var yB = yTop - h + padB;
+    function X(mi){ return x0 + padL + (mi - m0) / nM * plotW; }
+    function Y(a){ return yB + (a - minV) / (maxV - minV) * plotH; }
+    function f(n){ return (Math.round(n * 100) / 100).toString(); }
+    function path(pts){ return pts.map(function (p, i){ return f(p[0]) + ' ' + f(p[1]) + (i ? ' l' : ' m'); }).join(' '); }
+    function stroke(pts, hex, lw, dash){
+      var c = doc.rgb(hex);
+      doc.raw('q 1 J 1 j ' + c[0] + ' ' + c[1] + ' ' + c[2] + ' RG ' + lw + ' w ' + (dash ? '[' + dash + '] 0 d ' : '') + path(pts) + ' S Q');
+    }
+    // gridlines + % scale
+    for (var g = Math.ceil(minV / 0.25) * 0.25; g <= maxV + 1e-9; g += 0.25){
+      var gy = Y(g), gl = Math.round(g * 100) + '%';
+      doc.hline(X(m0), X(mH), gy, doc.rgb('#e8ecf2'), 0.5);
+      doc.text(gl, x0 + padL - 5 - doc.textW(gl, 6.5, false), gy - 2.2, { size: 6.5, color: MUT });
+    }
+    // month scale
+    var step = Math.max(1, Math.round(nM / 8));
+    for (k = m0; k <= mH; k += step){
+      var xl = fcMiLab(k);
+      doc.text(xl, X(k) - doc.textW(xl, 6.5, false) / 2, yTop - h + 2, { size: 6.5, color: MUT });
+    }
+    // uncertainty cone (worst → best), pre-flattened light blue (no alpha in the writer)
+    var cone = [];
+    for (k = mNow; k <= mH; k++) cone.push([X(k), Y(fu.hi[k - mNow])]);
+    for (k = mH; k >= mNow; k--) cone.push([X(k), Y(fu.lo[k - mNow])]);
+    var cc = doc.rgb('#dbeafe');
+    doc.raw('q ' + cc[0] + ' ' + cc[1] + ' ' + cc[2] + ' rg ' + path(cone) + ' h f Q');
+    // target line at 100%
+    var ty = Y(1);
+    stroke([[X(m0), ty], [X(mH), ty]], '#0c447c', 0.8, '3 2.5');
+    doc.text('TARGET 100%', X(mH) - doc.textW('TARGET 100%', 6, true), ty + 3, { size: 6, bold: true, color: doc.rgb('#0c447c') });
+    // actuals, then the three scenario lines
+    stroke(hist.map(function (v, i){ return [X(m0 + i), Y(v)]; }), '#334155', 1.6);
+    var ends = [];
+    [['hi', 1.2], ['mid', 2], ['lo', 1.2]].forEach(function (sc){
+      var arr = fu[sc[0]];
+      stroke(arr.map(function (v, i){ return [X(mNow + i), Y(v)]; }), FC_COL[sc[0]], sc[1]);
+      ends.push({ k: sc[0], v: arr[arr.length - 1], y: Y(arr[arr.length - 1]) - 2.4 });
+    });
+    // endpoint labels, nudged apart when the scenarios converge
+    ends.sort(function (a, b){ return b.y - a.y; });
+    for (var i = 1; i < ends.length; i++) if (ends[i - 1].y - ends[i].y < 9) ends[i].y = ends[i - 1].y - 9;
+    ends.forEach(function (e){
+      doc.text(fcPct(e.v), X(mH) + 4, e.y, { size: 7, bold: true, color: doc.rgb(FC_COL[e.k]) });
+    });
+    // today marker
+    var tx = X(mNow);
+    stroke([[tx, yB], [tx, yB + plotH]], '#94a3b8', 0.7, '2 2');
+    doc.text('TODAY', tx + 3, yB + plotH - 6, { size: 6, bold: true, color: MUT });
+    return yTop - h - 4;
+  }
+
+  /** Build and download the Forecast panel as a PDF brief. */
+  function exportForecastPDF(){
+    var ents = fcEntities(), sel = null;
+    if (S.fcSel) ents.forEach(function (e){ if (e.key === S.fcSel) sel = e; });
+    var scope = sel;
+    if (!scope){
+      scope = fcEntity('__all__', 'Whole portfolio', '', '#2563eb', filtered());
+      fcCompute(scope);
+    }
+    fcPdfDoc(scope, ents, sel).save(pdfFileName({ title: 'forecast-' + S.fcDim + (sel ? '-' + sel.label : '') }));
+  }
+
+  /** The full Forecast panel as a pdfWriter doc - letterhead, plan stamp, tiles,
+   *  trajectory chart, advice and the dimension table. Shared by the tab's
+   *  Export PDF (downloaded) and the Communication panel's per-lead forecast
+   *  brief (attached to the email, base64). opts: tag (letterhead right text),
+   *  preparedFor (comm entity - adds the lead line), noFilters (skip the
+   *  on-screen filter strip), ctx (context line override). */
+  function fcPdfDoc(scope, ents, sel, opts){
+    opts = opts || {};
+    var doc = pdfWriter(), PW = doc.PW, M = doc.margin, AW = PW - 2 * M;
+    doc.addPage();
+    var INK = doc.rgb('#1a2230'), MUT = doc.rgb('#8792a3'), SUB = doc.rgb('#5b6675'),
+        NAVY = doc.rgb('#0c447c');
+    doc.footer = orgBrand() + '  ·  Forecast  ·  ' + truncTxt(scope.label, 60);
+
+    // letterhead - the slim brand band shared with every Grassroots export
+    var rt = opts.tag || ('Forecast Report  ·  ' + pdfDate(TODAY));
+    pdfBrandHead(doc, M, PW - M - doc.textW(rt, 8.5, false) - 14);
+    doc.text(rt, PW - M - doc.textW(rt, 8.5, false), doc.PH - 26, { size: 8.5, color: doc.rgb('#d7e3f0') });
+    var y = doc.PH - 63;
+
+    // active development plan - stamped on every export
+    var _ap = activePlan();
+    if (_ap){
+      var px = M;
+      doc.text('PLAN', px, y - 8, { size: 6.5, bold: true, color: MUT });
+      px += doc.textW('PLAN', 6.5, true) + 7;
+      doc.text(_ap.name, px, y - 8, { size: 9, bold: true, color: NAVY });
+      if (planPeriod(_ap)){
+        px += doc.textW(_ap.name, 9, true) + 7;
+        doc.text('·  ' + planPeriod(_ap), px, y - 8, { size: 8.5, color: MUT });
+      }
+      y -= 17;
+    }
+    // prepared-for line - only on the Communication panel's lead briefs
+    if (opts.preparedFor){
+      var pf = opts.preparedFor, pfX = M;
+      doc.text('PREPARED FOR', pfX, y - 8, { size: 6.5, bold: true, color: MUT });
+      pfX += doc.textW('PREPARED FOR', 6.5, true) + 8;
+      var pfNm = userName(pf.leadId);
+      doc.text(pfNm, pfX, y - 8, { size: 9, bold: true, color: INK });
+      pfX += doc.textW(pfNm, 9, true) + 7;
+      doc.text('·  ' + leadEmail(pf.leadId), pfX, y - 8, { size: 8.5, color: MUT });
+      y -= 17;
+    }
+    y -= 7;
+
+    // badge + title + context line
+    var bw = doc.textW('FORECAST', 7.5, true) + 16;
+    doc.roundRect(M, y - 12.5, bw, 16, 8, NAVY);
+    doc.text('FORECAST', M + 8, y - 8, { size: 7.5, bold: true, color: [1, 1, 1] });
+    var tF = 16;                             // long entity names shrink to fit
+    while (tF > 10.5 && doc.textW(scope.label, tF, true) > AW - bw - 10) tF -= 0.5;
+    doc.text(scope.label, M + bw + 10, y - 9.5, { size: tF, bold: true, color: INK });
+    y -= 24;
+    var ctx = opts.ctx || ((sel ? FC_SING[S.fcDim] + (scope.sub ? '  ·  ' + scope.sub : '')
+                   : 'All KPIs under the current filters')
+            + '  ·  forecast ' + fcHorizonLabel());
+    doc.wrap(ctx, AW, 9, false).forEach(function (ln){ doc.text(ln, M, y - 8, { size: 9, color: SUB }); y -= 12.5; });
+    y -= 8;
+
+    // active filters - a printed forecast outlives the screen it came from
+    // (lead briefs skip this: they are built from the full, unfiltered scope)
+    if (!opts.noFilters) y = pdfFilterStrip(doc, activeFilterSummary(), M, AW, y);
+
+    // headline tiles - 3 x 2 cards, same data as the on-screen grid
+    var tiles = fcTileData(scope, ents), gap = 10, cardW = (AW - gap * 2) / 3, cardH = 52;
+    tiles.forEach(function (t, i){
+      var cx = M + (i % 3) * (cardW + gap);
+      var cy = y - Math.floor(i / 3) * (cardH + gap);
+      doc.roundRect(cx, cy - cardH, cardW, cardH, 6, doc.rgb('#f7f9fc'));
+      doc.roundRect(cx, cy - cardH, cardW, cardH, 6, doc.rgb('#e3e8f0'), 0.8);
+      doc.text(t.l.toUpperCase(), cx + 9, cy - 15, { size: 6.5, bold: true, color: MUT });
+      var v = fcPdfSafe(t.v), vF = 14;
+      while (vF > 8 && doc.textW(v, vF, true) > cardW - 18) vF -= 0.5;
+      doc.text(v, cx + 9, cy - 32, { size: vF, bold: true, color: INK });
+      if (t.s != null){
+        var s = fcPdfSafe(t.s);
+        if (t.chip){
+          var chW = doc.textW(s, 6.5, true) + 12;
+          doc.roundRect(cx + 9, cy - 47, Math.min(chW, cardW - 18), 12, 6, doc.rgb(t.chip));
+          doc.text(s, cx + 15, cy - 43.5, { size: 6.5, bold: true, color: [1, 1, 1] });
+        } else {
+          var sF = 7;
+          while (sF > 5.5 && doc.textW(s, sF, false) > cardW - 18) sF -= 0.25;
+          doc.text(s, cx + 9, cy - 44, { size: sF, color: MUT });
+        }
+      }
+    });
+    y -= cardH * 2 + gap + 18;
+
+    // trajectory chart (kept on one page with its heading)
+    var chH = 190;
+    if (y - chH - 16 < M + 20){ doc.addPage(); y = doc.PH - M; }
+    var hd = 'TRAJECTORY  ·  ACTUALS, THEN SCENARIOS ' +
+      (S.fcHorizon === 'plan' ? 'TO END OF PLAN' : 'FOR THE NEXT ' + parseInt(S.fcHorizon, 10) + ' MONTHS');
+    doc.text(hd, M, y - 9, { size: 8.5, bold: true, color: SUB });
+    var lx = PW - M;   // scenario legend, right-aligned on the heading row
+    [['lo', 'Worst case'], ['mid', 'Realistic'], ['hi', 'Best case']].forEach(function (s){
+      lx -= doc.textW(s[1], 6.5, false);
+      doc.text(s[1], lx, y - 9, { size: 6.5, color: MUT });
+      lx -= 9; doc.rect(lx, y - 11.5, 6, 6, doc.rgb(FC_COL[s[0]])); lx -= 12;
+    });
+    y -= 16;
+    y = fcChartPdf(doc, scope, M, AW, y, chH);
+    y -= 14;
+
+    // advice panels - the on-screen cards, with their tone accent
+    var recs = fcRecs(scope, ents, !!sel);
+    if (y < M + 90){ doc.addPage(); y = doc.PH - M; }
+    doc.text('TO MEET THE TARGETS', M, y - 9, { size: 8.5, bold: true, color: SUB });
+    y -= 17;
+    recs.forEach(function (r){
+      var lines = doc.wrap(r.b, AW - 30, 8.5, false);
+      var hR = 26 + lines.length * 11;
+      if (y - hR < M + 20){ doc.addPage(); y = doc.PH - M; }
+      doc.roundRect(M, y - hR, AW, hR, 5, doc.rgb('#f8fafc'));
+      doc.roundRect(M, y - hR, AW, hR, 5, doc.rgb('#e3e8f0'), 0.7);
+      doc.roundRect(M + 5, y - hR + 5, 2.5, hR - 10, 1.25, doc.rgb(fcToneColor(r.tone)));
+      doc.text(r.t, M + 16, y - 15, { size: 9.5, bold: true, color: INK });
+      var ly = y - 27.5;
+      lines.forEach(function (ln){ doc.text(ln, M + 16, ly, { size: 8.5, color: doc.rgb('#39424f') }); ly -= 11; });
+      y -= hR + 8;
+    });
+    y -= 10;
+
+    // entity table - the same columns as on screen (the sparkline becomes a
+    // 3-month delta, the outlook bar a worst-best range)
+    var mNow = fcNowMi(), hasLate = false;
+    var cols = [
+      { t: FC_SING[S.fcDim] || 'Entity' }, { t: 'KPIs', align: 'right' },
+      { t: 'Now', align: 'right' }, { t: 'Trend 3 mo', align: 'right' },
+      { t: 'Realistic', align: 'right' }, { t: 'Worst - best', align: 'right' },
+      { t: 'Status' }, { t: 'Pace', align: 'right' }, { t: 'Target by', align: 'right' }
+    ];
+    var rows = ents.map(function (e){
+      var st = STATUS[e.code] || STATUS.nodata;
+      var trend = '–';
+      if (e.fcs.length){
+        var d = (fcHist(e, mNow) - fcHist(e, mNow - 3)) * 100;
+        trend = (d >= 0 ? '+' : '') + (Math.abs(d) >= 10 ? Math.round(d) : d.toFixed(1)) + 'pp';
+      }
+      var pace, paceCol = null;
+      if (e.aR == null) pace = '–';
+      else if (e.paceX === 0) pace = 'met';
+      else if (e.paceX == null) pace = 'stalled';
+      else {
+        pace = '×' + (e.paceX >= 10 ? Math.round(e.paceX) : e.paceX.toFixed(1));
+        paceCol = e.paceX > 2 ? STATUS.red.c : e.paceX > 1.15 ? STATUS.amber.c : STATUS.green.c;
+      }
+      var eta;
+      if (e.aNow != null && e.aNow >= 1) eta = 'done';
+      else if (e.etaMi == null) eta = '–';
+      else { eta = fcMiLab(e.etaMi); if (e.mEnd != null && e.etaMi > e.mEnd){ eta += ' *'; hasLate = true; } }
+      return [
+        { t: e.label + (e.sub ? '  ·  ' + e.sub : ''), dot: e.color },
+        { t: fmt(e.n) }, { t: fcPct(e.aNow) }, { t: trend },
+        { t: fcPct(e.aR), color: e.aR == null ? null : st.c },
+        { t: e.aR == null ? '–' : fcPct(e.aW) + ' – ' + fcPct(e.aB) },
+        { t: st.label, tag: { bg: st.c, fg: '#ffffff' } },
+        { t: pace, color: paceCol },
+        { t: eta }
+      ];
+    });
+    if (y < M + 80){ doc.addPage(); y = doc.PH - M; }
+    doc.text((fcDimLabel() + '  ·  FORECAST ' + fcHorizonLabel() + '  ·  RISKIEST FIRST').toUpperCase(),
+      M, y - 9, { size: 8.5, bold: true, color: SUB });
+    y -= 15;
+    y = pdfTable(doc, cols, rows, M, AW, y);
+    y -= 12;
+    var note = "Scenarios project each KPI's recent monthly pace (±1 sd) forward from today; entities are ordered riskiest first."
+             + (hasLate ? '  * At the current pace the target lands after the plan ends.' : '');
+    doc.wrap(note, AW, 8, false).forEach(function (ln){
+      if (y < M + 14){ doc.addPage(); y = doc.PH - M; }
+      doc.text(ln, M, y - 8, { size: 8, italic: true, color: MUT }); y -= 11;
+    });
+
+    return doc;
   }
 
   // =========================================================================
@@ -6922,6 +7563,15 @@
     // collapse panels
     $('#colLeft').onclick=function(){ toggleCol('no-left','#colLeft','‹','›'); };
     $('#colRight').onclick=function(){ toggleCol('no-right','#colRight','›','‹'); };
+    // small screens: the panes are overlay drawers over a dimming scrim
+    // (.main::before). A click on the scrim targets .main itself - the grid's
+    // in-flow children cover everything else - so close any open drawer.
+    $('#main').addEventListener('click', function(e){
+      if (e.target !== e.currentTarget) return;
+      var m=$('#main');
+      if (!m.classList.contains('no-left'))  toggleCol('no-left','#colLeft','‹','›');
+      if (!m.classList.contains('no-right')) toggleCol('no-right','#colRight','›','‹');
+    });
 
     // bottom bar buttons
     $('#btnTheme').onclick=toggleTheme;
@@ -6951,6 +7601,8 @@
     $('#brandBtn').onclick=openAbout;
     $('#brandBtn').addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openAbout(); } });
     $('#aboutClose').onclick=closeAbout;
+    $('#aboutTabG').onclick=function(){ aboutTab('grass'); };
+    $('#aboutTabO').onclick=function(){ aboutTab('org'); };
     $('#aboutModal').addEventListener('click',function(e){ if(e.target===$('#aboutModal')) closeAbout(); });
     var avEl=$('#appVersion'); if(avEl) avEl.textContent=APP_VERSION;   // render the app version from its single source of truth
     var bNP=$('#btnNewProject'); if(bNP) bNP.onclick=function(){ openProject(null); };
@@ -7333,9 +7985,11 @@
     renderSortButtons();
     // colour mode + bubble-size mode
     $('#colorMode').value = S.colorMode;
-    // collapsed panels
-    if (S._noLeft) { $('#main').classList.add('no-left'); $('#colLeft').textContent = '›'; }
-    if (S._noRight) { $('#main').classList.add('no-right'); $('#colRight').textContent = '‹'; }
+    // collapsed panels (small screens always start collapsed: the panes act as
+    // overlay drawers on top of the map there, opened via the ‹ › buttons)
+    var compact = window.matchMedia && window.matchMedia('(max-width:900px)').matches;
+    if (S._noLeft || compact) { $('#main').classList.add('no-left'); $('#colLeft').textContent = '›'; }
+    if (S._noRight || compact) { $('#main').classList.add('no-right'); $('#colRight').textContent = '‹'; }
     // legend minimised
     if (S._legendMin) { $('#legend').classList.add('min'); $('#legMin').textContent = '+'; }
     applyFacetLayout();   // restore saved filter-group order + collapsed state
@@ -7685,6 +8339,14 @@
       else op('q ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg ' + p + ' f Q');
     }
     function hline(x1, x2, y, col, lw){ op('q ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' RG ' + (lw || 0.5) + ' w ' + f(x1) + ' ' + f(y) + ' m ' + f(x2) + ' ' + f(y) + ' l S Q'); }
+    // Place a JPEG (img = { data: raw bytes as a binary string, w, h }) - the org
+    // logo on the letterhead. Registered once per doc, referenced as /ImN.
+    var images = [];
+    function image(img, x, y, w, h){
+      var i = images.indexOf(img);
+      if (i < 0){ i = images.length; images.push(img); }
+      op('q ' + f(w) + ' 0 0 ' + f(h) + ' ' + f(x) + ' ' + f(y) + ' cm /Im' + (i + 1) + ' Do Q');
+    }
     // Word-wrap an (encoded-space) string to lines that fit maxW; hard-breaks any
     // single token longer than the column.
     function wrap(str, maxW, size, bold){
@@ -7709,7 +8371,7 @@
       return lines.length ? lines : [''];
     }
     function pad10(n){ n = '' + n; while (n.length < 10) n = '0' + n; return n; }
-    function save(name){
+    function build(){
       // Per-page footer: hairline, document title on the left, "Page n of N" on
       // the right - stamped here because only now is the page count known.
       if (writer.footer){
@@ -7728,12 +8390,18 @@
       var f1 = put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
       var f2 = put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
       var f3 = put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
+      var imgNs = images.map(function (im){
+        return put('<< /Type /XObject /Subtype /Image /Width ' + im.w + ' /Height ' + im.h
+          + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + im.data.length
+          + ' >>\nstream\n' + im.data + '\nendstream');
+      });
+      var xres = imgNs.length ? ' /XObject << ' + imgNs.map(function (nn, i){ return '/Im' + (i + 1) + ' ' + nn + ' 0 R'; }).join(' ') + ' >>' : '';
       var kids = [];
       pages.forEach(function (pg){
         var stream = pg.ops.join('\n');
         var contentN = put('<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream');
         var pageN = put('<< /Type /Page /Parent ' + pagesN + ' 0 R /MediaBox [0 0 ' + PW + ' ' + PH
-          + '] /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R /F3 ' + f3 + ' 0 R >> >> /Contents ' + contentN + ' 0 R >>');
+          + '] /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R /F3 ' + f3 + ' 0 R >>' + xres + ' >> /Contents ' + contentN + ' 0 R >>');
         kids.push(pageN);
       });
       objs[catalogN - 1] = '<< /Type /Catalog /Pages ' + pagesN + ' 0 R >>';
@@ -7744,6 +8412,10 @@
       out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n';
       offsets.forEach(function (o){ out += pad10(o) + ' 00000 n \n'; });
       out += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root ' + catalogN + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+      return out;
+    }
+    function save(name){
+      var out = build();
       var bytes = new Uint8Array(out.length);
       for (var b = 0; b < out.length; b++) bytes[b] = out.charCodeAt(b) & 0xff;
       var blob = new Blob([bytes], { type: 'application/pdf' });
@@ -7754,7 +8426,7 @@
     }
     var writer = { PW: PW, PH: PH, margin: margin, addPage: addPage, text: text, rect: rect, rectStroke: rectStroke,
                    roundRect: roundRect, hline: hline, rgb: rgb, enc: enc, wrap: wrap, textW: textW, textWEnc: textWEnc,
-                   save: save, footer: '' };
+                   image: image, raw: op, build: build, save: save, footer: '' };
     return writer;
   }
 
@@ -7929,7 +8601,8 @@
 
   function pdfFileName(p){
     var base = (p.title || 'results').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
-    return 'grassroots-' + (base || 'results') + '-' + TODAY.toISOString().slice(0, 10) + '.pdf';
+    var brand = orgActive() ? (orgShort().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'grassroots') : 'grassroots';
+    return brand + '-' + (base || 'results') + '-' + TODAY.toISOString().slice(0, 10) + '.pdf';
   }
 
   // "13 July 2026" - a printed report deserves a human date, not an ISO stamp.
@@ -7947,15 +8620,13 @@
     var y = doc.PH - M;
     var INK = doc.rgb('#1a2230'), MUT = doc.rgb('#8792a3'), SUB = doc.rgb('#5b6675'),
         NAVY = doc.rgb('#0c447c');
-    doc.footer = 'The Grassroots  ·  ' + (p.title || 'Results');
+    doc.footer = orgBrand() + '  ·  ' + (p.title || 'Results');
 
-    // letterhead: full-bleed brand band across the top, wordmark + export date under it
-    doc.rect(0, doc.PH - 5, PW, 5, NAVY);
-    doc.text('THE', M, y - 11, { size: 10, bold: true, color: INK });
-    doc.text('GRASSROOTS', M + doc.textW('THE', 10, true) + 2.5, y - 11, { size: 10, bold: true, color: NAVY });
+    // letterhead: the slim brand band shared with the comm monthly reports
     var rt = 'Results Export  ·  ' + pdfDate(TODAY);
-    doc.text(rt, PW - M - doc.textW(rt, 8.5, false), y - 11, { size: 8.5, color: MUT });
-    y -= 18; doc.hline(M, PW - M, y, doc.rgb('#d9dee6'), 0.7); y -= 15;
+    pdfBrandHead(doc, M, PW - M - doc.textW(rt, 8.5, false) - 14);
+    doc.text(rt, PW - M - doc.textW(rt, 8.5, false), doc.PH - 26, { size: 8.5, color: doc.rgb('#d7e3f0') });
+    y = doc.PH - 63;
 
     // active development plan - stamped on every export
     var _ap = activePlan();

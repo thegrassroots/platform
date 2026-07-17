@@ -78,6 +78,36 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8813"],
       "port": 8813
+    },
+    {
+      "name": "promon-responsive",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8815"],
+      "port": 8815
+    },
+    {
+      "name": "promon-icon",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8817"],
+      "port": 8817
+    },
+    {
+      "name": "promon-fcpdf",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8819"],
+      "port": 8819
+    },
+    {
+      "name": "promon-org",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8821"],
+      "port": 8821
+    },
+    {
+      "name": "promon-overtrack",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8823"],
+      "port": 8823
     }
   ]
 }

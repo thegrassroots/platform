@@ -5,12 +5,12 @@
 :root{
   --bg:#f0f0f2; --bg-soft:#ebeced; --bg-sunk:#e0e3e6;
   --panel:#f0f0f2; --border:#d5d9e0; --border-soft:#e0e3e6;
-  --ink:#1a2233; --ink-2:#3d4a61; --muted:#5c6a82;
+  --ink:#000000; --ink-2:#1a2233; --muted:#3d4a61;
   --primary:#2563eb; --primary-ink:#ffffff; --primary-soft:#e0e4ef;
   --kpi-pri:#0c447c; --kpi-pri-bg:#d8e3ec; --kpi-sec:#27500a; --kpi-sec-bg:#dce4d1;   /* soft Primary(blue)/Secondary(green) KPI badges: tinted bg + colour text */
   --ocean:#a0c6d1; --land:#e4e1db; --land-line:#cac5ba;
-  --chip:#eef1f5; --chip-ink:#3d4b63;
-  --green:#15954f; --amber:#e08a1e; --red:#e0453f; --grey:#5c6a82;
+  --chip:#eef1f5; --chip-ink:#1a2233;
+  --green:#15954f; --amber:#e08a1e; --red:#e0453f; --grey:#3d4a61;
   --shadow:0 1px 2px rgba(20,30,50,.05);
   --shadow-lg:0 6px 20px rgba(20,30,50,.10);
   --shadow-xl:0 18px 50px rgba(20,30,50,.28);
@@ -49,14 +49,16 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 ::-webkit-scrollbar-track{background:transparent}
 
-.app{display:flex;flex-direction:column;height:100vh}
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh}
 
 /* ---- header --------------------------------------------------------------- */
 .header{
   height:var(--hdr);flex:0 0 var(--hdr);display:flex;align-items:center;
   gap:11px;padding:0 13px;background:var(--panel);border-bottom:1px solid var(--border);z-index:40;
 }
-.brand{display:flex;flex-direction:column;gap:3px;min-width:0}
+.brand{display:flex;align-items:center;gap:8px;min-width:0}
+.brand-ic{width:25px;height:25px;flex:0 0 auto;display:block}
+.brand-tx{display:flex;flex-direction:column;gap:3px;min-width:0}
 .brand[role="button"]{cursor:pointer}
 .brand[role="button"]:hover .wm.sdg{filter:brightness(1.08) saturate(1.1)}
 .brand[role="button"]:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:4px}
@@ -365,6 +367,8 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .modal.about{width:560px;height:auto;max-height:88vh}
 .about-hero{display:flex;flex-direction:column;gap:6px;align-items:flex-start;
   padding:4px 0 16px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.about-hero .about-brandrow{display:flex;align-items:center;gap:12px}
+.about-hero .about-ic{width:42px;height:42px;flex:0 0 auto;display:block}
 .about-hero .wm.sdg{font-size:22px;letter-spacing:.04em}
 .about-hero .wm.sdg span{color:#1CABE2 !important} /* brand blue */
 .about-hero .rain{height:4px;width:100%;border-radius:2px;
@@ -376,6 +380,21 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .about-foot #appVersion{font-variant-numeric:tabular-nums}
 .about-foot .about-mail{color:var(--accent,var(--ink-2));text-decoration:none}
 .about-foot .about-mail:hover{text-decoration:underline}
+/* "Your organization" tab: profile form, logo picker, activation status */
+.about .about-tabs{padding:12px 17px 0}
+.org-onoff{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--ink);
+  border:1px solid var(--border);background:var(--bg-soft);border-radius:9px;padding:10px 12px;margin-bottom:12px;cursor:pointer}
+.org-onoff input{accent-color:var(--primary)}
+.org-status{color:var(--muted);font-size:10px;margin-left:auto}
+.org-status.ok{color:var(--green)}
+.org-logo-row{display:flex;align-items:center;gap:14px;margin-top:14px}
+.org-logo-prev{flex:0 0 auto;width:132px;height:68px;border:1px dashed var(--border);border-radius:8px;
+  background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.org-logo-prev span{color:var(--muted);font-size:9.5px}
+.org-logo-prev img{max-width:100%;max-height:100%;display:block}
+.org-logo-btns{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0}
+.org-logo-btns .hbtn+.hbtn{margin-left:0}
+.org-logo-hint{color:var(--muted);font-size:9.5px;line-height:1.5}
 /* one row: [badge] title  ·  ↳ sub-line  ................  [Export PDF] */
 .chain{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:0 12px;margin-bottom:14px}
 .chain .lnk{display:flex;gap:9px;padding:5px 0;position:relative;min-width:0;flex:0 1 auto}
@@ -555,6 +574,7 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .comm-prev-body{padding:12px 14px 4px;font-size:11px;line-height:1.6;color:var(--ink)}
 .comm-prev-body p{margin:0 0 10px;white-space:pre-wrap}
 .comm-prev-att{display:flex;align-items:center;gap:8px;margin:6px 14px 14px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-soft);font-size:10.5px;color:var(--ink)}
+.comm-prev-att+.comm-prev-att{margin-top:-8px}
 .comm-att-ic{font-size:15px}
 .comm-att-k{margin-left:auto;font-size:8.5px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
 @media (max-width:900px){ .comm-mail{grid-template-columns:1fr} }
@@ -1019,10 +1039,15 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-scen{margin-left:auto;display:flex;gap:12px;align-items:center}
 .fc-scen .li{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;color:var(--muted)}
 .fc-scen .sq{width:9px;height:9px;border-radius:2px}
+.fc-export{margin-left:auto;border:1px solid var(--border);background:var(--panel);color:var(--ink-2);padding:5px 11px;
+  border-radius:var(--radius);font-size:10px;font-weight:var(--w-strong);display:inline-flex;align-items:center;
+  gap:6px;white-space:nowrap;cursor:pointer}
+.fc-export:hover{border-color:var(--primary);color:var(--primary)}
+.fc-export .ic{font-size:12px;line-height:1}
 .fc-body{display:flex;flex-direction:column;gap:10px;padding:10px 12px 16px}
 .fc-strip .fstrip{margin:0}
 /* exec tiles */
-.fc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+.fc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:9px}
 .fc-tile{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 11px;box-shadow:var(--shadow)}
 .fc-tile .tl{color:var(--muted);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase}
 .fc-tile .tv{font-size:16px;font-weight:var(--w-title);margin-top:4px;color:var(--ink);letter-spacing:-.01em;
@@ -1034,6 +1059,8 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:10px 12px;min-width:0}
 .fc-h{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-title);margin-bottom:8px}
 .fc-chartcard{flex:1;min-width:0}
+.fc-chart-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.fc-chart-head .fc-h{margin-bottom:0;min-width:0}
 .fc-chart svg{width:100%;height:auto;max-height:440px;display:block}
 .fc-chart .axlabel{fill:var(--muted);font-size:10px}
 .fc-chart .gridline{stroke:var(--border-soft)}
@@ -1083,3 +1110,83 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-range .dotr{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:var(--primary);
   border:1.5px solid var(--panel);transform:translate(-50%,-50%);box-shadow:var(--shadow)}
 @media (max-width:1100px){ .fc-mid{flex-direction:column} .fc-advice{flex:1;max-width:none} .fc-recs{max-height:none} }
+
+/* ============================================================================
+ *  RESPONSIVE - tablets and phones
+ * ========================================================================== */
+@media (max-width:900px){
+  /* Single-column main: map / insights / forecast fill the full width and the
+     two side panes become overlay drawers on top, toggled by the same ‹ ›
+     buttons. !important beats the inline grid-template-columns set by setGrid(). */
+  /* overflow:hidden keeps the parked drawers from widening the mobile layout
+     viewport (mobile browsers zoom out to fit overflowing content) */
+  .main{grid-template-columns:1fr !important;overflow:hidden}
+  .side{position:absolute;top:0;bottom:0;z-index:18;width:min(320px,85vw);
+    box-shadow:var(--shadow-xl);transition:transform .2s ease,visibility .2s}
+  .side.left{left:0}
+  .side.right{right:0}
+  .main.no-left .side.left{transform:translateX(-100%);visibility:hidden;box-shadow:none}
+  .main.no-right .side.right{transform:translateX(100%);visibility:hidden;box-shadow:none}
+  .resizer{display:none}
+  /* scrim behind an open drawer; tapping it closes the drawers (wired in app.js) */
+  .main:not(.no-left)::before,.main:not(.no-right)::before{content:'';position:absolute;inset:0;
+    z-index:15;background:rgba(15,23,42,.35)}
+  /* pane toggles pin to the screen edge, or ride along the open drawer's edge */
+  .collapse{z-index:19}
+  .collapse.l{left:8px}
+  .collapse.r{right:8px}
+  .main:not(.no-left) .collapse.l{left:calc(min(320px,85vw) + 8px)}
+  .main:not(.no-right) .collapse.r{right:calc(min(320px,85vw) + 8px)}
+  /* bars wrap onto extra rows instead of overflowing off-screen
+     (flex-basis:auto releases the fixed --hdr/--sub heights) */
+  .header{flex-wrap:wrap;flex-basis:auto;height:auto;min-height:var(--hdr);padding:6px 10px;row-gap:6px}
+  .subbar{flex-wrap:wrap;flex-basis:auto;height:auto;min-height:var(--sub);padding:5px 10px;row-gap:4px}
+  .botbar{flex-wrap:wrap}
+  .planchip{max-width:200px}
+}
+
+@media (max-width:640px){
+  /* header slims down: live badge goes, avatar-only user chip */
+  .snap{display:none}
+  .wm.sdg{font-size:14px}
+  .planchip{max-width:150px}
+  .userchip .un{display:none}
+  .subbar .lbl{display:none}
+  /* period presets: one horizontally-scrollable row instead of wrapping */
+  #ranges{display:flex;flex:1 1 100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  #ranges .range{flex:0 0 auto;white-space:nowrap}
+  .legend{width:170px}
+  .legend #legendRows{max-height:26vh}
+  /* modals + child popups go fullscreen */
+  .modal-overlay{padding:0}
+  .modal-overlay .modal{width:100%;height:100%;max-height:100%;border-radius:0}
+  .modal-tabs{flex-wrap:wrap}
+  .child-overlay{padding:0}
+  .child-overlay .child-modal{width:100%;height:100%;max-height:100%;border-radius:0}
+  #newActivityOverlay .child-modal{height:100%}
+  /* form grids collapse to one column */
+  .aform .afgrid{grid-template-columns:1fr}
+  .ufgrid{grid-template-columns:1fr}
+  .kpigrid{grid-template-columns:1fr}
+  .child-body .kpigrid{grid-template-columns:1fr}
+  .prform .prgrid{grid-template-columns:1fr}
+  .meta{grid-template-columns:1fr}
+  .mgrid{grid-template-columns:repeat(3,1fr)}
+  .esum-grid{flex-wrap:wrap}
+  .esum-grid .stat{flex:1 1 40%}
+  .chain{flex-wrap:wrap}
+  .chain .rc-export{margin-left:0}
+  .comm-msg{max-width:100%;margin-left:0}
+}
+
+/* touch devices: larger tap targets for the most-used controls */
+@media (pointer:coarse){
+  .seg button,.range{padding:8px 12px}
+  .hbtn{padding:8px 12px}
+  .modal-tabs button{padding:8px 13px}
+  .map-controls button{width:34px;height:34px}
+  .pager button{width:32px;height:32px}
+  .collapse{width:26px;height:44px}
+  .facet{padding:6px 4px}
+  .facet input[type=checkbox]{width:15px;height:15px}
+}

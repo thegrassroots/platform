@@ -260,8 +260,8 @@
       var lines = ['PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;'];
       TABLES.forEach(function (t) {
         mem[t].forEach(function (row) {
-          // the report PDF blob (base64) is an artefact, not relational data - skip it
-          var cols = Object.keys(row).filter(function (k) { return (k !== 'id' || t !== 'country') && !(t === 'report' && k === 'pdf'); });
+          // the report PDF blobs (base64, results + forecast) are artefacts, not relational data - skip them
+          var cols = Object.keys(row).filter(function (k) { return (k !== 'id' || t !== 'country') && !(t === 'report' && (k === 'pdf' || k === 'pdf_fc')); });
           var vals = cols.map(function (k) { return sqlVal(row[k]); });
           lines.push('INSERT INTO ' + t + ' (' + cols.join(',') + ') VALUES (' + vals.join(',') + ');');
         });

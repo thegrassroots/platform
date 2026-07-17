@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Grassroots - keeps track of what changes on the ground</title>
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <link rel="stylesheet" href="assets/fonts.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="styles.css?v=gr05">
+<link rel="stylesheet" href="styles.css?v=gr06">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 </head>
 <body>
@@ -15,10 +16,17 @@
   <!-- ================= HEADER ================= -->
   <header class="header">
     <div class="brand" id="brandBtn" role="button" tabindex="0" title="About The Grassroots">
-      <div class="wm sdg" aria-label="The Grassroots">
-        <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp"> </span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+      <svg class="brand-ic" viewBox="0 0 512 512" aria-hidden="true">
+        <circle cx="256" cy="256" r="178" fill="none" stroke="#0C85C7" stroke-width="36"/>
+        <circle cx="382" cy="130" r="58" fill="#0C85C7"/>
+        <circle cx="256" cy="256" r="34" fill="#0C85C7" opacity=".55"/>
+      </svg>
+      <div class="brand-tx">
+        <div class="wm sdg" aria-label="The Grassroots">
+          <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp"> </span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+        </div>
+        <div class="rain"></div>
       </div>
-      <div class="rain"></div>
     </div>
     <div class="snap"><span class="dot"></span>Live</div>
     <div class="seg" id="tabs">
@@ -354,10 +362,22 @@
         </div>
         <button class="mx" id="aboutClose" title="Close (Esc)">×</button>
       </div>
+      <div class="modal-tabs about-tabs">
+        <button id="aboutTabG" class="on" type="button">The Grassroots</button>
+        <button id="aboutTabO" type="button">Your organization</button>
+      </div>
       <div class="modal-body">
+        <div id="aboutPaneG">
         <div class="about-hero">
-          <div class="wm sdg" aria-label="The Grassroots">
-            <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp"> </span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+          <div class="about-brandrow">
+            <svg class="about-ic" viewBox="0 0 512 512" aria-hidden="true">
+              <circle cx="256" cy="256" r="178" fill="none" stroke="#0C85C7" stroke-width="36"/>
+              <circle cx="382" cy="130" r="58" fill="#0C85C7"/>
+              <circle cx="256" cy="256" r="34" fill="#0C85C7" opacity=".55"/>
+            </svg>
+            <div class="wm sdg" aria-label="The Grassroots">
+              <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp"> </span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+            </div>
           </div>
           <div class="rain"></div>
         </div>
@@ -400,6 +420,8 @@
         <div class="about-foot">A Results-Based Monitoring &amp; Evaluation platform · v<span id="appVersion">0.0.1</span><br>
           Get in touch: <a class="about-mail" href="mailto:grassrootstrack@outlook.com">grassrootstrack@outlook.com</a>
         </div>
+        </div>
+        <div id="aboutPaneO" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -467,6 +489,6 @@
 <script src="data/world.js"></script>
 <script src="js/seed.js?v=gr07"></script>
 <script src="js/db.js?v=gr02"></script>
-<script src="js/app.js?v=gr12"></script>
+<script src="js/app.js?v=gr13"></script>
 </body>
 </html>
