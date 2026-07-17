@@ -561,40 +561,87 @@ def make_indicator(result_id, spec, responsible_id, reporter_name, reporter_id, 
     name,typ,unit,direction,base,target,mov = spec
     iid += 1
     indicators.append({
-        "id":iid,"result_id":result_id,"code":code,"name":name,"type":typ,"unit":unit,"direction":direction,
+        "id":iid,"result_id":result_id,"code":code,"name":name,
+        "type_id":KTYPE_ID[typ],"unit_id":UNIT_ID[unit],"direction_id":DIR_ID[direction],
         "secondary":0,"project_id":None,
         "baseline_value":base,"baseline_year":plan["baseline_year"],"baseline_date":plan["baseline_date"],
         "target_value":target,"target_year":plan["target_year"],"target_date":plan["target_date"],
         "means_of_verification": mov or pick(["Administrative records","Reporting records","Programme monitoring database",
             "Regional review report","Independent assessment","Household survey"]),
-        "collection_method":pick(["Administrative records","Facility records","Survey","Self-reporting","Regional review"]),
-        "frequency":pick(["annual","semi-annual","quarterly","monthly"]),
+        "collection_method_id":METHOD_ID[pick(["Administrative records","Facility records","Survey","Self-reporting","Regional review"])],
+        "frequency_id":FREQ_ID[pick(["annual","semi-annual","quarterly","monthly"])],
         "responsible_id":responsible_id,
-        "disaggregation":pick(["region","region, partner","none","region, country"]),
+        "disaggregation_id":DISAGG_ID[pick(["region","region, partner","none","region, country"])],
     })
     add_measurements(iid, base, target, unit, reporter_id, plan, iso=iso)
 
-# ---- users (Owner / Section / Country Office) ------------------------------------------
+# ---- Affiliations (UNIVERSAL lookup) ----------------------------------------
+# One row per lead category. user.affiliation_id references this table and the
+# app's Lead dropdowns filter to users affiliated to the matching category (a
+# Donor Lead must come from Donor-affiliated users). `key` equals the report
+# category keys the app already uses.
+AFFILIATIONS = [
+ (1, "plan",    "Plans"),
+ (2, "impact",  "Impact"),
+ (3, "outcome", "Outcome"),
+ (4, "output",  "Output"),
+ (5, "project", "Projects"),
+ (6, "donor",   "Donors"),
+ (7, "region",  "Regions"),
+ (8, "country", "Countries"),
+]
+affiliations = [{"id":i,"key":k,"name":n,"seq":i} for (i,k,n) in AFFILIATIONS]
+AFF = {k:i for (i,k,n) in AFFILIATIONS}
+
+# ---- Reference lookups (UNIVERSAL) -------------------------------------------
+# Every fixed form list lives in its own table; rows are selected and SAVED BY
+# ID, never by text. `key` is the stable code the app's logic switches on
+# (e.g. unit 'count' accumulates); `name` is the display label.
+def _lookup(rows):
+    return [{"id":i+1,"key":k,"name":n,"seq":i+1} for i,(k,n) in enumerate(rows)]
+units              = _lookup([(u,u) for u in ["count","%","index","ratio","score","days","USD"]])
+frequencies        = _lookup([(f,f) for f in ["annual","semi-annual","quarterly","monthly"]])
+collection_methods = _lookup([(m,m) for m in ["Administrative records","Facility records","Platform analytics",
+                                              "Survey","Self-reporting","Regional review","Independent assessment"]])
+disaggregations    = _lookup([(d,d) for d in ["none","region","region, agency","region, country","region, partner","sex","age"]])
+kpi_types          = _lookup([("quantitative","Quantitative"),("qualitative","Qualitative")])
+directions         = _lookup([("increase","Higher is better"),("decrease","Lower is better")])
+donor_types        = _lookup([(t,t) for t in ["Bilateral","Multilateral","Foundation"]])
+user_statuses      = _lookup([("admin","Admin"),("user","User"),("viewer","Viewer")])
+UNIT_ID    = {r["key"]:r["id"] for r in units}
+FREQ_ID    = {r["key"]:r["id"] for r in frequencies}
+METHOD_ID  = {r["key"]:r["id"] for r in collection_methods}
+DISAGG_ID  = {r["key"]:r["id"] for r in disaggregations}
+KTYPE_ID   = {r["key"]:r["id"] for r in kpi_types}
+DIR_ID     = {r["key"]:r["id"] for r in directions}
+DTYPE_ID   = {r["key"]:r["id"] for r in donor_types}
+USTATUS_ID = {r["key"]:r["id"] for r in user_statuses}
+
+# ---- users (Owner / affiliated officers / Country Offices) -------------------
 # Reports are attributed to a logged-in user, never a typed name. Each user's
 # demo password equals their username (browser-only app; not real security).
-# Users are UNIVERSAL - shared across plans.
+# Users are UNIVERSAL - shared across plans. Every user carries an
+# affiliation_id; Lead assignments below always come from the matching pool.
 users = []
 uid = 0
-_SECTION_FOR = {"owner":"hq", "hq":"hq", "co":"co"}
-_STATUS_FOR  = {"owner":"admin", "hq":"user", "co":"user"}
-def add_user(username, name, role, region=None, iso=None, enabled=1):
+_AFF_FOR    = {"owner":AFF["plan"], "hq":AFF["output"], "co":AFF["country"]}
+_STATUS_FOR = {"owner":"admin", "hq":"user", "co":"user"}
+# NB: users carry no region/country columns - a Countries-affiliated user's
+# scope is DERIVED from the countries they Lead (country.lead_id).
+def add_user(username, name, role, enabled=1, aff=None):
     global uid
     uid += 1
     users.append({"id":uid,"username":username,"name":name,"password":username,
         "email":f"{username}@thegrassroots.org",   # profile email - report delivery goes here
-        "section":_SECTION_FOR[role],"status":_STATUS_FOR[role],
-        "region":region,"country_iso3":iso,"enabled":enabled,
+        "affiliation_id":aff if aff is not None else _AFF_FOR[role],
+        "status_id":USTATUS_ID[_STATUS_FOR[role]],
+        "enabled":enabled,
         "created":"2021-01-01"})
     return uid
 
 # Owner - full control. Identity depends on the build variant (see INTERNAL above).
 add_user(OWNER[0], OWNER[1], "owner")
-# Section - the distinct output owners across BOTH frameworks (can edit Results & Framework)
+# Output officers - the distinct output owners across BOTH frameworks (can edit Results & Framework)
 hq_by_name = {}
 for _fw in (PILLARS_2021, PILLARS_2026):
     for _t in _fw:
@@ -603,30 +650,49 @@ for _fw in (PILLARS_2021, PILLARS_2026):
                 if _owner not in hq_by_name:
                     hq_by_name[_owner] = add_user(_owner.lower().replace(" ", "."), _owner, "hq")
 
-# ---- Leads for every category (deterministic - NO RNG, so nothing else churns) --
+# ---- category Lead pools (deterministic - NO RNG, so nothing else churns) ----
+# Each non-Output, non-Country category gets a dedicated pool of users carrying
+# that affiliation, so its Lead dropdown has real candidates and every seeded
+# Lead satisfies the affiliation filter. Pools are sized so a round-robin spreads
+# the assignments thinly - no single user Leads a large share of a category (the
+# Assigned column stays diverse). Every name here is unique across the seed.
+def _add_pool(aff_key, names):
+    return [add_user(n.lower().replace(" ", "."), n, "hq", aff=AFF[aff_key]) for n in names]
+plan_pool    = [users[0]["id"]] + _add_pool("plan", ["Alice Navarro","Viktor Hale"])   # the Owner is Plans-affiliated too
+impact_pool  = _add_pool("impact",  ["Ingrid Solberg","Mateo Vidal","Lucia Romano","Youssef Amari"])
+outcome_pool = _add_pool("outcome", ["Tomas Keller","Aisha Bello","Farid Qureshi","Selin Yilmaz",
+                                     "Diego Morales","Amara Okoye","Kenji Sato","Carmen Vega"])
+project_pool = _add_pool("project", ["Lena Fischer","Marcus Doyle","Sofia Marino","Daniel Achebe",
+                                     "Rania Aziz","Bjorn Holt","Chiara Ferrari","Emeka Obi",
+                                     "Sandra Kohl","Pablo Castro","Yara Nassar","Ivan Petrov",
+                                     "Mei Lund","Oscar Dubois"])
+donor_pool   = _add_pool("donor",   ["Clara Jensen","Omar Kassab","Grace Wanjiru","Henrik Sol",
+                                     "Fatima Zahra","Andres Reyes","Lea Almeida","Samuel Kim"])
+region_pool  = _add_pool("region",  ["Elias Berg","Nadia Rahman","Carmen Diaz",
+                                     "Theo Sorensen","Ana Moreau","Luca Bianchi"])
+
+# ---- Leads for every category -----------------------------------------------
 # The Communication panel reports to a Lead per plan/impact/outcome/output/project/
-# donor/region/country. Outputs (owner per framework spec), projects, programmes and
-# programme countries are assigned elsewhere; here the rest get one:
-#   plans / impacts / outcomes -> the HQ officer who owns the MOST outputs beneath
-#   them (ties break by first appearance), so the Lead is whoever carries the most
-#   of that scope's delivery;  donors / regions -> rotate through the HQ pool.
-def _majority(names):
-    counts = {}
-    for n in names: counts[n] = counts.get(n, 0) + 1
-    best = None
-    for n in names:
-        if best is None or counts[n] > counts[best]: best = n
-    return best
+# donor/region/country. Outputs (owner per framework spec, Output-affiliated),
+# projects, programmes and programme countries are assigned elsewhere; here the
+# rest rotate deterministically through their affiliation's pool so assignments
+# spread evenly. Impacts map one owner per pillar. Outcomes assign the NEXT pool
+# member to each distinct outcome slot (pillar, oi) the first time it is seen -
+# a true round-robin, so every outcome Lead carries a near-equal share and none
+# is left idle. The same slot (shared across plans and country instances) always
+# resolves to the same owner, keeping the Assigned count stable.
 def _impact_owner(t):
-    return hq_by_name.get(_majority([o[1] for (_os, _outs) in t["outcomes"] for o in _outs]))
-def _outcome_owner(outs):
-    return hq_by_name.get(_majority([o[1] for o in outs]))
-for _p, _row in zip(PLANS, plans):
-    _row["lead_id"] = hq_by_name.get(_majority(
-        [o[1] for t in _p["framework"] for (_os, _outs) in t["outcomes"] for o in _outs]))
-hq_uids = list(hq_by_name.values())
+    return impact_pool[(t["pillar"] - 1) % len(impact_pool)]
+_outcome_slot = {}   # (pillar, oi) -> pool id, filled round-robin on first sight
+def _outcome_owner(pillar, oi):
+    key = (pillar, oi)
+    if key not in _outcome_slot:
+        _outcome_slot[key] = outcome_pool[len(_outcome_slot) % len(outcome_pool)]
+    return _outcome_slot[key]
+for _i, (_p, _row) in enumerate(zip(PLANS, plans)):
+    _row["lead_id"] = plan_pool[(_i + 1) % len(plan_pool)]   # skip the Owner for seeded plans
 for _i, _r in enumerate(regions):
-    _r["lead_id"] = hq_uids[_i % len(hq_uids)]
+    _r["lead_id"] = region_pool[_i % len(region_pool)]
 
 # ---- country programmes (UNIVERSAL - shared across plans) -------------------
 prog_by_iso = {}
@@ -636,7 +702,7 @@ _lead_pool = LEADS[:]   # sample without replacement -> unique names
 for iso, cname, region in COUNTRIES:
     pid += 1
     lead = _lead_pool.pop(int(rnd() * len(_lead_pool)))
-    co_uid = add_user(iso.lower(), lead, "co", region, iso)   # username = iso3
+    co_uid = add_user(iso.lower(), lead, "co")   # username = iso3; scope = this country via country.lead_id
     co_by_iso[iso] = co_uid
     lead_name_by_iso[iso] = lead
     programmes.append({
@@ -683,7 +749,7 @@ for plan in PLANS:
                 rid += 1; outcome_id = rid
                 results.append({"id":rid,"plan_id":plan["id"],"programme_id":prog_id,"parent_id":impact_id,"level":"outcome",
                     "code":f"Outcome {t['pillar']}.{oi}","statement":o_stmt,"sdg":t["pillar"],
-                    "owner_id":_outcome_owner(outputs),
+                    "owner_id":_outcome_owner(t["pillar"], oi),
                     "assumptions":"Regional and country counterparts remain engaged; enabling policy environment holds.",
                     "risks":pick(["Institutional turnover weakens ownership.","Delayed decisions slow delivery.",
                         "Capacity gaps in implementing teams.","Access constraints in remote districts."]),
@@ -721,9 +787,9 @@ DONOR_DEFS = [
 ]
 DONOR_PAL = ["#4FA9E8","#33C2B4","#9D7BEE","#F5A04D","#EC7BA6","#5399EA","#2CC4A0","#E0A93B",
  "#6FBF73","#EA8A5B","#C58BE0","#48B0C4","#D98CA0","#8FB84E","#E2B54A","#7E9BEA"]
-# each donor gets an HQ relationship Lead (offset so the rotation differs from regions')
-donors = [{"id":i+1,"name":n,"short_name":s,"type":t,"color":DONOR_PAL[i % len(DONOR_PAL)],
-           "lead_id":hq_uids[(i + 2) % len(hq_uids)]}
+# each donor gets a relationship Lead from the Donor-affiliated pool
+donors = [{"id":i+1,"name":n,"short_name":s,"type_id":DTYPE_ID[t],"color":DONOR_PAL[i % len(DONOR_PAL)],
+           "lead_id":donor_pool[i % len(donor_pool)]}
           for i,(n,s,t) in enumerate(DONOR_DEFS)]
 
 # ---- Projects (plan-SCOPED) -------------------------------------------------
@@ -772,13 +838,15 @@ def make_secondary(project_id, iso, reporter_id, code, plan, sites=None):
         base, target = ri(20, 50), ri(70, 95)
     iid += 1
     indicators.append({
-        "id":iid,"result_id":None,"code":code,"name":nm,"type":"quantitative","unit":unit,
-        "direction":"increase","secondary":1,"project_id":project_id,
+        "id":iid,"result_id":None,"code":code,"name":nm,
+        "type_id":KTYPE_ID["quantitative"],"unit_id":UNIT_ID[unit],
+        "direction_id":DIR_ID["increase"],"secondary":1,"project_id":project_id,
         "baseline_value":base,"baseline_year":plan["baseline_year"],"baseline_date":plan["baseline_date"],
         "target_value":target,"target_year":plan["target_year"],"target_date":plan["target_date"],
         "means_of_verification":"Project monitoring records; field verification",
-        "collection_method":pick(["Self-reporting","Survey","Administrative records"]),
-        "frequency":pick(["monthly","quarterly"]),"responsible_id":None,"disaggregation":pick(["none","sex","region"]),
+        "collection_method_id":METHOD_ID[pick(["Self-reporting","Survey","Administrative records"])],
+        "frequency_id":FREQ_ID[pick(["monthly","quarterly"])],"responsible_id":None,
+        "disaggregation_id":DISAGG_ID[pick(["none","sex","region"])],
     })
     add_measurements(iid, base, target, unit, reporter_id, plan, iso=iso, project_id=project_id, sites=sites)
     return iid
@@ -815,7 +883,9 @@ for plan in PLANS:
                 "id":prj,"plan_id":plan["id"],"code":code,"name":f"{theme} - {p['name']}",
                 "budget_usd": ri(3, 45) * 100_000,
                 "donor_id":donor["id"],"country_iso3":iso,"region":region,
-                "lead_id":reporter_id,"start_date":pick(plan["proj_starts"]),"end_date":pick(plan["proj_ends"]),
+                # Lead from the Projects-affiliated pool (activities still report via the country office)
+                "lead_id":project_pool[(prj - 1) % len(project_pool)],
+                "start_date":pick(plan["proj_starts"]),"end_date":pick(plan["proj_ends"]),
                 "description":f"{theme} initiative in {p['name']}, supported by {donor['name']}, "
                               f"strengthening capacity and delivery in the field.",
             })
@@ -871,6 +941,15 @@ for m in measurements:
 payload = {
     "plan":plans,
     "region":regions,
+    "affiliation":affiliations,
+    "unit":units,
+    "frequency":frequencies,
+    "collection_method":collection_methods,
+    "disaggregation":disaggregations,
+    "kpi_type":kpi_types,
+    "direction":directions,
+    "donor_type":donor_types,
+    "user_status":user_statuses,
     "country":countries,
     "user":users,
     "donor":donors,

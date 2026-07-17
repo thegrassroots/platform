@@ -10,7 +10,7 @@
   'use strict';
 
   var DB_NAME = 'grassroots_v1';   // bump to force every browser to drop and reseed
-  var DB_VERSION = 6;              // v6 adds the `report` store (monthly Lead reports); v5 added `region`
+  var DB_VERSION = 8;              // v8 adds the reference lookup stores (unit … user_status); v7 added `affiliation`
   var STAMP_KEY = 'ddi_seed_stamp'; // localStorage key: content stamp of last-seeded data (auto-reseed)
   // `plan` is the top of the results chain (Plan > Impact > Outcome > Output > KPI);
   // results & projects carry a plan_id. DB_NAME is unchanged - the content stamp
@@ -19,7 +19,14 @@
   // a region_id FOREIGN key into it.
   // `report` holds the Communication panel's generated monthly Lead reports
   // (metadata + the PDF itself, base64-encoded). Never seeded - user-generated.
-  var TABLES = ['plan', 'region', 'country', 'user', 'donor', 'programme', 'project', 'project_kpi', 'result', 'indicator', 'measurement', 'beneficiary_type', 'beneficiary', 'report'];
+  // `affiliation` is the lookup of user lead categories (Plans … Countries);
+  // user.affiliation_id references it and Lead dropdowns filter on it.
+  // LOOKUPS are the reference lists behind every fixed form dropdown (KPI unit,
+  // frequency, collection method, disaggregation, type, direction; donor type;
+  // user status). Rows are {id, key, name, seq}; entities store the row's id
+  // (unit_id, type_id, …) - never the text.
+  var LOOKUPS = ['unit', 'frequency', 'collection_method', 'disaggregation', 'kpi_type', 'direction', 'donor_type', 'user_status'];
+  var TABLES = ['plan', 'region', 'affiliation', 'country', 'user', 'donor', 'programme', 'project', 'project_kpi', 'result', 'indicator', 'measurement', 'beneficiary_type', 'beneficiary', 'report'].concat(LOOKUPS);
 
   // In-memory mirror of every table (array of row objects).
   var mem = {};
@@ -36,8 +43,21 @@
           }
         });
       };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error); };
+      // Another tab holding the DB open at an older version blocks the upgrade;
+      // worse, an open QUEUED behind a still-blocked deleteDatabase hangs with
+      // no event at all. A hard settle-timeout covers both: give the open a
+      // grace period, then reject so init() falls back to the in-memory copy -
+      // the app opens (unpersisted this session) instead of a blank screen.
+      var gaveUp = false;
+      var timer = setTimeout(function () { gaveUp = true; reject(new Error('IndexedDB open timed out (blocked by another open tab)')); }, 4000);
+      req.onsuccess = function () {
+        clearTimeout(timer);
+        // if we already fell back, close this late connection instead of
+        // leaking it - a leaked handle would block future upgrades too
+        if (gaveUp) { try { req.result.close(); } catch (e) {} return; }
+        resolve(req.result);
+      };
+      req.onerror = function () { clearTimeout(timer); reject(req.error); };
     });
   }
 
@@ -106,6 +126,10 @@
       var wipe = stale ? new Promise(function (resolve) {
         var del = indexedDB.deleteDatabase(DB_NAME);
         del.onsuccess = resolve; del.onerror = resolve; del.onblocked = resolve;
+        // a wedged tab elsewhere can hold the DB so hard that the delete fires
+        // NO event (not even blocked) - move on and let openIDB's own timeout
+        // decide between the store and the in-memory fallback
+        setTimeout(resolve, 3000);
       }) : Promise.resolve();
       var dbRef;
       return wipe.then(openIDB).then(function (db) {
@@ -218,11 +242,20 @@
       var idx = DB._idx = {};
       idx.planById = byId(mem.plan);
       idx.regionById = byId(mem.region);
+      idx.affiliationById = byId(mem.affiliation);
+      // one id-keyed map per reference lookup (plus region rides along so the
+      // app can resolve any *_id through the same accessor)
+      idx.lookup = {};
+      LOOKUPS.concat(['region', 'affiliation']).forEach(function (t) { idx.lookup[t] = byId(mem[t]); });
       idx.programmeById = byId(mem.programme);
       idx.resultById = byId(mem.result);
       idx.indicatorById = byId(mem.indicator);
       idx.countryByIso = {};
       mem.country.forEach(function (c) { idx.countryByIso[c.iso3] = c; });
+      // lead user id -> the iso3s of the countries they Lead (a Countries-
+      // affiliated user's scope is derived from this, not stored on the user)
+      idx.countryIsosByLead = {};
+      mem.country.forEach(function (c) { if (c.lead_id != null) (idx.countryIsosByLead[c.lead_id] = idx.countryIsosByLead[c.lead_id] || []).push(c.iso3); });
       idx.userById = byId(mem.user);
       idx.userByUsername = {};
       mem.user.forEach(function (u) { idx.userByUsername[String(u.username).toLowerCase()] = u; });

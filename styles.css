@@ -78,7 +78,8 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .spacer{flex:1}
 .hbtn{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);
   padding:5px 10px;border-radius:var(--radius);font-size:10.5px;display:inline-flex;align-items:center;gap:6px}
-.hbtn:hover{border-color:var(--primary);color:var(--primary)}
+.hbtn:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.hbtn:disabled{opacity:.45;cursor:not-allowed}
 .hbtn.ghost{color:var(--muted)}
 .hbtn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
 .hbtn.primary:hover{filter:brightness(1.05)}

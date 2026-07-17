@@ -59,22 +59,50 @@ CREATE TABLE IF NOT EXISTS country (
     lead_id   INTEGER REFERENCES user(id)     -- accountable Lead, selected from the user list
 );
 
+-- Affiliation lookup: the categories a user can be affiliated to ----------------
+-- One row per lead category (Plans, Impact, Outcome, Output, Projects, Donors,
+-- Regions, Countries). user.affiliation_id references this table, and every Lead
+-- dropdown filters to users affiliated to the matching category - e.g. a Donor
+-- Lead must come from Donor-affiliated users. `key` is the stable code the app
+-- matches on (it equals the report category keys).
+CREATE TABLE IF NOT EXISTS affiliation (
+    id   INTEGER PRIMARY KEY,
+    key  TEXT NOT NULL UNIQUE,           -- plan|impact|outcome|output|project|donor|region|country
+    name TEXT NOT NULL,                  -- display name, e.g. 'Donors'
+    seq  INTEGER                         -- display order
+);
+
+-- Reference lookups: every fixed form list lives in its own table -------------
+-- Rows are selected and SAVED BY ID, never by text. `key` is the stable code
+-- the application logic switches on (e.g. unit 'count' accumulates activity
+-- values; direction 'decrease' means lower is better); `name` is the display
+-- label; `seq` orders the dropdown.
+CREATE TABLE IF NOT EXISTS unit              (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS frequency         (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS collection_method (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS disaggregation    (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS kpi_type          (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS direction         (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS donor_type        (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+CREATE TABLE IF NOT EXISTS user_status       (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, seq INTEGER);
+
 -- Application users. Activities are attributed to the logged-in user, never a
 -- typed name. `password` is demo-grade local validation only (browser-only app,
 -- no server), NOT real authentication. A user carries two orthogonal fields:
---   section = where they sit (the central Section or a Country Office)
---   status  = permission level (Admin: full control · User: log activities in
---             scope · Viewer: read-only)
+--   affiliation_id = the category they belong to (FOREIGN key -> affiliation);
+--                    Lead dropdowns filter on it. Countries-affiliated users act
+--                    as a country office, scoped to the countries they Lead
+--                    (DERIVED from country.lead_id - no per-user region/country)
+--   status         = permission level (Admin: full control · User: log
+--                    activities in scope · Viewer: read-only)
 CREATE TABLE IF NOT EXISTS user (
     id           INTEGER PRIMARY KEY,
     username     TEXT NOT NULL UNIQUE,
     name         TEXT NOT NULL,          -- display name attributed to activities
     email        TEXT,                   -- profile email (report delivery goes here)
     password     TEXT,                   -- demo-grade, stored locally
-    section      TEXT CHECK (section IN ('hq','co')),
-    status       TEXT CHECK (status IN ('admin','user','viewer')),
-    region       TEXT,                   -- country-office scoping (their region)
-    country_iso3 TEXT REFERENCES country(iso3),  -- country-office scoping (their country)
+    affiliation_id INTEGER REFERENCES affiliation(id),
+    status_id    INTEGER REFERENCES user_status(id),  -- permission level, by id
     enabled      INTEGER NOT NULL DEFAULT 1,      -- 0 = cannot log in
     created      TEXT
 );
@@ -97,7 +125,7 @@ CREATE TABLE IF NOT EXISTS donor (
     id         INTEGER PRIMARY KEY,
     name       TEXT NOT NULL,
     short_name TEXT,
-    type       TEXT CHECK (type IN ('Bilateral','Multilateral','Foundation')),
+    type_id    INTEGER REFERENCES donor_type(id),  -- Bilateral / Multilateral / Foundation, by id
     color      TEXT,                     -- identity colour
     lead_id    INTEGER REFERENCES user(id)  -- accountable Lead, selected from the user list
 );
@@ -147,20 +175,20 @@ CREATE TABLE IF NOT EXISTS indicator (
     project_id        INTEGER REFERENCES project(id),  -- owning project (secondary KPIs only)
     code              TEXT,              -- SYSTEM-GENERATED hierarchy code (read-only): 'KPI 1.2.1.1'; secondary KPIs carry a 'SEC-…' code
     name              TEXT NOT NULL,
-    type              TEXT CHECK (type IN ('quantitative','qualitative')),
-    unit              TEXT,              -- count | % | index | ratio | score | days | USD
-    direction         TEXT CHECK (direction IN ('increase','decrease')),  -- is higher better?
+    type_id           INTEGER REFERENCES kpi_type(id),   -- quantitative / qualitative, by id
+    unit_id           INTEGER REFERENCES unit(id),       -- count | % | index | …, by id
+    direction_id      INTEGER REFERENCES direction(id),  -- is higher better?, by id
     baseline_value    REAL,
     baseline_year     INTEGER,
     baseline_date     TEXT,              -- ISO 8601 exact baseline date
     target_value      REAL,
     target_year       INTEGER,
     target_date       TEXT,              -- ISO 8601 exact target date
-    means_of_verification TEXT,          -- data source
-    collection_method TEXT,              -- survey | administrative records | platform analytics ...
-    frequency         TEXT,              -- annual | semi-annual | quarterly | monthly
+    means_of_verification TEXT,          -- data source (free text)
+    collection_method_id INTEGER REFERENCES collection_method(id),
+    frequency_id      INTEGER REFERENCES frequency(id),
     responsible_id    INTEGER REFERENCES user(id),  -- accountable person, referenced by id
-    disaggregation    TEXT               -- none | region | sex | age | region, agency ...
+    disaggregation_id INTEGER REFERENCES disaggregation(id)
 );
 
 -- Link table: project -> PRIMARY KPI (an inventory indicator) ---------------------

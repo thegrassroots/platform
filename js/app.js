@@ -8,8 +8,31 @@
   // Single source of truth for the app version. Semantic versioning; bump the
   // patch (or minor) on each change. Stays below 1.0.0 until sign-off - do not
   // release 1.0.0 without explicit approval.
-  var APP_VERSION = '0.4.0';
-  var TODAY = new Date('2026-07-13');
+  var APP_VERSION = '0.5.0';
+  /** True on the public GitHub Pages demo (thegrassroots.github.io). Real email
+   *  delivery is disabled there - the send button is shown but inert - so the
+   *  hosted demo can never fire mail. Runs normally on localhost / self-hosted. */
+  function isPublicDemo(){
+    try { return /(^|\.)github\.io$/i.test(location.hostname); }
+    catch (e) { return false; }
+  }
+  /** "Now" for every derived stat (status, forecast, ranges, report stamps).
+   *  Anchored to UTC midnight of the local calendar day, because measurement
+   *  dates are date-only ISO strings that parse as UTC midnight. Follows the
+   *  wall clock; when the seeded data runs AHEAD of the clock (a freshly
+   *  generated demo), it follows the data's newest day instead so the demo
+   *  reads as live. Re-derived at the top of every enrich(), so it tracks
+   *  reseeds and future-dated entries without a reload. */
+  function deriveToday(){
+    var d = new Date();
+    var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    var latest = null;
+    var ms = (window.DB && DB.tables && DB.tables.measurement) || [];
+    ms.forEach(function (m){ if (m.date && (!latest || m.date > latest)) latest = m.date; });
+    if (latest){ var lt = new Date(latest); if (lt > t) t = lt; }
+    return t;
+  }
+  var TODAY = deriveToday();
   // The `sdg` field on results is REPURPOSED to hold the Pillar id (1-4), scoped
   // PER PLAN (each plan numbers its pillars 1-4). These tables therefore key on
   // pillar id and are REBUILT from the ACTIVE plan's impact rows on every enrich()
@@ -33,6 +56,10 @@
       if (r.level === 'impact' && r.plan_id === S.plan && r.sdg != null){
         if (r.pillar_name) PILLAR_NAMES[r.sdg] = r.pillar_name;
         if (r.pillar_color) PILLAR_COLORS[r.sdg] = r.pillar_color;
+        // a pillar beyond the base four with no stored colour still gets a
+        // deterministic identity (same formula the pillar editor uses), so a
+        // plan may carry any number of pillars without collapsing to grey
+        if (!PILLAR_COLORS[r.sdg]) PILLAR_COLORS[r.sdg] = NEW_PILLAR_PALETTE[(r.sdg - 1) % NEW_PILLAR_PALETTE.length];
       }
     });
   }
@@ -84,6 +111,29 @@
     if (ind.project_id != null){ var p = DB._idx.projectById[ind.project_id]; return p ? p.plan_id : null; }
     return null;
   }
+  /** Fallback KPI window when a KPI carries no explicit baseline/target dates:
+   *  its OWN plan's window, else the active plan's, else a 3-year window from
+   *  this year. Replaces the hard-coded 2025/2027 horizon, so KPIs created
+   *  under any plan derive sensible dates from that plan. */
+  function kpiWindowYears(ind){
+    var p = planById(indicatorPlanId(ind || {})) || activePlan();
+    var sy = (ind && ind.baseline_year)
+      || (p && p.start_date ? +String(p.start_date).slice(0, 4) : TODAY.getUTCFullYear());
+    var ey = (ind && ind.target_year)
+      || (p && p.end_date ? +String(p.end_date).slice(0, 4) : sy + 2);
+    if (!(ey >= sy)) ey = sy + 2;
+    return { start: sy, end: ey };
+  }
+  /** Default dates for NEW KPIs: the active plan's own window (falls back to
+   *  Jan 1 this year → Dec 31 of the derived end year). */
+  function defaultBaselineDate(){
+    var p = activePlan();
+    return p && p.start_date ? String(p.start_date).slice(0, 10) : (kpiWindowYears(null).start + '-01-01');
+  }
+  function defaultTargetDate(){
+    var p = activePlan();
+    return p && p.end_date ? String(p.end_date).slice(0, 10) : (kpiWindowYears(null).end + '-12-31');
+  }
   var STATUS = {
     blue:{c:'#2563eb', label:'Over Track'},
     green:{c:'#16a34a', label:'On Track'},
@@ -108,7 +158,24 @@
     'South America': { color:'#2CC4A0' },
     'Oceania':       { color:'#6FBF73' }
   };
-  function regionColor(region){ return (REGION_META[region] || {}).color || '#94a3b8'; }
+  /** Region names for ordering, dropdowns and grouping: every row of the
+   *  `region` table (regions are admin-editable in Global Items), classic six
+   *  first in their canonical order, any additions after them alphabetically.
+   *  Falls back to the static six before the DB hydrates. */
+  function regionNames(){
+    var db = (window.DB && DB.tables && DB.tables.region) || [];
+    var names = db.map(function (r){ return r.name; }).filter(Boolean);
+    if (!names.length) return REGION_ORDER.slice();
+    var six = REGION_ORDER.filter(function (n){ return names.indexOf(n) >= 0; });
+    var extra = names.filter(function (n){ return REGION_ORDER.indexOf(n) < 0; }).sort();
+    return six.concat(extra);
+  }
+  // Known regions keep their identity colour; admin-added ones derive a stable
+  // palette colour from their name instead of collapsing to grey.
+  function regionColor(region){
+    var m = REGION_META[region];
+    return (m && m.color) || (region ? catColor(region) : '#94a3b8');
+  }
   function regionShort(region){ return region || ''; }
   /** Region display name (the continent). */
   function regionFull(region){ return region || ''; }
@@ -149,20 +216,74 @@
     }
     return _countryShade[iso] || '#94a3b8';
   }
-  // People carry two orthogonal fields: a Section (where they sit: the central
-  // Section or a Country Office) and a Status (their permission:
-  // Admin / User / Viewer). Legacy rows only had `role`; fall back from it.
-  var SECTION_LABEL = { hq:'Section', co:'Country Office' };
+  // People carry two orthogonal fields: an Affiliation (the category they belong
+  // to - Plans / Impact / Outcome / Output / Projects / Donors / Regions /
+  // Countries; stored as user.affiliation_id into the `affiliation` table) and a
+  // Status (their permission: Admin / User / Viewer). Lead dropdowns filter to
+  // the matching affiliation (a Donor Lead comes from Donor-affiliated users).
+  // Countries-affiliated users act as a country office (region/country scoped);
+  // everyone else sits centrally - `userSection` derives that legacy hq/co split.
   var STATUS_LABEL  = { admin:'Admin', user:'User', viewer:'Viewer' };
-  function userSection(u){ return u ? (u.section || 'hq') : null; }
-  function userStatus(u){ return u ? (u.status || 'user') : null; }
-  // colour identity for a user row (Admin has its own accent; a country office inherits its
-  // country/region colour; the central Section otherwise)
+  function affiliationOf(u){ return u && u.affiliation_id != null ? (DB._idx.affiliationById[+u.affiliation_id] || null) : null; }
+  function affByKey(key){ var m = null; DB.tables.affiliation.forEach(function (a){ if (a.key === key) m = a; }); return m; }
+  // legacy rows persisted before affiliations carried section hq/co - fall back
+  function userAffKey(u){ var a = affiliationOf(u); if (a) return a.key; return u && u.section === 'co' ? 'country' : null; }
+  function userAffName(u){ var a = affiliationOf(u); if (a) return a.name; return u && u.section === 'co' ? 'Countries' : '–'; }
+  function userSection(u){ return u ? (userAffKey(u) === 'country' ? 'co' : 'hq') : null; }
+  // ---- reference lookups ---------------------------------------------------
+  // Every fixed form list lives in a DB table ({id, key, name, seq}); rows are
+  // selected and SAVED BY ID, never by text. `key` is the stable code the app's
+  // logic switches on; `name` is the display label. The legacy text argument
+  // keeps rows persisted before the migration readable.
+  function lkRow(table, id){ return id != null ? ((DB._idx.lookup || {})[table] || {})[+id] : null; }
+  function lkKey(table, id, legacy){ var r = lkRow(table, id); return r ? r.key : (legacy != null && legacy !== '' ? legacy : null); }
+  function lkName(table, id, legacy){ var r = lkRow(table, id); if (r) return r.name; if (legacy == null || legacy === '') return ''; var byKey = lkByKey(table, legacy); return byKey ? byKey.name : String(legacy); }
+  function lkByKey(table, key){ var hit = null; (DB.tables[table] || []).forEach(function (r){ if (r.key === key) hit = r; }); return hit; }
+  function lkIdByKey(table, key){ var r = lkByKey(table, key); return r ? r.id : null; }
+  /** <option> list for a lookup table; value = the row's id. `curId` wins; a
+   *  legacy text value selects its matching row instead of being dropped. */
+  function lookupOptions(table, curId, legacy){
+    var rows = (DB.tables[table] || []).slice().sort(function (a, b){ return (a.seq || 0) - (b.seq || 0); });
+    var cur = curId != null ? +curId : (legacy ? lkIdByKey(table, legacy) : null);
+    return rows.map(function (r){ return '<option value="' + r.id + '"' + (r.id === cur ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('');
+  }
+  // raw-row field accessors (all return the stable KEY; *Name variants the label)
+  function kpiUnit(ind){ return lkKey('unit', ind.unit_id, ind.unit); }
+  function kpiType(ind){ return lkKey('kpi_type', ind.type_id, ind.type); }
+  function kpiDirection(ind){ return lkKey('direction', ind.direction_id, ind.direction); }
+  function kpiFrequency(ind){ return lkName('frequency', ind.frequency_id, ind.frequency); }
+  function kpiMethod(ind){ return lkName('collection_method', ind.collection_method_id, ind.collection_method); }
+  function kpiDisagg(ind){ return lkName('disaggregation', ind.disaggregation_id, ind.disaggregation); }
+  function donorType(d){ return d ? lkName('donor_type', d.type_id, d.type) : ''; }
+  function userStatus(u){ return u ? (lkKey('user_status', u.status_id, u.status) || 'user') : null; }
+  // The countries a user Leads (country.lead_id) - this IS a Countries-affiliated
+  // user's scope. The per-user Region/Country profile fields are gone: scope
+  // follows the Lead assignments in Global Items → Countries, one source of truth.
+  function userCountryIsos(u){ return u ? (DB._idx.countryIsosByLead[u.id] || []) : []; }
+  // One base colour per affiliation group (Plans … Countries). The "Logged by"
+  // group header wears the base and each member wears a deterministic shade of
+  // it (same shadeByKey device as the KPI facet), so groups AND users both keep
+  // a stable colour identity. An affiliation beyond the known eight still gets
+  // a deterministic palette colour instead of collapsing to grey.
+  var AFF_COLORS = { plan:'#9D7BEE', impact:'#EC7BA6', outcome:'#2CC4A0', output:'#F2934A',
+                     project:'#5399EA', donor:'#E0A93B', region:'#6FBF73', country:'#8FA3C4' };
+  function affColor(key){
+    return AFF_COLORS[key] || NEW_PILLAR_PALETTE[hashKey(key || '') % NEW_PILLAR_PALETTE.length];
+  }
+  // Per-user shade of a base colour, keyed by id so the identity survives a
+  // rename. Sequential ids hash to adjacent values (hashKey walks the decimal
+  // digits), which would give near-identical shades - scramble with a Knuth
+  // multiplicative constant first so neighbouring ids land far apart.
+  function userShade(base, u, spread){ return shadeByKey(base, (u.id * 2654435761) >>> 0, spread); }
+  // colour identity for a user row (Admin keeps its accent as the shade base; a
+  // Countries-affiliated user inherits the colour of the country they Lead;
+  // everyone else shades their affiliation's base colour)
   function userColor(u){
     if (!u) return '#aab6c8';
-    if (userStatus(u) === 'admin') return '#5B8DEF';
-    if (userSection(u) === 'hq') return '#9D7BEE';
-    return u.country_iso3 ? countryColor(u.country_iso3) : regionColor(u.region);
+    if (userStatus(u) === 'admin') return userShade('#5B8DEF', u, 0.3);
+    if (userSection(u) === 'hq') return userShade(affColor(userAffKey(u)), u, 0.4);
+    var isos = userCountryIsos(u);
+    return isos.length ? countryColor(isos[0]) : userShade(affColor('country'), u, 0.4);
   }
   // People are stored by id everywhere; look their name up for display only.
   function userById(id){ return id != null ? DB._idx.userById[id] : null; }
@@ -235,7 +356,7 @@
     expandImpact: new Set(),
     expandOutcome: new Set(),
     expandKpiPillar: new Set(),
-    expandUserRole: new Set(['hq']),
+    expandUserRole: new Set(['country']),
     // left-sidebar filter groups: display order + which are collapsed (drag-and-drop)
     facetOrder: null,        // array of group keys; null = use FACET_ORDER_DEFAULT
     facetCollapsed: {},      // { groupKey: true } for collapsed groups
@@ -258,7 +379,7 @@
   // baseline + Σ increments); %/index/ratio KPIs take the LATEST reported level.
   function indicatorValue(ind, ms) {
     if (!ms.length) return null;
-    if (ind.unit === 'count') {
+    if (kpiUnit(ind) === 'count') {
       var sum = 0; ms.forEach(function (m) { sum += (+m.value || 0); });
       return (+ind.baseline_value || 0) + sum;
     }
@@ -269,7 +390,7 @@
   //   Over Track > 100% · On Track 75–100% · At Risk 50–74% · Off Track 0–49% ·
   //   Under Track < 0% (below baseline) · No Data (no report).
   function ratioToCode(ratio) {
-    if (ratio == null) return 'nodata';
+    if (ratio == null || isNaN(ratio)) return 'nodata';
     if (ratio > 1) return 'blue';
     if (ratio < 0) return 'maroon';
     return ratio >= 0.75 ? 'green' : (ratio >= 0.50 ? 'amber' : 'red');
@@ -280,10 +401,10 @@
    *  baseline year to 31 Dec of the target year. e.g. a 12-month KPI at end-June ≈ 0.5. */
   function elapsedFraction(ind, asOf) {
     var when = asOf != null ? new Date(asOf) : TODAY;
-    // prefer the exact baseline/target dates; fall back to Jan 1 baseline year → 31 Dec target year
-    var startY = ind.baseline_year || 2025, endY = ind.target_year || (startY + 2);
-    var start = ind.baseline_date ? new Date(ind.baseline_date) : new Date(startY, 0, 1);
-    var end = ind.target_date ? new Date(ind.target_date) : new Date(endY, 11, 31);
+    // prefer the exact baseline/target dates; fall back to the KPI's plan window
+    var yrs = kpiWindowYears(ind);
+    var start = ind.baseline_date ? new Date(ind.baseline_date) : new Date(yrs.start, 0, 1);
+    var end = ind.target_date ? new Date(ind.target_date) : new Date(yrs.end, 11, 31);
     if (!(end > start)) return 1;
     return Math.max(0.02, Math.min(1, (when - start) / (end - start)));
   }
@@ -296,7 +417,8 @@
     var ms = DB.measurementsFor(ind.id);
     var latest = ms.length ? ms[ms.length - 1] : null;
     var b = ind.baseline_value, t = ind.target_value;
-    if (!latest || t === b) return {
+    // b/t may be null (unset) or strings - a zero gap in any form means "unmeasurable"
+    if (!latest || b == null || t == null || +t === +b) return {
       progress: null, performance: null, progressCode: 'nodata', perfCode: 'nodata',
       code: 'nodata', frac: null, perf: null, latest: latest, series: ms };
     var v = indicatorValue(ind, ms);
@@ -312,6 +434,7 @@
   }
 
   function enrich() {
+    TODAY = deriveToday();   // track the clock AND any future-dated data/reseed
     resolvePlan();      // make sure S.plan points at a real plan
     hydratePillars();   // rebuild pillar name/colour lookup from the active plan
     var pById = DB._idx.programmeById, rById = DB._idx.resultById;
@@ -326,7 +449,7 @@
       var iso = prog ? prog.country_iso3 : (proj ? proj.country_iso3 : null);
       var st = computeStatus(ind);
       return {
-        id: ind.id, raw: ind, name: ind.name, unit: ind.unit, type: ind.type,
+        id: ind.id, raw: ind, name: ind.name, unit: kpiUnit(ind), type: kpiType(ind),
         result: res, programme: prog, project: proj, secondary: !!ind.secondary,
         level: res ? res.level : (ind.secondary ? 'secondary' : 'output'),
         sdg: res ? res.sdg : null,
@@ -549,7 +672,9 @@
   // waste - the window only changes when the user picks a new range.
   var _tr = { key: null, start: null, end: null };
   function timeBounds() {
-    var key = S.range + '|' + (S.from || '') + '|' + (S.to || '');
+    // TODAY is part of the key: relative ranges anchor to it, and it can move
+    // (real clock day change, future-dated entry) without the range changing
+    var key = S.range + '|' + (S.from || '') + '|' + (S.to || '') + '|' + TODAY.getTime();
     if (_tr.key !== key) {
       var start = S.from ? new Date(S.from) : rangeStart();
       var end = S.to ? new Date(S.to) : null;
@@ -1249,7 +1374,7 @@
     if (S.colorMode === 'region') {
       $('#colorNote').textContent = 'region';
       var rc = {}; locs.forEach(function (l) { if (l.region) rc[l.region] = (rc[l.region] || 0) + 1; });
-      REGION_ORDER.forEach(function (rg) { if (rc[rg]) box.appendChild(legRow(regionColor(rg), regionFull(rg), rc[rg], true)); });
+      regionNames().forEach(function (rg) { if (rc[rg]) box.appendChild(legRow(regionColor(rg), regionFull(rg), rc[rg], true)); });
       return;
     }
     if (S.colorMode === 'impact') {
@@ -1471,7 +1596,7 @@
       var col = d.color || '#7c8aa5';
       host.appendChild(facetRow({
         checkbox: true, checked: S.selDonor.has(d.id), color: col,
-        name: d.name, title: d.type + ' donor', count: counts[d.id] || 0,
+        name: d.name, title: donorType(d) + ' donor', count: counts[d.id] || 0,
         barPct: (counts[d.id] || 0) / maxN, barColor: col, selected: S.selDonor.has(d.id),
         onCheck: function () { toggle(S.selDonor, d.id); S.page = 0; renderAll(); },
         onOpen: function () { openEntitySummary('donor', d.id); }
@@ -1656,7 +1781,7 @@
     DB.tables.programme.forEach(function (p) {
       (regions[p.region] = regions[p.region] || []).push(p);
     });
-    var regionOrder = REGION_ORDER;
+    var regionOrder = regionNames();
     // counts = DISTINCT projects per programme; region totals = distinct projects
     // in the region (counted directly, not summed from programmes, so a project
     // spanning programmes isn't double-counted). In activities basis both count
@@ -1825,7 +1950,7 @@
       function () { return S.kpiShown; }, function (v) { S.kpiShown = v; }, renderKpiFacet);
   }
 
-  /** Reported By - users grouped by Section; selecting filters by reporter. */
+  /** Reported By - users grouped by Affiliation; selecting filters by reporter. */
   function renderUserFacet() {
     var host = $('#facetUser'); if (!host) return; host.innerHTML = '';
     // per-user count = DISTINCT projects the user reported on (or activities the
@@ -1835,25 +1960,28 @@
     if (acts) {
       counts = actCountsBy(['user'], function (a) { return a.reporterId; });
     } else {
-      var pool = IND.filter(function (r) { return passAll(r, ['user']); });
+      // mirror the click path exactly: passAll tests the KPI's all-time reporterIds
+      // and inTimeRange its latest update, so the facet number = what checking the
+      // user actually filters to (it previously demanded an in-window report by the
+      // user, disagreeing with the filter in both directions).
+      var pool = IND.filter(function (r) { return inTimeRange(r) && passAll(r, ['user']); });
       pool.forEach(function (r) {
-        var reporters = {};
-        (r.series || []).forEach(function (m) { if (!measInTimeRange(m)) return; if (m.reported_by_id != null) reporters[m.reported_by_id] = 1; });
-        Object.keys(reporters).forEach(function (id) { accProjects(userSets, id, r.projectIds); });
+        (r.reporterIds || []).forEach(function (id) { accProjects(userSets, id, r.projectIds); });
       });
       counts = finalizeCounts(userSets);
     }
     var q = (S.qUser || '').toLowerCase();
-    var sections = [['hq', 'Section'], ['co', 'Country Offices']];
-    sections.forEach(function (rl) {
-      var section = rl[0];
+    // one collapsible group per affiliation (Plans … Countries), in table order
+    var groups = DB.tables.affiliation.slice().sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
+    groups.forEach(function (aff) {
+      var section = aff.key;
       var us = DB.tables.user.filter(function (u) {
-        if (userSection(u) !== section) return false;
+        if (userAffKey(u) !== section) return false;
         // zero-count users are NOT hidden - they show a value of 0 (only search narrows)
-        return !q || u.name.toLowerCase().indexOf(q) >= 0 || (u.country_iso3 || '').toLowerCase().indexOf(q) >= 0;
+        return !q || u.name.toLowerCase().indexOf(q) >= 0 || userCountryIsos(u).join(' ').toLowerCase().indexOf(q) >= 0;
       }).sort(function (a, b) { return (counts[b.id] || 0) - (counts[a.id] || 0) || (a.name < b.name ? -1 : 1); });
       if (!us.length) return;
-      // section total: activities basis sums per-user counts (each activity has ONE
+      // group total: activities basis sums per-user counts (each activity has ONE
       // reporter, so no double-count); projects basis unions the members' project
       // sets (a sum would double-count a project two members both reported on).
       var total;
@@ -1863,24 +1991,24 @@
         us.forEach(function (u) { var s = userSets[u.id]; if (s) Object.keys(s).forEach(function (pid) { stot[pid] = 1; }); });
         total = Object.keys(stot).length;
       }
-      var base = section === 'hq' ? '#9D7BEE' : '#8FA3C4';
+      var base = affColor(section);
       var open = S.expandUserRole.has(section) || !!q;
       host.appendChild(facetRow({
-        cat: true, expandable: true, open: open, color: base, name: rl[1], count: total, barPct: 1, barColor: base,
+        cat: true, expandable: true, open: open, color: base, name: aff.name, count: total, barPct: 1, barColor: base,
         onExpand: function () { toggle(S.expandUserRole, section); renderUserFacet(); persist(); }
       }));
       if (!open) return;
       var sub = el('div', 'subrow');
       var maxN = 1; us.forEach(function (u) { if ((counts[u.id] || 0) > maxN) maxN = counts[u.id] || 0; });
-      // reveal window (per section) - long sections (e.g. 56 country offices) page 10 at a time
+      // reveal window (per group) - long groups (e.g. 56 country offices) page 10 at a time
       var window = q ? us.length : Math.min(S.userShown[section] || FACET_PAGE, us.length);
       var shown = us.slice(0, window);
       us.forEach(function (u) { if (S.selUser.has(u.id) && shown.indexOf(u) < 0) shown.push(u); });   // keep selected visible
       shown.forEach(function (u) {
-        var col = userColor(u);
+        var col = userColor(u), isos = userCountryIsos(u);
         sub.appendChild(facetRow({
           checkbox: true, checked: S.selUser.has(u.id), color: col,
-          name: u.name + (u.country_iso3 ? ' · ' + u.country_iso3 : ''), title: u.name,
+          name: u.name + (isos.length ? ' · ' + isos.join(' ') : ''), title: u.name,
           count: counts[u.id] || 0, barPct: (counts[u.id] || 0) / maxN, barColor: col, selected: S.selUser.has(u.id),
           onCheck: function () { toggle(S.selUser, u.id); S.page = 0; renderAll(); },
           onOpen: function () { openEntitySummary('user', u.id); }
@@ -1941,16 +2069,18 @@
     return true;
   }
 
+  /** The text the list search box matches a project against - shared with the
+   *  activities-basis metric so both bases search the same fields. */
+  function projectSearchHay(p) {
+    var co = p.country ? p.country.name : '';
+    return (p.code + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co + ' ' + (p.raw.lead_id != null ? userName(+p.raw.lead_id) : '')).toLowerCase();
+  }
   /** Filtered + searched list of enriched projects for the right pane. */
   function projectsFor() {
     var q = (S.qList || '').toLowerCase(), progIso = progIsoSet();
     return PROJECTS.filter(function (p) {
       if (!projectPassesFacets(p, false, progIso)) return false;
-      if (q) {
-        var co = p.country ? p.country.name : '';
-        var hay = (p.code + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co + ' ' + (p.raw.lead_id != null ? userName(+p.raw.lead_id) : '')).toLowerCase();
-        if (hay.indexOf(q) < 0) return false;
-      }
+      if (q && projectSearchHay(p).indexOf(q) < 0) return false;
       return true;
     });
   }
@@ -1994,7 +2124,17 @@
     // portfolio metric in the sub-bar follows the count basis (projects | activities)
     var ml = $('#metricLabel');
     if (isActs()) {
-      $('#metricN').textContent = fmt(actPool([]).length);
+      // honour the list search too, matching the SAME project fields the projects
+      // basis searches (code/name/donor/country/lead), so the bases agree
+      var mActs = actPool([]);
+      if (S.qList) {
+        var mq = S.qList.toLowerCase();
+        mActs = mActs.filter(function (a){
+          var p = a.pid != null ? PROJECTSBYID[a.pid] : null;
+          return !!(p && projectSearchHay(p).indexOf(mq) >= 0);
+        });
+      }
+      $('#metricN').textContent = fmt(mActs.length);
       if (ml) ml.textContent = 'ACTIVITIES';
     } else {
       $('#metricN').textContent = fmt(projectsFor().length);
@@ -2209,7 +2349,7 @@
     var s = Object.create(r);
     s.series = ms;
     var latest = ms.length ? ms[ms.length - 1] : null, b = ind.baseline_value, t = ind.target_value;
-    if (!latest || t === b){
+    if (!latest || b == null || t == null || +t === +b){
       s.value = null; s.updated = null; s.progress = null; s.performance = null;
       s.progressCode = 'nodata'; s.perfCode = 'nodata'; s.status = 'nodata';
       return s;
@@ -2347,7 +2487,7 @@
       var d = DB._idx.donorById[key];
       projs = PROJECTS.filter(function (p){ return p.donor && p.donor.id === key; });
       inds = IND.filter(function (r){ return (r.donorIds || []).indexOf(key) >= 0; });
-      title = d ? d.name : 'Donor'; sub = d ? (cap(d.type || '') + ' donor') : 'Donor';
+      title = d ? d.name : 'Donor'; sub = d ? (donorType(d) + ' donor') : 'Donor';
       color = (d && d.color) || color; badge = 'donor';
     } else if (kind === 'status'){
       inds = IND.filter(function (r){ return r.status === key; });
@@ -2380,7 +2520,7 @@
       projsFromInds = true;
       actScope = function (m){ return m.reported_by_id === key; };
       title = u ? u.name : 'User'; color = u ? userColor(u) : color; badge = 'person';
-      sub = u ? ((userSection(u) === 'hq' ? 'Section' : 'Country Office') + (u.country_iso3 ? '  ·  ' + u.country_iso3 : '')) : '';
+      sub = u ? (userAffName(u) + (userCountryIsos(u).length ? '  ·  ' + userCountryIsos(u).join(' ') : '')) : '';
     } else if (kind === 'bentype'){
       // Beneficiary type: the projects whose OWN activities logged it (p.benTypeIds),
       // the KPIs that reach it, and a count of the activities that recorded it.
@@ -2608,9 +2748,11 @@
       html += '<div class="msec"><h4>' + esc(projsHead) + '</h4>';
       if (!projs.length) html += '<div class="empty">No projects match this item under the current filters.</div>';
       else {
-        // Activities per project follow the filters too, so the column adds up to the
-        // Activities stat above it rather than to the project's lifetime total.
-        var actByProj = countBy(actPool([]), function (a){ return a.pid; });
+        // Activities per project follow the filters AND this box's own scope (sc.acts
+        // is the same pool the Activities stat above counts), so the column adds up
+        // to that stat rather than to the project's lifetime total.
+        var actByProj = {};
+        sc.acts.forEach(function (m){ if (m.project_id != null) actByProj[m.project_id] = (actByProj[m.project_id] || 0) + 1; });
         html += '<table class="esum-tbl esum-proj"><thead><tr><th>Project</th><th>Country</th><th>Donor</th><th class="num">Budget</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead><tbody>';
         projs.slice().sort(function (a, b){ return (actByProj[b.id] || 0) - (actByProj[a.id] || 0); }).forEach(function (p){
           var pActs = actByProj[p.id] || 0;
@@ -2978,17 +3120,21 @@
   // Live preview shown while a value is typed: the progress achieved BEFORE this
   // report, and the new total/level (and progress) this report would produce.
   // `valId` is the id of the value <input> to read (differs per form).
-  function fillReportPreview(hostId, r, valId){
+  // `exclMeasId` (edit mode): the measurement being edited - it must not count
+  // toward "before", or a count KPI would preview its own increment twice.
+  function fillReportPreview(hostId, r, valId, exclMeasId){
     var host = document.getElementById(hostId); if (!host) return;
     if (!r){ host.innerHTML = ''; return; }
     var vEl = document.getElementById(valId || 'afValue'), raw = vEl ? vEl.value : '';
     var ind = r.raw, b = +ind.baseline_value, t = +ind.target_value;
-    var beforeVal = indicatorValue(ind, DB.measurementsFor(r.id));
+    var pool = DB.measurementsFor(r.id);
+    if (exclMeasId != null) pool = pool.filter(function (m){ return m.id !== exclMeasId; });
+    var beforeVal = indicatorValue(ind, pool);
     if (beforeVal == null) beforeVal = b;
-    var isCount = ind.unit === 'count';
+    var isCount = kpiUnit(ind) === 'count';
     var hasVal = raw !== '' && !isNaN(+raw);
     var newVal = isCount ? (beforeVal + (hasVal ? +raw : 0)) : (hasVal ? +raw : beforeVal);
-    var uu = ind.unit === '%' ? '%' : '';
+    var uu = kpiUnit(ind) === '%' ? '%' : '';
     function progChip(v){
       if (t === b) return '<span class="rp-chip" style="background:' + STATUS.nodata.c + '">–</span>';
       var p = (v - b) / (t - b), c = ratioToCode(p);
@@ -3007,8 +3153,8 @@
   // module); this popup only edits an existing activity (measurement).
   // Dynamic value label - same wording used wherever a KPI value is entered.
   function activityValLabel(r){
-    var unit = r ? (r.raw.unit || 'value') : 'value';
-    return (r && r.raw.unit === 'count')
+    var unit = r ? (kpiUnit(r.raw) || 'value') : 'value';
+    return (r && kpiUnit(r.raw) === 'count')
       ? ('Value this month - increment (' + unit + ')')
       : ('Value - current level (' + unit + ')');
   }
@@ -3059,8 +3205,8 @@
       + '<button class="hbtn primary" id="naSave" type="button">Save changes</button></div>';
     host.innerHTML = naTabbedBody(details, footer);
     wireNaTabs();
-    fillReportPreview('naPreview', r, 'naValue');   // before/after preview, as in Add mode
-    $('#naValue').addEventListener('input', function (){ fillReportPreview('naPreview', r, 'naValue'); });
+    fillReportPreview('naPreview', r, 'naValue', m.id);   // before/after preview, as in Add mode
+    $('#naValue').addEventListener('input', function (){ fillReportPreview('naPreview', r, 'naValue', m.id); });
     $('#naCancel').onclick = closeNewActivity;
     $('#naSave').onclick = function (){ submitActivityEdit(r, m); };
     $('#newActivityOverlay').classList.add('on');
@@ -3090,8 +3236,8 @@
     if (!r) return;
     var host = $('#mResults'); host.innerHTML = '';
     var editable = canReport(r);
-    var isCount = r.raw.unit === 'count';
-    var unit = r.raw.unit || '';
+    var isCount = kpiUnit(r.raw) === 'count';
+    var unit = kpiUnit(r.raw) || '';
     var ms = DB.measurementsFor(r.id).slice().reverse();   // newest first
 
     var sec = el('div', 'msec');
@@ -3142,8 +3288,13 @@
   var curProject = null;   // DB project row being edited (null = brand-new, unsaved)
 
   function canEditProjects(){ return CURRENT_USER && curStatus() !== 'viewer'; }
-  // Country-office users are scoped to their own country; Section/Admin to any.
-  function projectCountryLock(){ return (curSection() === 'co' && CURRENT_USER) ? CURRENT_USER.country_iso3 : null; }
+  // Countries-affiliated users are scoped to the countries they Lead (locked to
+  // it when they Lead exactly one); Admin and central affiliations to any.
+  function projectCountryLock(){
+    if (curSection() !== 'co' || !CURRENT_USER) return null;
+    var isos = userCountryIsos(CURRENT_USER);
+    return isos.length === 1 ? isos[0] : null;
+  }
   function canEditThisProject(p){
     if (!canEditProjects()) return false;
     var lock = projectCountryLock();
@@ -3195,7 +3346,7 @@
   }
   function countryOptionsGrouped(cur, restrictIso){
     var byReg = {}; DB.tables.country.forEach(function (c){ (byReg[c.region] = byReg[c.region] || []).push(c); });
-    return '<option value="">– select country –</option>' + REGION_ORDER.map(function (rg){
+    return '<option value="">– select country –</option>' + regionNames().map(function (rg){
       var cs = (byReg[rg] || []).filter(function (c){ return !restrictIso || c.iso3 === restrictIso; })
         .sort(function (a, b){ return a.name < b.name ? -1 : 1; });
       if (!cs.length) return '';
@@ -3216,7 +3367,7 @@
       '  <label><span>Donor</span><select class="pf-donor">' + donorOptions(p ? p.donor_id : null) + '</select></label>' +
       '  <label><span>Country *</span><select class="pf-country"' + (lock ? ' disabled' : '') + '>' + countryOptionsGrouped(iso, lock) + '</select></label>' +
       '  <label><span>Budget (USD)</span><input class="pf-budget" type="text" inputmode="numeric" value="' + esc(p && p.budget_usd != null ? fmt(p.budget_usd) : '') + '" placeholder="0"></label>' +
-      '  <label><span>Lead</span><select class="pf-lead">' + userOptions(projectLeadId(p), ['hq','co']) + '</select></label>' +
+      '  <label><span>Lead</span><select class="pf-lead">' + userOptions(projectLeadId(p), 'project') + '</select></label>' +
       '  <label><span>Start date</span><input class="pf-start" type="date" value="' + esc(p ? (p.start_date || '') : '') + '"></label>' +
       '  <label><span>End date</span><input class="pf-end" type="date" value="' + esc(p ? (p.end_date || '') : '') + '"></label>' +
       '  <label class="pf-wide"><span>Description</span><textarea class="pf-desc" rows="3" placeholder="Objectives, scope, partners…">' + esc(p ? (p.description || '') : '') + '</textarea></label>' +
@@ -3232,10 +3383,15 @@
     f.querySelector('.pf-cancel').onclick = closeProject;
     f.querySelector('.pf-save').onclick = function (){ saveProjectDetails(f); };
     // Budget: re-insert thousands separators as the user types (keeps caret at end).
+    // Decimals survive: only the integer part is re-grouped, the fraction rides along.
     var bud = f.querySelector('.pf-budget');
     if (bud) bud.addEventListener('input', function (){
-      var digits = bud.value.replace(/[^\d]/g, '');
-      bud.value = digits ? (+digits).toLocaleString('en-US') : '';
+      var raw = bud.value.replace(/[^\d.]/g, '');
+      var dot = raw.indexOf('.');
+      var whole = dot < 0 ? raw : raw.slice(0, dot);
+      var frac = dot < 0 ? null : raw.slice(dot + 1).replace(/\./g, '');
+      bud.value = (whole ? (+whole).toLocaleString('en-US') : (frac != null ? '0' : ''))
+                + (frac != null ? '.' + frac : '');
     });
     return f;
   }
@@ -3341,11 +3497,11 @@
     var tb = el('tbody');
     if (!secs.length) tb.innerHTML = '<tr><td colspan="7" class="re-empty">No secondary KPIs yet.</td></tr>';
     secs.forEach(function (ind){
-      var r = INDBYID[ind.id]; var u = ind.unit === '%' ? '%' : '';
+      var r = INDBYID[ind.id]; var u = kpiUnit(ind) === '%' ? '%' : '';
       var tr = el('tr');
       tr.innerHTML = '<td class="umono">' + esc(ind.code || '') + '</td>'
         + '<td><span class="udot" style="background:#33C2B4"></span>' + esc(ind.name) + '</td>'
-        + '<td class="umono">' + esc(ind.unit || '') + '</td>'
+        + '<td class="umono">' + esc(kpiUnit(ind) || '') + '</td>'
         + '<td class="umono">' + fmtNum(ind.baseline_value) + u + '</td>'
         + '<td class="umono">' + fmtNum(ind.target_value) + u + '</td>'
         + '<td class="umono" style="color:' + STATUS[r ? r.status : 'nodata'].c + '">' + (r && r.frac != null ? Math.round(r.frac * 100) + '%' : '–') + '</td>';
@@ -3365,18 +3521,18 @@
     var body = $('#secEditBody'); body.innerHTML = '';
     $('#secEditTitle').textContent = ind ? ('Edit secondary KPI · ' + (ind.code || '')) : '＋ Add secondary KPI';
     var f = el('div', 'uform');
-    var bd = ind ? (ind.baseline_date || (BASE_YEAR + '-01-01')) : '2025-01-01';
-    var td = ind ? (ind.target_date || (TARGET_YEAR + '-12-31')) : '2027-12-31';
+    var bd = (ind && ind.baseline_date) || defaultBaselineDate();
+    var td = (ind && ind.target_date) || defaultTargetDate();
     f.innerHTML =
       '<div class="ufgrid kpigrid">' +
       '  <label class="kf-wide"><span>KPI name *</span><input class="sf-name" type="text" value="' + esc(ind ? ind.name : '') + '"></label>' +
-      '  <label><span>Unit</span><select class="sf-unit">' + optionList(UNIT_OPTS, ind ? ind.unit : 'count') + '</select></label>' +
-      '  <label><span>Direction</span><select class="sf-dir"><option value="increase"' + (!ind || ind.direction === 'increase' ? ' selected' : '') + '>Higher is better</option><option value="decrease"' + (ind && ind.direction === 'decrease' ? ' selected' : '') + '>Lower is better</option></select></label>' +
+      '  <label><span>Unit</span><select class="sf-unit">' + lookupOptions('unit', ind ? ind.unit_id : lkIdByKey('unit', 'count'), ind && ind.unit) + '</select></label>' +
+      '  <label><span>Direction</span><select class="sf-dir">' + lookupOptions('direction', ind ? ind.direction_id : lkIdByKey('direction', 'increase'), ind && ind.direction) + '</select></label>' +
       '  <label><span>Baseline value</span><input class="sf-base" type="number" step="any" value="' + esc(ind ? ind.baseline_value : 0) + '"></label>' +
       '  <label><span>Target value</span><input class="sf-tgt" type="number" step="any" value="' + esc(ind ? ind.target_value : '') + '"></label>' +
       '  <label><span>Baseline date</span><input class="sf-basedate" type="date" value="' + esc(bd) + '"></label>' +
       '  <label><span>Target date</span><input class="sf-tgtdate" type="date" value="' + esc(td) + '"></label>' +
-      '  <label><span>Frequency</span><select class="sf-freq">' + optionList(FREQ_OPTS, ind ? ind.frequency : 'quarterly') + '</select></label>' +
+      '  <label><span>Frequency</span><select class="sf-freq">' + lookupOptions('frequency', ind ? ind.frequency_id : lkIdByKey('frequency', 'quarterly'), ind && ind.frequency) + '</select></label>' +
       '  <label class="kf-wide"><span>Means of verification</span><input class="sf-mov" type="text" value="' + esc(ind ? (ind.means_of_verification || '') : 'Project monitoring records') + '"></label>' +
       '</div>' +
       '<div class="ufbtns"><span class="ufmsg"></span>' +
@@ -3398,23 +3554,25 @@
     msg.textContent = 'Saving…';
     var apply = function (p){ Promise.resolve(p).then(function (){ closeSecEdit(); enrich(); renderTicker(); renderAll(); setProjectTab('secondary'); }); };
     if (ind){
-      ind.name = name; ind.unit = v('.sf-unit'); ind.direction = v('.sf-dir');
+      ind.name = name; ind.unit_id = +v('.sf-unit'); ind.direction_id = +v('.sf-dir');
+      delete ind.unit; delete ind.direction;   // legacy text columns, superseded by ids
       var b = num(v('.sf-base')); if (b != null) ind.baseline_value = b;
       var t = num(v('.sf-tgt')); if (t != null) ind.target_value = t;
       if (bd){ ind.baseline_date = bd; ind.baseline_year = +bd.slice(0, 4); }
       if (td){ ind.target_date = td; ind.target_year = +td.slice(0, 4); }
-      ind.frequency = v('.sf-freq'); ind.means_of_verification = v('.sf-mov').trim();
+      ind.frequency_id = +v('.sf-freq'); delete ind.frequency;
+      ind.means_of_verification = v('.sf-mov').trim();
       apply(DB.persist('indicator', [ind]));
     } else {
       var n = (DB._idx.secondaryByProject[curProject.id] || []).length + 1;
       var code = 'SEC-' + (curProject.code ? curProject.code.replace(/^PRJ-/, '') : ('P' + curProject.id)) + '.' + n;
       apply(DB.insert('indicator', {
         result_id: null, project_id: curProject.id, secondary: 1, sdg: null, code: code,
-        name: name, type: 'quantitative', unit: v('.sf-unit'), direction: v('.sf-dir'),
-        baseline_value: num(v('.sf-base')) || 0, baseline_year: bd ? +bd.slice(0, 4) : BASE_YEAR, baseline_date: bd || (BASE_YEAR + '-01-01'),
-        target_value: num(v('.sf-tgt')), target_year: td ? +td.slice(0, 4) : TARGET_YEAR, target_date: td || (TARGET_YEAR + '-12-31'),
-        means_of_verification: v('.sf-mov').trim(), collection_method: 'Self-reporting',
-        frequency: v('.sf-freq'), responsible_id: null, disaggregation: 'none'
+        name: name, type_id: lkIdByKey('kpi_type', 'quantitative'), unit_id: +v('.sf-unit'), direction_id: +v('.sf-dir'),
+        baseline_value: num(v('.sf-base')) || 0, baseline_year: +(bd || defaultBaselineDate()).slice(0, 4), baseline_date: bd || defaultBaselineDate(),
+        target_value: num(v('.sf-tgt')), target_year: +(td || defaultTargetDate()).slice(0, 4), target_date: td || defaultTargetDate(),
+        means_of_verification: v('.sf-mov').trim(), collection_method_id: lkIdByKey('collection_method', 'Self-reporting'),
+        frequency_id: +v('.sf-freq'), responsible_id: null, disaggregation_id: lkIdByKey('disaggregation', 'none')
       }));
     }
   }
@@ -3426,7 +3584,6 @@
   }
 
   // ---- TAB 4 · activities (moved from the main screen) ---------------------
-  var BASE_YEAR = 2025, TARGET_YEAR = 2027;   // default KPI horizon for new secondary KPIs
   function projectKpiOptions(p){
     var prim = (DB._idx.projectKpiByProject[p.id] || []).map(function (pk){ return INDBYID[pk.indicator_id]; }).filter(Boolean);
     var secs = (DB._idx.secondaryByProject[p.id] || []).map(function (i){ return INDBYID[i.id]; }).filter(Boolean);
@@ -3904,7 +4061,7 @@
   // =========================================================================
   //  CONTROL PANEL - Donors (funding partners; editable lookup; Admin only)
   // =========================================================================
-  var DONOR_TYPES = ['Bilateral', 'Multilateral', 'Foundation'];
+  // donor types live in the `donor_type` lookup table (saved as donor.type_id)
   var DONOR_PALETTE = ['#4FA9E8','#33C2B4','#9D7BEE','#F5A04D','#EC7BA6','#5399EA','#2CC4A0','#E0A93B',
     '#6FBF73','#EA8A5B','#C58BE0','#48B0C4','#D98CA0','#8FB84E','#E2B54A','#7E9BEA'];
   function donors(){ return DB.tables.donor.slice().sort(function (a, b){ return a.name < b.name ? -1 : 1; }); }
@@ -3937,7 +4094,7 @@
       tr.innerHTML =
         '<td><span class="udot" style="background:' + (d.color || '#94a3b8') + '"></span>' + esc(d.name) + '</td>' +
         '<td class="umono">' + esc(d.short_name || '') + '</td>' +
-        '<td>' + esc(d.type || '') + '</td>' +
+        '<td>' + esc(donorType(d)) + '</td>' +
         '<td>' + (d.lead_id != null ? esc(userName(+d.lead_id)) : '–') + '</td>' +
         '<td class="umono">' + fmt(used) + '</td>';
       var act = el('td', 'uact');
@@ -3954,7 +4111,7 @@
     var body = $('#donorEditBody'); body.innerHTML = '';
     $('#donorEditTitle').textContent = d ? ('Edit donor · ' + d.name) : '＋ Add donor';
     var color = d && d.color ? d.color : nextDonorColor();
-    var typeOpts = DONOR_TYPES.map(function (t){ return '<option value="' + t + '"' + (d && d.type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('');
+    var typeOpts = lookupOptions('donor_type', d ? d.type_id : null, d && d.type);
     var f = el('div', 'uform');
     f.innerHTML =
       '<div class="ufgrid" style="grid-template-columns:2fr 1fr">' +
@@ -3966,7 +4123,7 @@
       '  <label><span>Identity colour</span><input class="dn-color" type="color" value="' + esc(color) + '"></label>' +
       '</div>' +
       '<div class="ufgrid" style="grid-template-columns:1fr">' +
-      '  <label><span>Lead</span><select class="dn-lead">' + userOptions(d && d.lead_id != null ? +d.lead_id : null, ['hq','co']) + '</select></label>' +
+      '  <label><span>Lead</span><select class="dn-lead">' + userOptions(d && d.lead_id != null ? +d.lead_id : null, 'donor') + '</select></label>' +
       '</div>' +
       '<div class="ufbtns"><span class="ufmsg"></span>' +
         '<button class="hbtn dn-cancel" type="button">Cancel</button>' +
@@ -3975,13 +4132,13 @@
     f.querySelector('.dn-save').onclick = function (){
       var name = f.querySelector('.dn-name').value.trim(), msg = f.querySelector('.ufmsg');
       var short_name = f.querySelector('.dn-short').value.trim();
-      var type = f.querySelector('.dn-type').value;
+      var typeId = f.querySelector('.dn-type').value ? +f.querySelector('.dn-type').value : null;
       var col = f.querySelector('.dn-color').value;
       var leadId = f.querySelector('.dn-lead').value ? +f.querySelector('.dn-lead').value : null;
       if (!name){ msg.textContent = 'Donor name is required.'; return; }
       msg.textContent = 'Saving…';
-      if (d){ d.name = name; d.short_name = short_name; d.type = type; d.color = col; d.lead_id = leadId; applyDonorMutation(DB.persist('donor', [d])); }
-      else { applyDonorMutation(DB.insert('donor', { name: name, short_name: short_name, type: type, color: col, lead_id: leadId })); }
+      if (d){ d.name = name; d.short_name = short_name; d.type_id = typeId; delete d.type; d.color = col; d.lead_id = leadId; applyDonorMutation(DB.persist('donor', [d])); }
+      else { applyDonorMutation(DB.insert('donor', { name: name, short_name: short_name, type_id: typeId, color: col, lead_id: leadId })); }
     };
     body.appendChild(f);
     $('#donorEditOverlay').classList.add('on');
@@ -4000,7 +4157,8 @@
   // lead_id immediately (id-based, from the user list, never free-typed).
   function inlineLeadSelect(row, table){
     var s = el('select', 'geo-lead');
-    s.innerHTML = userOptions(row.lead_id != null ? +row.lead_id : null, ['hq','co']);
+    // the affiliation keys equal the lookup table names ('region' / 'country')
+    s.innerHTML = userOptions(row.lead_id != null ? +row.lead_id : null, table);
     s.onchange = function (){
       row.lead_id = s.value ? +s.value : null;
       DB.persist(table, [row]);
@@ -4132,14 +4290,16 @@
   function commUnassigned(cat){
     if (cat === 'plan') return allPlans().filter(function (p){ return p.lead_id == null; }).length;
     if (cat === 'impact' || cat === 'outcome' || cat === 'output'){
-      var seen = {}, n = 0;
+      // a statement is unassigned only when NO country instance carries an owner -
+      // commEntities picks the first OWNED instance, so this stays its exact complement
+      var all = {}, owned = {};
       DB.tables.result.forEach(function (r){
         if (r.plan_id !== S.plan || r.level !== cat) return;
         var k = (r.sdg == null ? 0 : r.sdg) + '|' + r.statement;
-        if (seen[k]) return; seen[k] = 1;
-        if (r.owner_id == null) n++;
+        all[k] = 1;
+        if (r.owner_id != null) owned[k] = 1;
       });
-      return n;
+      return Object.keys(all).filter(function (k){ return !owned[k]; }).length;
     }
     if (cat === 'project') return DB.tables.project.filter(function (p){ return p.plan_id === S.plan && p.lead_id == null; }).length;
     if (cat === 'donor') return DB.tables.donor.filter(function (d){ return d.lead_id == null; }).length;
@@ -4156,8 +4316,10 @@
       return all.filter(function (i){ return indicatorPlanId(i) === pid; });
     }
     if (cat === 'impact' || cat === 'outcome' || cat === 'output'){
-      // every KPI under any country instance of the statement's subtree
-      var roots = DB.tables.result.filter(function (r){ return r.plan_id === S.plan && r.level === cat && r.statement === ent.stmt && (ent.sdg == null || r.sdg === ent.sdg); });
+      // every KPI under any country instance of the statement's subtree; sdg must
+      // match EXACTLY (null only pairs with null), or a null-sdg entity would
+      // swallow every same-statement subtree of every sdg
+      var roots = DB.tables.result.filter(function (r){ return r.plan_id === S.plan && r.level === cat && r.statement === ent.stmt && (ent.sdg == null ? r.sdg == null : r.sdg === ent.sdg); });
       var byParent = {};
       DB.tables.result.forEach(function (r){ if (r.parent_id != null) (byParent[r.parent_id] = byParent[r.parent_id] || []).push(r); });
       var ids = {}, stack = roots.slice();
@@ -4170,9 +4332,11 @@
       return prim.concat(DB._idx.secondaryByProject[p.id] || []);
     }
     if (cat === 'donor'){
+      // active plan only - commProjectsFor lists the donor's ACTIVE-plan projects,
+      // so the KPI scope (headline tiles, forecast) must cover the same universe
       var set = {}, res = [];
       DB.tables.project.forEach(function (p){
-        if (p.donor_id !== ent.donor.id) return;
+        if (p.donor_id !== ent.donor.id || p.plan_id !== S.plan) return;
         (DB._idx.projectKpiByProject[p.id] || []).forEach(function (pk){
           if (!set[pk.indicator_id]){ set[pk.indicator_id] = 1; var i = DB._idx.indicatorById[pk.indicator_id]; if (i) res.push(i); }
         });
@@ -4195,12 +4359,17 @@
   // A KPI snapshot AS OF the end of the report month (same maths the app uses,
   // with the clock stopped at month end): value / progress / performance status,
   // plus the month's own activity count and beneficiary reach.
-  function commSnapshot(ind, startISO, endISO){
+  // `projId` (optional): a project-lead report must count only the month's OWN
+  // activity - primary KPIs are shared across projects, and sibling projects'
+  // measurements must not inflate this project's activity/reach cards. The KPI
+  // value/progress stay the portfolio roll-up (same as the KPI inventory view).
+  function commSnapshot(ind, startISO, endISO, projId){
     var upto = DB.measurementsFor(ind.id).filter(function (m){ return m.date && m.date <= endISO; });
     var inMonth = upto.filter(function (m){ return m.date >= startISO; });
+    if (projId != null) inMonth = inMonth.filter(function (m){ return m.project_id === projId; });
     var b = ind.baseline_value, t = ind.target_value;
     var v = indicatorValue(ind, upto);
-    var progress = (v == null || t == null || b == null || t === b) ? null : (v - b) / (t - b);
+    var progress = (v == null || t == null || b == null || +t === +b) ? null : (v - b) / (t - b);
     var perf = progress == null ? null : progress / elapsedFraction(ind, endISO);
     var ben = 0;
     inMonth.forEach(function (m){ (DB._idx.benByMeasurement[m.id] || []).forEach(function (x){ ben += (+x.value || 0); }); });
@@ -4464,7 +4633,7 @@
       if (r.plan_id !== planId || r.level !== level) return;
       if (cat !== 'plan'){
         var par = rById[r.parent_id];
-        if (!par || par.statement !== ent.stmt || (ent.sdg != null && par.sdg !== ent.sdg)) return;
+        if (!par || par.statement !== ent.stmt || (ent.sdg == null ? par.sdg != null : par.sdg !== ent.sdg)) return;
       }
       var k = (r.sdg == null ? 0 : r.sdg) + '|' + r.statement;
       if (!kids[k]){
@@ -4508,9 +4677,13 @@
       var s = commSnapshot(ind, startISO, endISO);
       if (s.progress != null){ progs.push(s.progress); perfs.push(s.perf); }
     });
+    // count only measurements against the KPIs that tie the project to THIS scope
+    // (row.kpis) - an Outcome lead's table must not absorb the project's activity
+    // under sibling outcomes, or overlapping scopes double-attribute the same work
+    var inScope = {}; row.kpis.forEach(function (i){ inScope[i.id] = 1; });
     var acts = 0, ben = 0;
     (DB._idx.measByProject[row.p.id] || []).forEach(function (m){
-      if (m.date && m.date >= startISO && m.date <= endISO){ acts++; ben += benTotalFor(m.id); }
+      if (inScope[m.indicator_id] && m.date && m.date >= startISO && m.date <= endISO){ acts++; ben += benTotalFor(m.id); }
     });
     function avg(a){ var s = 0; a.forEach(function (x){ s += x; }); return a.length ? s / a.length : null; }
     var progress = avg(progs), perf = avg(perfs);
@@ -4536,7 +4709,7 @@
       total = projRows.length;
     } else {
       var inds = commIndicators(ent);
-      snaps = inds.map(function (ind){ return { ind: ind, s: commSnapshot(ind, startISO, endISO) }; });
+      snaps = inds.map(function (ind){ return { ind: ind, s: commSnapshot(ind, startISO, endISO, ent.project.id) }; });
       snaps.sort(function (a, b){ return String(a.ind.code || '') < String(b.ind.code || '') ? -1 : 1; });
       snaps.forEach(function (x){ acts += x.s.acts; ben += x.s.ben; counts[x.s.code]++; });
       total = snaps.length;
@@ -4720,7 +4893,7 @@
         }
         var sn = snaps[i], ind = sn.ind, s = sn.s;
         drawCells([
-          ind.code || '', pdfTrunc(ind.name, 7, cols[1].w - 6), ind.unit || '',
+          ind.code || '', pdfTrunc(ind.name, 7, cols[1].w - 6), kpiUnit(ind) || '',
           fmtNum(ind.baseline_value), fmtNum(ind.target_value),
           s.value == null ? '–' : fmtNum(s.value),
           pct(s.progress), pct(s.perf)
@@ -4748,7 +4921,18 @@
     S.fcHorizon = 'plan';   // lead briefs always look to the end of the plan
     S.fcDim = 'projects';   // the breakdown below is per project (labels follow)
     try {
-      function toRows(inds){ return inds.map(function (i){ return INDBYID[i.id]; }).filter(Boolean); }
+      // INDBYID only holds the ACTIVE plan's enriched rows; a lead of another
+      // plan still gets a populated brief via a lightweight row (kpiForecast
+      // needs only raw + series; label/colour fields ride along for per-KPI ents).
+      function liteRow(i){
+        var res = i.result_id != null ? DB._idx.resultById[i.result_id] : null;
+        var pids = [];
+        if (i.secondary && i.project_id != null) pids.push(i.project_id);
+        (DB._idx.projectKpiByIndicator[i.id] || []).forEach(function (pk){ if (pids.indexOf(pk.project_id) < 0) pids.push(pk.project_id); });
+        return { id: i.id, raw: i, name: i.name, unit: kpiUnit(i), sdg: res ? res.sdg : null,
+                 series: DB.measurementsFor(i.id), projectIds: pids };
+      }
+      function toRows(inds){ return inds.map(function (i){ return INDBYID[i.id] || liteRow(i); }); }
       // the lead's whole scope drives the tiles, the chart and the advice
       var scope = fcEntity(ent.ref, (ent.code ? ent.code + ' - ' : '') + ent.name,
         commCatOne(ent.cat), COMM_BRAND, toRows(commIndicators(ent)));
@@ -4850,15 +5034,18 @@
     return commDefaultTpl();
   }
   function commFill(s, ent, rep){
-    var catLabel = commCatOne(ent.cat);
-    return String(s)
-      .replace(/\{LEAD\}/g, userName(ent.leadId))
-      .replace(/\{MONTH\}/g, MONTH_NAMES[COMM.month - 1])
-      .replace(/\{YEAR\}/g, String(COMM.year))
-      .replace(/\{ENTITY\}/g, (ent.code ? ent.code + ' - ' : '') + ent.name)
-      .replace(/\{CATEGORY\}/g, catLabel)
-      .replace(/\{SUMMARY\}/g, rep && rep.summary ? rep.summary : 'KPI progress, performance and reach for the period')
-      .replace(/\{SENDER\}/g, CURRENT_USER ? CURRENT_USER.name : 'The Grassroots Team');
+    // function replacements: entity/user names may contain `$&`/`$'`-style
+    // sequences that a string replacement would expand instead of inserting
+    var vals = {
+      LEAD: userName(ent.leadId),
+      MONTH: MONTH_NAMES[COMM.month - 1],
+      YEAR: String(COMM.year),
+      ENTITY: (ent.code ? ent.code + ' - ' : '') + ent.name,
+      CATEGORY: commCatOne(ent.cat),
+      SUMMARY: rep && rep.summary ? rep.summary : 'KPI progress, performance and reach for the period',
+      SENDER: CURRENT_USER ? CURRENT_USER.name : 'The Grassroots Team'
+    };
+    return String(s).replace(/\{(LEAD|MONTH|YEAR|ENTITY|CATEGORY|SUMMARY|SENDER)\}/g, function (_, k){ return vals[k]; });
   }
 
   // ---- panel rendering ---------------------------------------------------------
@@ -4874,7 +5061,7 @@
       if (p.start_date) min = Math.min(min, +p.start_date.slice(0, 4));
       if (p.end_date) max = Math.max(max, +p.end_date.slice(0, 4));
     });
-    if (min > max){ min = 2021; max = 2030; }
+    if (min > max){ max = commNow().y; min = max - 9; }   // no dated plans: offer the last decade
     max = Math.min(max, commNow().y);   // never offer a future year
     if (min > max) min = max;
     var out = []; for (var y = min; y <= max; y++) out.push(y);
@@ -4905,8 +5092,13 @@
     gen.title = 'Build (or rebuild) the monthly PDF for every enabled Lead in every category';
     gen.onclick = commGenerateAll;
     var send = el('button', 'hbtn comm-sendall', '📤 Send all by email');
-    send.title = 'Email every enabled, generated ' + commPeriodLabel() + ' report to its Lead';
-    send.onclick = commSendAll;
+    if (isPublicDemo()){
+      send.disabled = true;
+      send.title = 'Email sending is disabled on the public demo. Run the app locally or self-host to connect Brevo and send.';
+    } else {
+      send.title = 'Email every enabled, generated ' + commPeriodLabel() + ' report to its Lead';
+      send.onclick = commSendAll;
+    }
     var msg = el('span', 'comm-msg'); msg.id = 'commMsg';
     bar.appendChild(lbl); bar.appendChild(mSel); bar.appendChild(ySel);
     if (!ro){ bar.appendChild(gen); bar.appendChild(send); }
@@ -5083,6 +5275,7 @@
   }
   function commSendAll(){
     if (COMM.busy) return;
+    if (isPublicDemo()){ commSay('⛔ Email sending is disabled on the public demo. Run the app locally or self-host to send.'); return; }
     if (commIsFuture(COMM.year, COMM.month)){ commSay('⛔ ' + commPeriodLabel() + ' hasn\'t happened yet - reports cover completed or current months only.'); return; }
     var reps = DB.tables.report.filter(function (r){ return r.year === COMM.year && r.month === COMM.month && r.enabled !== 0 && r.pdf; });
     if (!reps.length){ commSay('No generated reports for ' + commPeriodLabel() + ' - hit Generate first.'); return; }
@@ -5392,7 +5585,7 @@
       f.innerHTML =
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
         '  <label><span>' + esc(labelText) + ' statement</span><input class="fw-stmt" type="text"></label>' +
-        (withLead ? '  <label><span>Lead</span><select class="fw-lead">' + userOptions(curLead, ['hq','co']) + '</select></label>' : '') +
+        (withLead ? '  <label><span>Lead</span><select class="fw-lead">' + userOptions(curLead, level) + '</select></label>' : '') +
         '</div>' + fwButtons('Save changes');
       f.querySelector('.fw-stmt').value = stmt;
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
@@ -5413,7 +5606,7 @@
       f.innerHTML =
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
         '  <label><span>New outcome statement</span><input class="fw-ostmt" type="text" placeholder="What this outcome will achieve"></label>' +
-        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(null, ['hq','co']) + '</select></label>' +
+        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(null, 'outcome') + '</select></label>' +
         '</div>' + fwButtons('Add outcome');
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
       f.querySelector('.fw-save').onclick = function (){
@@ -5433,7 +5626,7 @@
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
         '  <label><span>Impact name</span><input class="fw-pname" type="text" placeholder="e.g. Foresight & Strategy"></label>' +
         '  <label><span>Impact statement / description</span><input class="fw-pimpact" type="text" placeholder="What long-term change this impact describes"></label>' +
-        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(null, ['hq','co']) + '</select></label>' +
+        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(null, 'impact') + '</select></label>' +
         '</div>' + fwButtons('Add impact');
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
       f.querySelector('.fw-save').onclick = function (){
@@ -5482,7 +5675,7 @@
         '  <label><span>Outcome</span><input type="text" value="' + esc(outcomeTxt) + '" readonly></label>' +
         '  <label><span>Output code</span><input type="text" value="' + esc(outCode) + '" readonly></label>' +
         '  <label><span>Output statement</span><input class="fw-stmt" type="text" placeholder="What this output delivers"></label>' +
-        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(curLead, ['hq','co']) + '</select></label>' +
+        '  <label><span>Lead</span><select class="fw-lead">' + userOptions(curLead, 'output') + '</select></label>' +
         '</div>' + fwButtons(isEdit ? 'Save changes' : 'Add output');
       if (isEdit) f.querySelector('.fw-stmt').value = curStmt;
       f.querySelector('.fw-cancel').onclick = closeFwEdit;
@@ -5501,10 +5694,8 @@
   // =========================================================================
   //  CONTROL PANEL - KPI Inventory (fine-tune KPI definitions; Admin only)
   // =========================================================================
-  var FREQ_OPTS = ['annual','semi-annual','quarterly','monthly'];
-  var METHOD_OPTS = ['Administrative records','Platform analytics','Survey','Self-reporting','Regional review','Independent assessment'];
-  var UNIT_OPTS = ['count','%','index','ratio','score','days','USD'];
-  var DISAGG_OPTS = ['none','region','region, agency','region, country','sex','age'];
+  // KPI list options (unit / frequency / collection method / disaggregation /
+  // type / direction) live in the reference lookup TABLES - see lookupOptions().
   function applyKpiMutation(p){
     return Promise.resolve(p).then(function (){
       closeKpiEdit(); enrich(); renderTicker(); renderAll(); renderResults('kpis');
@@ -5539,11 +5730,11 @@
   function kpiRow(g){
     var tr = el('tr');
     var col = g.sdg ? PILLAR_COLORS[g.sdg] : '#94a3b8';
-    var u = g.rep.unit === '%' ? '%' : '';
+    var u = kpiUnit(g.rep) === '%' ? '%' : '';
     tr.innerHTML = '<td class="umono">' + esc(g.rep.code || '') + '</td>'
       + '<td><span class="udot" style="background:' + col + '"></span>' + esc(g.name) + '</td>'
       + '<td><span class="kpi-pill" style="background:' + shade(col, 0.74) + ';color:' + shade(col, -0.32) + '">' + esc(pillarLabel(g.sdg)) + '</span></td>'
-      + '<td class="umono">' + esc(g.rep.unit || '') + '</td>'
+      + '<td class="umono">' + esc(kpiUnit(g.rep) || '') + '</td>'
       + '<td class="umono">' + fmtNum(g.rep.target_value) + u + '</td><td>' + g.insts.length + '</td>';
     var act = el('td', 'uact');
     var edit = el('button', 'cp-mini', 'Edit'); edit.onclick = function (){ openKpiEdit(g); };
@@ -5559,13 +5750,7 @@
     var fn = body.querySelector('.kf-name'); if (fn) fn.focus();
   }
   function closeKpiEdit(){ var o = $('#kpiEditOverlay'); if (o) o.classList.remove('on'); }
-  // build <option>s; if the current value isn't in the list it is prepended so an
-  // existing (custom) value is never silently dropped on save
-  function optionList(opts, cur){
-    var list = opts.slice();
-    if (cur != null && cur !== '' && list.indexOf(cur) < 0) list = [cur].concat(list);
-    return list.map(function (o){ return '<option value="' + esc(o) + '"' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
-  }
+  // (form option lists are built from the reference lookup tables - lookupOptions)
   // A project's Lead as a user id (people are ALWAYS referenced by id, never by
   // a stored display name). Legacy rows persisted before lead_id existed carried
   // the display name in `lead`; resolve that to the user list once so the
@@ -5577,9 +5762,14 @@
     return null;
   }
   // dropdown of EXISTING users (by id) for person references - users are never
-  // created/renamed outside Users Management, only selected here
-  function userOptions(curId, sections){
-    var us = DB.tables.user.filter(function (u){ return sections.indexOf(userSection(u)) >= 0 && u.enabled; })
+  // created/renamed outside Users Management, only selected here. `aff` is an
+  // affiliation key ('donor', 'plan', …): the list filters to users affiliated
+  // to that category, so e.g. a Donor Lead must come from Donor-affiliated
+  // users. null = no filter. The currently-assigned user always stays in the
+  // list (even if disabled or differently affiliated) so an existing value is
+  // never silently dropped on save.
+  function userOptions(curId, aff){
+    var us = DB.tables.user.filter(function (u){ return (u.enabled && (!aff || userAffKey(u) === aff)) || u.id === curId; })
       .sort(function (a, b){ return a.name < b.name ? -1 : 1; });
     return '<option value=""' + (curId == null ? ' selected' : '') + '>–</option>'
       + us.map(function (u){ return '<option value="' + u.id + '"' + (u.id === curId ? ' selected' : '') + '>' + esc(u.name) + ' (' + STATUS_LABEL[userStatus(u)] + ')</option>'; }).join('');
@@ -5607,25 +5797,26 @@
   function kpiForm(g){
     var ind = g.rep;
     var curParent = (DB._idx.resultById[ind.result_id] || {}).statement || '';
-    var baseDate = ind.baseline_date || ((ind.baseline_year || 2025) + '-01-01');
-    var tgtDate  = ind.target_date  || ((ind.target_year  || 2027) + '-12-31');
+    var kw = kpiWindowYears(ind);
+    var baseDate = ind.baseline_date || (kw.start + '-01-01');
+    var tgtDate  = ind.target_date  || (kw.end + '-12-31');
     var f = el('div', 'uform kpiuform');
     f.innerHTML =
       '<div class="uform-h">Edit KPI - applies to all ' + g.insts.length + ' instance' + (g.insts.length === 1 ? '' : 's') + '</div>' +
       '<div class="ufgrid kpigrid">' +
       '  <label class="kf-wide"><span>KPI name *</span><input class="kf-name" type="text" value="' + esc(ind.name) + '"></label>' +
-      '  <label><span>Type</span><select class="kf-type"><option value="quantitative"' + (ind.type === 'quantitative' ? ' selected' : '') + '>Quantitative</option><option value="qualitative"' + (ind.type === 'qualitative' ? ' selected' : '') + '>Qualitative</option></select></label>' +
-      '  <label><span>Unit</span><select class="kf-unit">' + optionList(UNIT_OPTS, ind.unit || 'count') + '</select></label>' +
-      '  <label><span>Direction</span><select class="kf-dir"><option value="increase"' + (ind.direction === 'increase' ? ' selected' : '') + '>Higher is better</option><option value="decrease"' + (ind.direction === 'decrease' ? ' selected' : '') + '>Lower is better</option></select></label>' +
+      '  <label><span>Type</span><select class="kf-type">' + lookupOptions('kpi_type', ind.type_id, ind.type || 'quantitative') + '</select></label>' +
+      '  <label><span>Unit</span><select class="kf-unit">' + lookupOptions('unit', ind.unit_id, ind.unit || 'count') + '</select></label>' +
+      '  <label><span>Direction</span><select class="kf-dir">' + lookupOptions('direction', ind.direction_id, ind.direction || 'increase') + '</select></label>' +
       '  <label><span>Baseline value</span><input class="kf-base" type="number" step="any" value="' + esc(ind.baseline_value) + '"></label>' +
       '  <label><span>Baseline date</span><input class="kf-basedate" type="date" value="' + esc(baseDate) + '"></label>' +
       '  <label><span>Target value</span><input class="kf-tgt" type="number" step="any" value="' + esc(ind.target_value) + '"></label>' +
       '  <label><span>Target date</span><input class="kf-tgtdate" type="date" value="' + esc(tgtDate) + '"></label>' +
-      '  <label><span>Frequency</span><select class="kf-freq">' + optionList(FREQ_OPTS, ind.frequency) + '</select></label>' +
-      '  <label><span>Collection method</span><select class="kf-method">' + optionList(METHOD_OPTS, ind.collection_method) + '</select></label>' +
+      '  <label><span>Frequency</span><select class="kf-freq">' + lookupOptions('frequency', ind.frequency_id, ind.frequency) + '</select></label>' +
+      '  <label><span>Collection method</span><select class="kf-method">' + lookupOptions('collection_method', ind.collection_method_id, ind.collection_method) + '</select></label>' +
       '  <label class="kf-wide"><span>Means of verification</span><input class="kf-mov" type="text" value="' + esc(ind.means_of_verification || '') + '"></label>' +
-      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(ind.responsible_id, ['hq']) + '</select></label>' +
-      '  <label><span>Disaggregation</span><select class="kf-disag">' + optionList(DISAGG_OPTS, ind.disaggregation || 'none') + '</select></label>' +
+      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(ind.responsible_id, 'output') + '</select></label>' +
+      '  <label><span>Disaggregation</span><select class="kf-disag">' + lookupOptions('disaggregation', ind.disaggregation_id, ind.disaggregation || 'none') + '</select></label>' +
       '  <label class="kf-wide"><span>Parent Output *</span><select class="kf-parent">' + parentResultOptions('output', curParent) + '</select></label>' +
       '  <label><span>Code (auto)</span><input class="kf-code" type="text" value="' + esc(ind.code || '') + '" readonly title="System-generated from the parent Output - not editable. It updates automatically if the KPI is moved to another Output."></label>' +
       '</div>' +
@@ -5645,16 +5836,19 @@
     var changed = [];
     g.insts.forEach(function (r){
       var ind = r.raw;
-      ind.name = newName; ind.type = v('.kf-type'); ind.unit = v('.kf-unit');
-      ind.direction = v('.kf-dir');
+      ind.name = newName;
+      // every list selection persists the lookup row's id, never its text
+      ind.type_id = +v('.kf-type'); ind.unit_id = +v('.kf-unit'); ind.direction_id = +v('.kf-dir');
+      delete ind.type; delete ind.unit; delete ind.direction;   // legacy text columns
       var b = num(v('.kf-base')); if (b != null) ind.baseline_value = b;
       var bd = v('.kf-basedate'); if (bd){ ind.baseline_date = bd; ind.baseline_year = +bd.slice(0,4); }
       var t = num(v('.kf-tgt')); if (t != null) ind.target_value = t;
       var td = v('.kf-tgtdate'); if (td){ ind.target_date = td; ind.target_year = +td.slice(0,4); }
-      ind.frequency = v('.kf-freq'); ind.collection_method = v('.kf-method');
+      ind.frequency_id = +v('.kf-freq'); ind.collection_method_id = +v('.kf-method');
+      delete ind.frequency; delete ind.collection_method;
       ind.means_of_verification = v('.kf-mov').trim();
       ind.responsible_id = v('.kf-resp') ? +v('.kf-resp') : null;   // user reference by id
-      ind.disaggregation = v('.kf-disag');
+      ind.disaggregation_id = +v('.kf-disag'); delete ind.disaggregation;
       // re-parent to ANY sibling result (same level): find the chosen statement's
       // result in this same programme (the KPI adopts its pillar via the chain).
       if (newParent && newParent !== curParent){
@@ -5684,18 +5878,18 @@
       '<div class="uform-h">New KPI - added under the chosen Output across all its country instances</div>' +
       '<div class="ufgrid kpigrid">' +
       '  <label class="kf-wide"><span>KPI name *</span><input class="kf-name" type="text" placeholder="What this KPI measures"></label>' +
-      '  <label><span>Type</span><select class="kf-type"><option value="quantitative" selected>Quantitative</option><option value="qualitative">Qualitative</option></select></label>' +
-      '  <label><span>Unit</span><select class="kf-unit">' + optionList(UNIT_OPTS, 'count') + '</select></label>' +
-      '  <label><span>Direction</span><select class="kf-dir"><option value="increase" selected>Higher is better</option><option value="decrease">Lower is better</option></select></label>' +
+      '  <label><span>Type</span><select class="kf-type">' + lookupOptions('kpi_type', null, 'quantitative') + '</select></label>' +
+      '  <label><span>Unit</span><select class="kf-unit">' + lookupOptions('unit', null, 'count') + '</select></label>' +
+      '  <label><span>Direction</span><select class="kf-dir">' + lookupOptions('direction', null, 'increase') + '</select></label>' +
       '  <label><span>Baseline value</span><input class="kf-base" type="number" step="any" value="0"></label>' +
-      '  <label><span>Baseline date</span><input class="kf-basedate" type="date" value="2025-01-01"></label>' +
+      '  <label><span>Baseline date</span><input class="kf-basedate" type="date" value="' + defaultBaselineDate() + '"></label>' +
       '  <label><span>Target value</span><input class="kf-tgt" type="number" step="any" placeholder="0"></label>' +
-      '  <label><span>Target date</span><input class="kf-tgtdate" type="date" value="2027-12-31"></label>' +
-      '  <label><span>Frequency</span><select class="kf-freq">' + optionList(FREQ_OPTS, 'quarterly') + '</select></label>' +
-      '  <label><span>Collection method</span><select class="kf-method">' + optionList(METHOD_OPTS, 'Administrative records') + '</select></label>' +
+      '  <label><span>Target date</span><input class="kf-tgtdate" type="date" value="' + defaultTargetDate() + '"></label>' +
+      '  <label><span>Frequency</span><select class="kf-freq">' + lookupOptions('frequency', null, 'quarterly') + '</select></label>' +
+      '  <label><span>Collection method</span><select class="kf-method">' + lookupOptions('collection_method', null, 'Administrative records') + '</select></label>' +
       '  <label class="kf-wide"><span>Means of verification</span><input class="kf-mov" type="text" placeholder="Data source"></label>' +
-      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(null, ['hq']) + '</select></label>' +
-      '  <label><span>Disaggregation</span><select class="kf-disag">' + optionList(DISAGG_OPTS, 'none') + '</select></label>' +
+      '  <label><span>Responsible</span><select class="kf-resp">' + userOptions(null, 'output') + '</select></label>' +
+      '  <label><span>Disaggregation</span><select class="kf-disag">' + lookupOptions('disaggregation', null, 'none') + '</select></label>' +
       '  <label class="kf-wide"><span>Parent Output *</span><select class="kf-parent">' + parentResultOptions('output', '') + '</select></label>' +
       '</div>' +
       '<div class="ufbtns"><span class="ufmsg"></span>' +
@@ -5718,11 +5912,11 @@
     var bd = v('.kf-basedate'), td = v('.kf-tgtdate');
     var base = {
       secondary: 0, project_id: null,
-      name: name, type: v('.kf-type'), unit: v('.kf-unit'), direction: v('.kf-dir'),
-      baseline_value: num(v('.kf-base')) || 0, baseline_year: bd ? +bd.slice(0, 4) : 2025, baseline_date: bd || '2025-01-01',
-      target_value: num(v('.kf-tgt')), target_year: td ? +td.slice(0, 4) : 2027, target_date: td || '2027-12-31',
-      means_of_verification: v('.kf-mov').trim(), collection_method: v('.kf-method'),
-      frequency: v('.kf-freq'), responsible_id: v('.kf-resp') ? +v('.kf-resp') : null, disaggregation: v('.kf-disag')
+      name: name, type_id: +v('.kf-type'), unit_id: +v('.kf-unit'), direction_id: +v('.kf-dir'),
+      baseline_value: num(v('.kf-base')) || 0, baseline_year: +(bd || defaultBaselineDate()).slice(0, 4), baseline_date: bd || defaultBaselineDate(),
+      target_value: num(v('.kf-tgt')), target_year: +(td || defaultTargetDate()).slice(0, 4), target_date: td || defaultTargetDate(),
+      means_of_verification: v('.kf-mov').trim(), collection_method_id: +v('.kf-method'),
+      frequency_id: +v('.kf-freq'), responsible_id: v('.kf-resp') ? +v('.kf-resp') : null, disaggregation_id: +v('.kf-disag')
     };
     // one indicator per country instance of the chosen Output (code auto-generated)
     var rows = outputs.map(function (out){ var r = {}; for (var k in base) r[k] = base[k]; r.result_id = out.id; return r; });
@@ -5751,23 +5945,51 @@
     name = String(name||'').toLowerCase();
     return DB.tables.user.some(function (u){ return u.username.toLowerCase() === name && u.id !== exceptId; });
   }
-  function userScopeText(u){
-    if (userSection(u) === 'co') return (u.country_iso3 || '') + (u.region ? ' · ' + regionShort(u.region) : '');
-    return 'Section';
+  // The entities a user is ASSIGNED to: the rows of their affiliation's category
+  // that carry them as Lead. A Countries-affiliated user is assigned to countries
+  // exactly like a Donor-affiliated user is assigned to donors - the same
+  // relation, read from the category table's lead_id / owner_id, never stored on
+  // the user row itself.
+  function userAssignments(u){
+    var key = userAffKey(u), out = [], seen = {};
+    if (!u || !key) return out;
+    function add(lbl){ if (lbl && !seen[lbl]){ seen[lbl] = 1; out.push(lbl); } }
+    if (key === 'plan') allPlans().forEach(function (p){ if (p.lead_id === u.id) add(p.name); });
+    else if (key === 'impact' || key === 'outcome' || key === 'output')
+      DB.tables.result.forEach(function (r){ if (r.level === key && r.owner_id === u.id) add(r.code || r.statement); });   // country instances share a code → dedupe
+    else if (key === 'project') DB.tables.project.forEach(function (p){ if (p.lead_id === u.id) add(p.code || p.name); });
+    else if (key === 'donor') DB.tables.donor.forEach(function (d){ if (d.lead_id === u.id) add(d.short_name || d.name); });
+    else if (key === 'region') DB.tables.region.forEach(function (r){ if (r.lead_id === u.id) add(r.name); });
+    else if (key === 'country') userCountryIsos(u).forEach(add);
+    return out;
   }
+  // singular / plural category noun for the count display
+  var AFF_NOUN = {
+    plan:['Plan','Plans'], impact:['Impact','Impacts'], outcome:['Outcome','Outcomes'],
+    output:['Output','Outputs'], project:['Project','Projects'], donor:['Donor','Donors'],
+    region:['Region','Regions'], country:['Country','Countries']
+  };
+  // count only, never names - e.g. '1 Plan', '2 Impacts', '7 Projects'
+  function userAssignedText(u){
+    var n = userAssignments(u).length;
+    if (!n) return '–';
+    var noun = AFF_NOUN[userAffKey(u)] || ['item','items'];
+    return n + ' ' + (n === 1 ? noun[0] : noun[1]);
+  }
+  function userAffSeq(u){ var a = affiliationOf(u); return a ? (a.seq || 0) : 99; }
 
   function usersEditor(){
     var box = el('div', 'cp-users');
-    box.appendChild(el('div', 'cp-note', 'Create users, set their Section and Status, reset passwords, and enable/disable access. Adding or editing a user opens a focused dialog. Status sets permissions - Admin: full control · User: log activities within scope · Viewer: read-only. Disabled users cannot log in. (Demo passwords are stored locally - not real security.)'));
+    box.appendChild(el('div', 'cp-note', 'Create and manage users. Affiliation sets which Lead role a user can hold (a Donor Lead comes from Donor-affiliated users); the Assigned column counts what they Lead. Status sets permissions - Admin: full control · User: log activities · Viewer: read-only. (Demo passwords are stored locally - not real security.)'));
     var addBtn = el('button', 'hbtn primary cp-adduser', '＋ Add user');
     addBtn.onclick = function (){ openUserEdit(null); };
     box.appendChild(addBtn);
     var tbl = el('table', 'utbl');
-    tbl.innerHTML = '<thead><tr><th>Name</th><th>Username</th><th>Section</th><th>Status</th><th>Scope</th><th>Access</th><th></th></tr></thead>';
+    tbl.innerHTML = '<thead><tr><th>Name</th><th>Username</th><th>Affiliation</th><th>Status</th><th>Assigned</th><th>Access</th><th></th></tr></thead>';
     var tb = el('tbody');
     var order = { admin:0, user:1, viewer:2 };
     DB.tables.user.slice().sort(function (a,b){
-      return (order[userStatus(a)]-order[userStatus(b)]) || (userSection(a) < userSection(b) ? -1 : userSection(a) > userSection(b) ? 1 : (a.name < b.name ? -1 : 1));
+      return (order[userStatus(a)]-order[userStatus(b)]) || (userAffSeq(a)-userAffSeq(b)) || (a.name < b.name ? -1 : 1);
     }).forEach(function (u){ tb.appendChild(userRow(u)); });
     tbl.appendChild(tb); box.appendChild(tbl);
     return box;
@@ -5779,9 +6001,9 @@
     tr.innerHTML =
       '<td>' + dot + esc(u.name) + '</td>' +
       '<td class="umono">' + esc(u.username) + (u.email ? '<div class="comm-email">' + esc(u.email) + '</div>' : '') + '</td>' +
-      '<td>' + esc(SECTION_LABEL[userSection(u)] || '') + '</td>' +
+      '<td>' + esc(userAffName(u)) + '</td>' +
       '<td><span class="ustatus ' + userStatus(u) + '">' + esc(STATUS_LABEL[userStatus(u)] || '') + '</span></td>' +
-      '<td class="umono">' + esc(userScopeText(u)) + '</td>' +
+      '<td class="umono">' + esc(userAssignedText(u)) + '</td>' +
       '<td><span class="ustat ' + (u.enabled ? 'on' : 'off') + '">' + (u.enabled ? 'Enabled' : 'Disabled') + '</span></td>';
     var act = el('td', 'uact');
     var edit = el('button', 'cp-mini', 'Edit'); edit.onclick = function (){ openUserEdit(u); };
@@ -5797,7 +6019,6 @@
   function userForm(u){
     var isNew = !u;
     var f = el('div', 'uform');
-    var regionOpts = REGION_ORDER.map(function (rg){ return '<option value="' + esc(rg) + '"' + (u && u.region === rg ? ' selected' : '') + '>' + esc(regionFull(rg)) + '</option>'; }).join('');
     f.innerHTML =
       '<div class="uform-h">' + (isNew ? '＋ Add user' : 'Edit user') + '</div>' +
       '<div class="ufgrid">' +
@@ -5805,14 +6026,10 @@
       '  <label><span>Username *</span><input class="uf-user" type="text" value="' + esc(u ? u.username : '') + '"></label>' +
       '  <label><span>Email</span><input class="uf-email" type="email" value="' + esc(u && u.email ? u.email : '') + '" placeholder="name@example.org"></label>' +
       '  <label><span>' + (isNew ? 'Password *' : 'Reset password') + '</span><input class="uf-pass" type="text" placeholder="' + (isNew ? '' : 'leave blank to keep') + '" value=""></label>' +
-      '  <label><span>Section *</span><select class="uf-section">' +
-          [['hq', SECTION_LABEL.hq], ['co', SECTION_LABEL.co]].map(function (rl){ var cur = u ? userSection(u) : 'co'; return '<option value="' + rl[0] + '"' + (cur === rl[0] ? ' selected' : '') + '>' + rl[1] + '</option>'; }).join('') +
-        '</select></label>' +
+      '  <label><span>Affiliation *</span><select class="uf-aff">' + affiliationSelectOptions(u) + '</select></label>' +
       '  <label><span>Status *</span><select class="uf-status">' +
-          [['admin', STATUS_LABEL.admin], ['user', STATUS_LABEL.user], ['viewer', STATUS_LABEL.viewer]].map(function (rl){ var cur = u ? userStatus(u) : 'user'; return '<option value="' + rl[0] + '"' + (cur === rl[0] ? ' selected' : '') + '>' + rl[1] + '</option>'; }).join('') +
+          lookupOptions('user_status', u ? u.status_id : null, u ? userStatus(u) : 'user') +
         '</select></label>' +
-      '  <label class="uf-reg-wrap"><span>Region</span><select class="uf-region">' + regionOpts + '</select></label>' +
-      '  <label class="uf-cty-wrap"><span>Country</span><select class="uf-country"></select></label>' +
       '  <label class="uf-en"><span>Access</span><select class="uf-enabled"><option value="1"' + ((!u || u.enabled) ? ' selected' : '') + '>Enabled</option><option value="0"' + (u && !u.enabled ? ' selected' : '') + '>Disabled</option></select></label>' +
       '</div>' +
       '<div class="cp-note uf-statusnote"></div>' +
@@ -5820,48 +6037,56 @@
         '<button class="hbtn uf-cancel" type="button">Cancel</button>' +
         '<button class="hbtn primary uf-save" type="button">' + (isNew ? 'Create user' : 'Save changes') + '</button></div>';
 
-    var sectionSel = f.querySelector('.uf-section'), statusSel = f.querySelector('.uf-status');
-    var regionSel = f.querySelector('.uf-region'), countrySel = f.querySelector('.uf-country');
-    function fillCountries(){
-      var rg = regionSel.value;
-      countrySel.innerHTML = '<option value="">–</option>' + DB.tables.country
-        .filter(function (c){ return c.region === rg; }).sort(function (a,b){ return a.name < b.name ? -1 : 1; })
-        .map(function (c){ return '<option value="' + c.iso3 + '"' + (u && u.country_iso3 === c.iso3 ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('');
-    }
-    // Region/Country apply only to a Country Office section.
-    function syncScope(){ var isCO = sectionSel.value === 'co'; f.querySelector('.uf-reg-wrap').style.display = isCO ? '' : 'none'; f.querySelector('.uf-cty-wrap').style.display = isCO ? '' : 'none'; }
+    var affSel = f.querySelector('.uf-aff'), statusSel = f.querySelector('.uf-status');
     var STATUS_NOTE = {
       admin:'Admin - full control: manage users, edit the framework & KPIs, and log activities for any country.',
-      user:'User - can log activities within scope (Section: all countries; Country Office: its own country). No user or framework administration.',
+      user:'User - can log activities (Countries-affiliated users: only for their assigned countries; every other affiliation: any country). No user or framework administration.',
       viewer:'Viewer - read-only. Cannot log activities or edit anything.'
     };
-    function syncStatusNote(){ f.querySelector('.uf-statusnote').textContent = STATUS_NOTE[statusSel.value] || ''; }
-    regionSel.onchange = fillCountries; sectionSel.onchange = syncScope; statusSel.onchange = syncStatusNote;
-    fillCountries(); syncScope(); syncStatusNote();
+    // the select's values are user_status IDs - resolve to the key for the note
+    function syncStatusNote(){ var r = lkRow('user_status', +statusSel.value); f.querySelector('.uf-statusnote').textContent = (r && STATUS_NOTE[r.key]) || ''; }
+    statusSel.onchange = syncStatusNote;
+    syncStatusNote();
 
     f.querySelector('.uf-cancel').onclick = function (){ closeUserEdit(); };
     f.querySelector('.uf-save').onclick = function (){
       var name = f.querySelector('.uf-name').value.trim(), uname = f.querySelector('.uf-user').value.trim();
       var email = f.querySelector('.uf-email').value.trim();
-      var pass = f.querySelector('.uf-pass').value, section = sectionSel.value, status = statusSel.value;
+      var pass = f.querySelector('.uf-pass').value, statusId = statusSel.value ? +statusSel.value : null;
+      var affId = affSel.value ? +affSel.value : null;   // affiliation reference by id
       var msg = f.querySelector('.ufmsg');
       if (!name || !uname) { msg.textContent = 'Name and username are required.'; return; }
       if (usernameTaken(uname, u ? u.id : -1)) { msg.textContent = 'That username is already taken.'; return; }
       if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent = 'Enter a valid email address.'; return; }
       if (isNew && !pass) { msg.textContent = 'Set an initial password.'; return; }
-      var region = section === 'co' ? regionSel.value : null;
-      var iso = section === 'co' ? (countrySel.value || null) : null;
+      if (affId == null) { msg.textContent = 'Pick an affiliation.'; return; }
       var enabled = +f.querySelector('.uf-enabled').value;
       if (isNew) {
-        applyUserMutation(DB.insert('user', { username: uname, name: name, email: email || null, password: pass, section: section, status: status,
-          region: region, country_iso3: iso, enabled: enabled, created: new Date(TODAY).toISOString().slice(0,10) }));
+        applyUserMutation(DB.insert('user', { username: uname, name: name, email: email || null, password: pass, affiliation_id: affId, status_id: statusId,
+          enabled: enabled, created: new Date(TODAY).toISOString().slice(0,10) }));
       } else {
-        u.name = name; u.username = uname; u.email = email || null; u.section = section; u.status = status; u.region = region; u.country_iso3 = iso; u.enabled = enabled;
+        u.name = name; u.username = uname; u.email = email || null; u.affiliation_id = affId; u.status_id = statusId; u.enabled = enabled;
+        delete u.status;    // legacy text column, superseded by status_id
+        delete u.section;   // legacy hq/co column, superseded by affiliation_id
+        delete u.region; delete u.country_iso3;   // legacy scope columns - scope now = the countries the user Leads
         if (pass) u.password = pass;
         applyUserMutation(DB.persist('user', [u]));
       }
     };
     return f;
+  }
+  // <option>s for the Affiliation select (value = affiliation id - selections
+  // always persist the entity id, never a name). New users default to Countries,
+  // mirroring the old default of a country-office section.
+  function affiliationSelectOptions(u){
+    var cur = (function (){
+      var a = affiliationOf(u); if (a) return a.id;
+      var c = affByKey('country');
+      if (u) return u.section === 'co' && c ? c.id : null;   // legacy row fallback
+      return c ? c.id : null;
+    })();
+    return DB.tables.affiliation.slice().sort(function (a, b){ return (a.seq || 0) - (b.seq || 0); })
+      .map(function (a){ return '<option value="' + a.id + '"' + (a.id === cur ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('');
   }
 
   // =========================================================================
@@ -6121,7 +6346,7 @@
         '  <label><span>End date</span><input class="pl-end" type="date"></label>' +
         '</div>' +
         '<div class="ufgrid" style="grid-template-columns:1fr">' +
-        '  <label><span>Lead</span><select class="pl-lead">' + userOptions(isEdit && plan.lead_id != null ? +plan.lead_id : null, ['hq','co']) + '</select></label>' +
+        '  <label><span>Lead</span><select class="pl-lead">' + userOptions(isEdit && plan.lead_id != null ? +plan.lead_id : null, 'plan') + '</select></label>' +
         '  <label><span>Description</span><textarea class="pl-desc" rows="3" placeholder="What this plan covers"></textarea></label>' +
         '</div>' + fwButtons(isEdit ? 'Save changes' : 'Create plan');
       if (isEdit){
@@ -6286,7 +6511,15 @@
   // Panel editor) so a given measure reads as the same colour across the app.
   function benColor(id){ return catColor(benTypeName(id)); }
   // Latest-update month of a KPI as "MM-YYYY" (chronological sort via mmKey).
-  function mmYYYY(d){ var dt = new Date(d); if (isNaN(dt)) return null; var m = dt.getMonth() + 1; return (m < 10 ? '0' + m : m) + '-' + dt.getFullYear(); }
+  // ISO date strings are read verbatim - `new Date('YYYY-MM-DD')` is UTC midnight,
+  // so local getMonth() shifted every 1st-of-month date into the PREVIOUS month
+  // for any user west of UTC.
+  function mmYYYY(d){
+    var iso = /^(\d{4})-(\d{2})/.exec(String(d));
+    if (iso) return iso[2] + '-' + iso[1];
+    var dt = new Date(d); if (isNaN(dt)) return null;
+    var m = dt.getMonth() + 1; return (m < 10 ? '0' + m : m) + '-' + dt.getFullYear();
+  }
   function mmKey(s){ var p = String(s).split('-'); return (+p[1]) * 100 + (+p[0]); }   // "MM-YYYY" -> YYYYMM
   // ---- Budget levels (insights dimension) ---------------------------------
   // A KPI's budget is its primary project's funding. We quartile the DISTINCT
@@ -6546,7 +6779,9 @@
   var FC_MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var FC_COL = { hi:'#16a34a', mid:'#2563eb', lo:'#ef4444' };
 
-  function fcMi(ms){ var d = new Date(ms); return d.getFullYear() * 12 + d.getMonth(); }
+  // UTC getters: measurement dates parse to UTC midnight, so local getters would
+  // bucket every 1st-of-month report into the previous month west of UTC.
+  function fcMi(ms){ var d = new Date(ms); return d.getUTCFullYear() * 12 + d.getUTCMonth(); }
   function fcNowMi(){ return fcMi(TODAY.getTime()); }
   function fcMiLab(mi){ return FC_MONS[((mi % 12) + 12) % 12] + ' ' + String(Math.floor(mi / 12)).slice(2); }
   function fcMiFull(mi){ return FC_MONS[((mi % 12) + 12) % 12] + ' ' + Math.floor(mi / 12); }
@@ -6580,13 +6815,13 @@
     var series = r.series || [];
     if (!series.length) return { nodata: true };
     var span = t - b;
-    var startY = ind.baseline_year || 2025, endY = ind.target_year || (startY + 2);
-    var m0 = fcMi(ind.baseline_date ? Date.parse(ind.baseline_date) : new Date(startY, 0, 1).getTime());
-    var mEnd = fcMi(ind.target_date ? Date.parse(ind.target_date) : new Date(endY, 11, 31).getTime());
+    var yrs = kpiWindowYears(ind);
+    var m0 = fcMi(ind.baseline_date ? Date.parse(ind.baseline_date) : Date.UTC(yrs.start, 0, 1));
+    var mEnd = fcMi(ind.target_date ? Date.parse(ind.target_date) : Date.UTC(yrs.end, 11, 31));
     if (mEnd <= m0) mEnd = m0 + 1;
     var mNow = Math.max(fcNowMi(), m0);
     // monthly achievement positions from the baseline month to now (carry-forward)
-    var acc = ind.unit === 'count', sumBy = {}, lvlBy = {};
+    var acc = kpiUnit(ind) === 'count', sumBy = {}, lvlBy = {};
     series.forEach(function (m){
       var mi = fcMi(Date.parse(m.date)); if (!isFinite(mi)) return;
       if (acc) sumBy[mi] = (sumBy[mi] || 0) + (+m.value || 0);
@@ -6612,21 +6847,31 @@
     };
   }
 
-  /** Scenario position of one KPI at month mi. Frozen past its own plan end. */
+  /** Scenario position of one KPI at month mi. Frozen past its own plan end -
+   *  and never projected BACKWARDS: a KPI whose target month already passed
+   *  (mEnd < mNow) holds its current position instead of extrapolating a
+   *  negative month delta (which inverted best/worst and understated it). */
   function fcAt(f, which, mi){
-    var m = Math.min(mi, Math.max(f.mEnd, f.mNow));
+    var m = Math.max(f.mNow, Math.min(mi, Math.max(f.mEnd, f.mNow)));
     var sl = which === 'hi' ? f.slopeHi : which === 'lo' ? f.slopeLo : f.slope;
     return fcClamp(f.a0 + sl * (m - f.mNow));
   }
 
   // ---- entities: the six dimensions -----------------------------------------
-  function fcEntity(key, label, sub, color, members){
-    var fcs = [], nodata = 0;
+  // projFilter (optional): predicate limiting which linked projects count toward
+  // nProj - shared KPIs can be linked to projects outside the entity (e.g. a
+  // KPI two donors co-fund), and those must not inflate the entity's tally.
+  function fcEntity(key, label, sub, color, members, projFilter){
+    var fcs = [], nodata = 0, pset = {};
     members.forEach(function (r){
       var f = kpiForecast(r);
       if (f && f.ok) fcs.push(f); else if (f && f.nodata) nodata++;
+      (r.projectIds || []).forEach(function (pid){
+        if (!projFilter || projFilter(DB._idx.projectById[pid])) pset[pid] = 1;
+      });
     });
-    return { key: key, label: label, sub: sub, color: color, n: members.length, fcs: fcs, nodataN: nodata };
+    return { key: key, label: label, sub: sub, color: color, n: members.length,
+             nProj: Object.keys(pset).length, fcs: fcs, nodataN: nodata };
   }
 
   function fcHorizonMi(ent){
@@ -6745,8 +6990,9 @@
       Object.keys(byDon).forEach(function (idS){
         var d = DB._idx.donorById[+idS];
         ents.push(fcEntity('donor:' + idS, d ? d.name : 'Donor ' + idS,
-          d ? (d.short_name ? d.short_name + ' · ' : '') + cap(d.type || '') + (d.type ? ' donor' : '') : '',
-          (d && d.color) || '#94a3b8', byDon[idS]));
+          d ? (d.short_name ? d.short_name + ' · ' : '') + donorType(d) + (donorType(d) ? ' donor' : '') : '',
+          (d && d.color) || '#94a3b8', byDon[idS],
+          function (p){ return p && p.donor_id === +idS; }));
       });
     } else if (S.fcDim === 'regions'){
       var byReg = {};
@@ -6756,18 +7002,22 @@
         g.rows.push(r);
         if (r.iso) g.isos[r.iso] = 1;
       });
-      REGION_ORDER.concat(Object.keys(byReg)).forEach(function (reg){
+      regionNames().concat(Object.keys(byReg)).forEach(function (reg){
         var g = byReg[reg]; if (!g || g.done) return; g.done = true;
         var nCo = Object.keys(g.isos).length;
         ents.push(fcEntity('region:' + reg, reg, nCo + (nCo === 1 ? ' country' : ' countries'),
-          regionColor(reg), g.rows));
+          regionColor(reg), g.rows,
+          // membership by the PROJECT's own region - a shared KPI can be linked to
+          // a project in a sister country that contributed no KPI row of its own
+          function (p){ var c = p && DB._idx.countryByIso[p.country_iso3]; return !!(c && c.region === reg); }));
       });
     } else {   // countries
       var byIso = {};
       rows.forEach(function (r){ if (r.iso) (byIso[r.iso] = byIso[r.iso] || []).push(r); });
       Object.keys(byIso).forEach(function (iso){
         var co = DB._idx.countryByIso[iso];
-        ents.push(fcEntity('country:' + iso, co ? co.name : iso, co ? co.region : '', countryColor(iso), byIso[iso]));
+        ents.push(fcEntity('country:' + iso, co ? co.name : iso, co ? co.region : '', countryColor(iso), byIso[iso],
+          function (p){ return p && p.country_iso3 === iso; }));
       });
     }
     ents.forEach(fcCompute);
@@ -7065,7 +7315,8 @@
     if (!ents.length){ card.appendChild(el('div', 'empty', 'Nothing to forecast under the current filters.')); return card; }
     var tbl = el('table', 'fc-tbl');
     var thead = el('thead'), hr = el('tr');
-    [[FC_SING[S.fcDim] || 'Entity',''],['KPIs','num'],['Now','num'],['Trend',''],['Outlook',''],['Realistic','num'],['Projected status',''],['Pace','num'],['Target by','num']]
+    var cntCol = S.fcDim === 'projects' ? 'KPIs' : 'Projects';
+    [[FC_SING[S.fcDim] || 'Entity',''],[cntCol,'num'],['Now','num'],['Trend',''],['Outlook',''],['Realistic','num'],['Projected status',''],['Pace','num'],['Target by','num']]
       .forEach(function (c){ hr.appendChild(el('th', c[1] || null, c[0])); });
     thead.appendChild(hr); tbl.appendChild(thead);
     var tbody = el('tbody');
@@ -7078,7 +7329,7 @@
       var nm = el('span', 'nm', truncTxt(e.label, 52)); nm.title = e.label; td.appendChild(nm);
       if (e.sub) td.appendChild(el('span', 'sub', truncTxt(e.sub, 48)));
       tr.appendChild(td);
-      tr.appendChild(el('td', 'num', fmt(e.n)));
+      tr.appendChild(el('td', 'num', fmt(S.fcDim === 'projects' ? e.n : e.nProj)));
       tr.appendChild(el('td', 'num', fcPct(e.aNow)));
       var sp = el('td', 'spark'); sp.innerHTML = fcSparkSvg(e); tr.appendChild(sp);
       var ol = el('td', 'outlook'); ol.innerHTML = fcRangeBar(e); tr.appendChild(ol);
@@ -7332,8 +7583,10 @@
     // project briefs) also drops the KPI-count column - a count of 1 says nothing.
     var hasLate = false;
     var perKpi = opts.entityLabel === 'KPI';
+    // project rows count their KPIs; every other dimension counts its projects
+    var showProj = !perKpi && S.fcDim !== 'projects';
     var cols = [
-      { t: opts.entityLabel || FC_SING[S.fcDim] || 'Entity' }, { t: 'KPIs', align: 'right' },
+      { t: opts.entityLabel || FC_SING[S.fcDim] || 'Entity' }, { t: showProj ? 'Projects' : 'KPIs', align: 'right' },
       { t: 'Now', align: 'right' },
       { t: 'Realistic', align: 'right' }, { t: 'Worst - best', align: 'right' },
       { t: 'Status' }, { t: 'Pace', align: 'right' }, { t: 'Target by', align: 'right' }
@@ -7347,7 +7600,8 @@
       else if (e.paceX == null) pace = 'stalled';
       else {
         pace = '×' + (e.paceX >= 10 ? Math.round(e.paceX) : e.paceX.toFixed(1));
-        paceCol = e.paceX > 2 ? STATUS.red.c : e.paceX > 1.15 ? STATUS.amber.c : STATUS.green.c;
+        // same tiers as the on-screen table, including the blue "faster than needed"
+        paceCol = e.paceX > 2 ? STATUS.red.c : e.paceX > 1.15 ? STATUS.amber.c : e.paceX < 0.85 ? STATUS.blue.c : STATUS.green.c;
       }
       var eta;
       if (e.aNow != null && e.aNow >= 1) eta = 'done';
@@ -7355,7 +7609,7 @@
       else { eta = fcMiLab(e.etaMi); if (e.mEnd != null && e.etaMi > e.mEnd){ eta += ' *'; hasLate = true; } }
       var cells = [
         { t: e.label + (e.sub ? '  ·  ' + e.sub : ''), dot: e.color },
-        { t: fmt(e.n) }, { t: fcPct(e.aNow) },
+        { t: fmt(showProj ? e.nProj : e.n) }, { t: fcPct(e.aNow) },
         { t: fcPct(e.aR), color: e.aR == null ? null : st.c },
         { t: e.aR == null ? '–' : fcPct(e.aW) + ' – ' + fcPct(e.aB) },
         { t: st.label, tag: { bg: st.c, fg: '#ffffff' } },
@@ -7607,6 +7861,7 @@
       syncBasisToggles();
       applyBasis();          // rebind KPI + result status to the new basis
       buildProjects();       // re-roll project status too - the map colours bubbles from projStat()
+      buildActivities();     // ACTS snapshot each KPI's status - re-snap or activity-basis counts keep the old basis
       renderAll();           // bubbles, list, facets, ticker all follow the basis
       persist();             // remember the chosen basis
     };
@@ -7857,7 +8112,7 @@
     add('KPI type', names(S.selType, function (t){ return cap(t); }));
     add('Project beneficiaries', names(S.selBenType, function (id){ return benTypeName(id); }));
     add('KPI inventory', names(S.selKpi, function (n){ return n; }));
-    add('Logged by', names(S.selUser, function (id){ var u = userById(id); return u ? u.name : null; }));
+    add('User groups', names(S.selUser, function (id){ var u = userById(id); return u ? u.name : null; }));
     if (S.qList) add('Search', ['"' + S.qList + '"']);
     return out;
   }
@@ -8072,13 +8327,18 @@
     var st = curStatus();
     if (st === 'viewer') return false;          // read-only
     if (st === 'admin') return true;            // report anywhere
-    // status 'user': the central Section reports on any country; a country office on its own only
+    // status 'user': central affiliations report on any country; a Countries-
+    // affiliated user only on the countries they Lead
     if (curSection() === 'hq') return true;
-    return !!(r && r.programme && r.programme.country_iso3 === CURRENT_USER.country_iso3);
+    return !!(r && r.programme && userCountryIsos(CURRENT_USER).indexOf(r.programme.country_iso3) >= 0);
   }
 
+  // account-menu identity line: affiliation, plus the user's assignments when
+  // they have any - e.g. 'Countries · KEN' or 'Donors · EU, WB' (uniform across
+  // every category; nothing scope-specific)
   function userScopeLabel(u){
-    return userSection(u) === 'co' ? (u.country_iso3 || 'CO') : 'Section';
+    var t = userAssignedText(u);
+    return userAffName(u) + (t !== '–' ? ' · ' + t : '');
   }
   function renderUserChip(){
     var chip = $('#userChip'); if (!chip || !CURRENT_USER) return;
@@ -8114,8 +8374,8 @@
     out.onclick = function (){ closeUserMenu(); doLogout(); };
     m.appendChild(out);
   }
-  // Self-service profile editor - name, username, email, password. Section and
-  // Status stay admin-controlled, so they are not shown here.
+  // Self-service profile editor - name, username, email, password. Affiliation
+  // and Status stay admin-controlled, so they are not shown here.
   function openProfileEdit(){
     if (!CURRENT_USER) return;
     var body = $('#userEditBody'); body.innerHTML = '';
@@ -8135,7 +8395,7 @@
       '  <label><span>New password</span><input class="pf-pass" type="password" placeholder="leave blank to keep" value=""></label>' +
       '  <label><span>Confirm password</span><input class="pf-pass2" type="password" placeholder="repeat new password" value=""></label>' +
       '</div>' +
-      '<div class="cp-note">Your Section and Status are set by an administrator.</div>' +
+      '<div class="cp-note">Your Affiliation and Status are set by an administrator.</div>' +
       '<div class="ufbtns"><span class="ufmsg"></span>' +
         '<button class="hbtn uf-cancel" type="button">Cancel</button>' +
         '<button class="hbtn primary uf-save" type="button">Save changes</button></div>';
@@ -8180,7 +8440,7 @@
   // the markup - otherwise the hint tells one build's users the other's login.
   function renderLoginHint(){
     var el = $('.lg-hint'); if (!el) return;
-    var owner = ((DB.tables && DB.tables.user) || []).filter(function(u){ return u.status === 'admin'; })[0];
+    var owner = ((DB.tables && DB.tables.user) || []).filter(function(u){ return userStatus(u) === 'admin'; })[0];
     if (!owner) return;
     el.innerHTML = "Demo access - each user's password is their username. Owner: <b>" +
                    esc(owner.username) + "</b> / <b>" + esc(owner.username) + "</b>.";
@@ -8209,14 +8469,15 @@
   // Reconcile country → region assignments from the (authoritative) seed onto any
   // previously-persisted IndexedDB data, so region taxonomy changes - e.g. the move
   // from UN Regional Offices to geographic continents - reach existing browsers
-  // without a manual data reset. Programmes, projects and country-office users all carry a
-  // denormalised region derived from their country; each is realigned here.
+  // without a manual data reset. Programmes and projects carry a denormalised
+  // region derived from their country; each is realigned here. (Users carry no
+  // region/country - their scope derives from country.lead_id.)
   // Countries are never edited in-app, so this is always safe.
   function reconcileRegions() {
     var seed = (window.SEED && window.SEED.country) || [];
     if (!seed.length) return Promise.resolve();
     var regionByIso = {}; seed.forEach(function (c) { regionByIso[c.iso3] = c.region; });
-    var cChanged = [], pChanged = [], prjChanged = [], uChanged = [];
+    var cChanged = [], pChanged = [], prjChanged = [];
     DB.tables.country.forEach(function (c) {
       var rg = regionByIso[c.iso3];
       if (rg && c.region !== rg) { c.region = rg; cChanged.push(c); }
@@ -8229,17 +8490,11 @@
       var rg = regionByIso[pr.country_iso3];
       if (rg && pr.region !== rg) { pr.region = rg; prjChanged.push(pr); }
     });
-    DB.tables.user.forEach(function (usr) {
-      if (userSection(usr) !== 'co' || !usr.country_iso3) return;
-      var rg = regionByIso[usr.country_iso3];
-      if (rg && usr.region !== rg) { usr.region = rg; uChanged.push(usr); }
-    });
     _countryShade = null;   // region membership may have shifted → recolour
     var jobs = [];
     if (cChanged.length) jobs.push(DB.persist('country', cChanged));
     if (pChanged.length) jobs.push(DB.persist('programme', pChanged));
     if (prjChanged.length) jobs.push(DB.persist('project', prjChanged));
-    if (uChanged.length) jobs.push(DB.persist('user', uChanged));
     return Promise.all(jobs);
   }
 
@@ -8248,8 +8503,9 @@
   function reconcileKpiDates() {
     var changed = [];
     DB.tables.indicator.forEach(function (i) {
-      var bd = i.baseline_date || ((i.baseline_year || 2025) + '-01-01');
-      var td = i.target_date || ((i.target_year || 2027) + '-12-31');
+      var yrs = kpiWindowYears(i);   // the KPI's own plan window, not a fixed year
+      var bd = i.baseline_date || (yrs.start + '-01-01');
+      var td = i.target_date || (yrs.end + '-12-31');
       if (i.baseline_date !== bd || i.target_date !== td) { i.baseline_date = bd; i.target_date = td; changed.push(i); }
     });
     return changed.length ? DB.persist('indicator', changed) : Promise.resolve();
@@ -8272,6 +8528,60 @@
     return changed.length ? DB.persist('beneficiary_type', changed) : Promise.resolve();
   }
 
+  // Migrate any row still carrying a legacy TEXT list value onto the reference
+  // lookups: seed the lookup tables from window.SEED when a cached DB predates
+  // them, upsert a row for any unknown legacy value, stamp the *_id, and drop
+  // the text column. After this, every list selection lives as an id.
+  function reconcileLookups() {
+    var jobs = [];
+    // a cached pre-lookup DB has empty lookup stores - fill them from the seed
+    var LK = ['unit', 'frequency', 'collection_method', 'disaggregation', 'kpi_type', 'direction', 'donor_type', 'user_status'];
+    LK.forEach(function (t) {
+      if (!DB.tables[t].length && window.SEED && (window.SEED[t] || []).length) {
+        jobs.push(DB.insert(t, window.SEED[t].map(function (r) { return JSON.parse(JSON.stringify(r)); })));
+      }
+    });
+    return Promise.all(jobs).then(function () {
+      function idFor(table, text) {           // find-or-create by key OR name
+        var hit = null;
+        DB.tables[table].forEach(function (r) { if (r.key === text || r.name === text) hit = r; });
+        if (hit) return Promise.resolve(hit.id);
+        return DB.insert(table, { key: text, name: text, seq: DB.tables[table].length + 1 })
+          .then(function (rows) { return rows[0].id; });
+      }
+      function migrate(rows, table, field, idField) {
+        var out = Promise.resolve(), changed = [];
+        rows.forEach(function (r) {
+          if (r[idField] != null || r[field] == null || r[field] === '') return;
+          out = out.then(function () { return idFor(table, r[field]); })
+                   .then(function (id) { r[idField] = id; delete r[field]; changed.push(r); });
+        });
+        return out.then(function () { return changed; });
+      }
+      var inds = DB.tables.indicator;
+      return migrate(inds, 'unit', 'unit', 'unit_id')
+        .then(function (c1) { return migrate(inds, 'kpi_type', 'type', 'type_id').then(function (c2) { return c1.concat(c2); }); })
+        .then(function (c) { return migrate(inds, 'direction', 'direction', 'direction_id').then(function (c2) { return c.concat(c2); }); })
+        .then(function (c) { return migrate(inds, 'frequency', 'frequency', 'frequency_id').then(function (c2) { return c.concat(c2); }); })
+        .then(function (c) { return migrate(inds, 'collection_method', 'collection_method', 'collection_method_id').then(function (c2) { return c.concat(c2); }); })
+        .then(function (c) { return migrate(inds, 'disaggregation', 'disaggregation', 'disaggregation_id').then(function (c2) { return c.concat(c2); }); })
+        .then(function (indChanged) {
+          var more = [];
+          if (indChanged.length) more.push(DB.persist('indicator', dedupeRows(indChanged)));
+          return Promise.all(more);
+        })
+        .then(function () { return migrate(DB.tables.donor, 'donor_type', 'type', 'type_id'); })
+        .then(function (c) { return c.length ? DB.persist('donor', c) : null; })
+        .then(function () { return migrate(DB.tables.user, 'user_status', 'status', 'status_id'); })
+        .then(function (c) { return c.length ? DB.persist('user', c) : null; });
+    });
+    function dedupeRows(rows) {
+      var seen = {}, out = [];
+      rows.forEach(function (r) { if (!seen[r.id]) { seen[r.id] = 1; out.push(r); } });
+      return out;
+    }
+  }
+
   // =========================================================================
   //  BOOT
   // =========================================================================
@@ -8280,6 +8590,8 @@
     reconcileRegions();   // pull region taxonomy fixes onto any cached data
     reconcileKpiDates();  // backfill exact baseline/target dates
     reconcileBenTypeDescriptions();  // backfill measure descriptions onto cached data
+    return reconcileLookups();       // legacy text list values -> lookup ids
+  }).then(function () {
     enrich();
     drawBase();
     initMapInteractions();
@@ -8629,7 +8941,7 @@
     filters.forEach(function (g){
       var lbl = (g.label || '').toUpperCase();
       var lw = doc.textW(lbl, labelF, true) + 8;
-      var vw = AW - padX * 2 - lw;
+      var vw = AW - padX * 2 - lw - 5;   // 5 = the accent-rule indent the draw below adds
       var wrapped = doc.wrap(g.values.join(', '), vw, valF, false);
       wrapped.forEach(function (t, i){ lines.push({ label: i === 0 ? lbl : '', lw: lw, text: t }); });
     });
