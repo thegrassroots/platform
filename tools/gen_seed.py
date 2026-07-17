@@ -663,7 +663,7 @@ impact_pool  = _add_pool("impact",  ["Ingrid Solberg","Mateo Vidal","Lucia Roman
 outcome_pool = _add_pool("outcome", ["Tomas Keller","Aisha Bello","Farid Qureshi","Selin Yilmaz",
                                      "Diego Morales","Amara Okoye","Kenji Sato","Carmen Vega"])
 project_pool = _add_pool("project", ["Lena Fischer","Marcus Doyle","Sofia Marino","Daniel Achebe",
-                                     "Rania Aziz","Bjorn Holt","Chiara Ferrari","Emeka Obi",
+                                     "Salma Sleiman","Bjorn Holt","Chiara Ferrari","Emeka Obi",
                                      "Sandra Kohl","Pablo Castro","Yara Nassar","Ivan Petrov",
                                      "Mei Lund","Oscar Dubois"])
 donor_pool   = _add_pool("donor",   ["Clara Jensen","Omar Kassab","Grace Wanjiru","Henrik Sol",
