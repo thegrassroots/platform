@@ -3756,8 +3756,10 @@
     if (dt) dt.classList.toggle('hide', !canEditFramework());
     var bt = $('#cpTabs').querySelector('[data-cptab="beneficiaries"]');
     if (bt) bt.classList.toggle('hide', !canEditFramework());
-    var gt = $('#cpTabs').querySelector('[data-cptab="geo"]');
-    if (gt) gt.classList.toggle('hide', !canEditFramework());
+    var rt = $('#cpTabs').querySelector('[data-cptab="regions"]');
+    if (rt) rt.classList.toggle('hide', !canEditFramework());
+    var ct = $('#cpTabs').querySelector('[data-cptab="countries"]');
+    if (ct) ct.classList.toggle('hide', !canEditFramework());
     renderControl('donors'); $('#cpModal').classList.add('on');
   }
   function closeControl(){ $('#cpModal').classList.remove('on'); }
@@ -3772,12 +3774,13 @@
   function renderControl(tab){
     tab = tab || 'donors';
     if (tab === 'users' && !canManageUsers()) tab = 'donors';
-    if ((tab === 'donors' || tab === 'beneficiaries' || tab === 'geo') && !canEditFramework()) tab = 'donors';
+    if ((tab === 'donors' || tab === 'beneficiaries' || tab === 'regions' || tab === 'countries') && !canEditFramework()) tab = 'donors';
     Array.prototype.forEach.call($('#cpTabs').children, function (x){ x.classList.toggle('on', x.dataset.cptab === tab); });
     var body = $('#cpBody'); body.innerHTML = '';
     if (tab === 'users') body.appendChild(usersEditor());
     else if (tab === 'beneficiaries') body.appendChild(beneficiaryTypesEditor());
-    else if (tab === 'geo') body.appendChild(geoLeadsEditor());
+    else if (tab === 'regions') body.appendChild(regionLeadsEditor());
+    else if (tab === 'countries') body.appendChild(countryLeadsEditor());
     else body.appendChild(donorsEditor());
   }
 
@@ -3883,7 +3886,7 @@
   }
 
   // =========================================================================
-  //  CONTROL PANEL - Regions & Countries (assign Leads; Admin only)
+  //  CONTROL PANEL - Regions / Countries tabs (assign Leads; Admin only)
   // =========================================================================
   // Inline Lead dropdown for a lookup row - selecting a user persists the row's
   // lead_id immediately (id-based, from the user list, never free-typed).
@@ -3896,9 +3899,9 @@
     };
     return s;
   }
-  function geoLeadsEditor(){
+  function regionLeadsEditor(){
     var box = el('div', 'cp-users cp-geo');
-    box.appendChild(elHTML('div', 'cp-note', 'Assign an accountable <b>Lead</b> to each <b>region</b> and <b>country</b> - chosen from the user list, saved immediately on selection. Programme countries come seeded with their country-office user as Lead; reference-only countries start unassigned.'));
+    box.appendChild(elHTML('div', 'cp-note', 'Assign an accountable <b>Lead</b> to each <b>region</b> - chosen from the user list, saved immediately on selection.'));
 
     // ---- regions (the six continents) --------------------------------------
     var rtbl = el('table', 'utbl');
@@ -3915,6 +3918,11 @@
       rtb.appendChild(tr);
     });
     rtbl.appendChild(rtb); box.appendChild(rtbl);
+    return box;
+  }
+  function countryLeadsEditor(){
+    var box = el('div', 'cp-users cp-geo');
+    box.appendChild(elHTML('div', 'cp-note', 'Assign an accountable <b>Lead</b> to each <b>country</b> - chosen from the user list, saved immediately on selection. Programme countries come seeded with their country-office user as Lead; reference-only countries start unassigned.'));
 
     // ---- countries (all of them, searchable) --------------------------------
     var q = el('input', 'geo-search');
@@ -3974,8 +3982,14 @@
   // Reports cover what has happened - never a period after the current month.
   function commNow(){ var d = new Date(TODAY); return { y: d.getFullYear(), m: d.getMonth() + 1 }; }
   function commIsFuture(y, m){ var n = commNow(); return y > n.y || (y === n.y && m > n.m); }
-  // Demo mail domain - users carry no email column; addresses derive from username.
-  function leadEmail(uid){ var u = DB._idx.userById[uid]; return u ? (u.username + '@thegrassroots.org') : ''; }
+  // A lead's email comes from their PROFILE (user.email - editable in My profile
+  // and in Users Management). Accounts created before the field existed fall back
+  // to the derived demo address so report delivery never silently loses them.
+  function leadEmail(uid){
+    var u = DB._idx.userById[uid];
+    if (!u) return '';
+    return u.email || (u.username + '@thegrassroots.org');
+  }
   function commWhen(iso){
     var d = new Date(iso); if (isNaN(d)) return '';
     return MONTH_NAMES[d.getMonth()].slice(0,3) + ' ' + d.getDate() + ', ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
@@ -4603,6 +4617,20 @@
       body.appendChild(el('div', 'cp-empty', 'No ' + catDef.label.toLowerCase() + ' have a Lead assigned yet.'));
       return;
     }
+    // bulk enable/disable for THIS category + period (one click covers every row)
+    var nOn = ents.filter(function (ent){ var r = commFindReport(ent.ref, COMM.year, COMM.month); return !r || r.enabled !== 0; }).length;
+    var bulk = el('div', 'comm-bulk');
+    bulk.appendChild(el('span', 'comm-bulk-lbl', nOn + ' of ' + ents.length + ' enabled for ' + commPeriodLabel()));
+    var allOn = el('button', 'cp-mini', '✓ Enable all');
+    allOn.title = 'Include every ' + commCatOne(cat).toLowerCase() + ' lead in batch generate & send';
+    allOn.disabled = nOn === ents.length;
+    allOn.onclick = function (){ commSetAllEnabled(cat, true); };
+    var allOff = el('button', 'cp-mini', '✗ Disable all');
+    allOff.title = 'Exclude every ' + commCatOne(cat).toLowerCase() + ' lead from batch generate & send';
+    allOff.disabled = nOn === 0;
+    allOff.onclick = function (){ commSetAllEnabled(cat, false); };
+    bulk.appendChild(allOn); bulk.appendChild(allOff);
+    body.appendChild(bulk);
     var tbl = el('table', 'utbl commtbl');
     tbl.innerHTML = '<thead><tr><th>Lead</th><th>' + esc(commCatOne(cat)) + '</th><th>' + (cat === 'project' ? 'KPIs' : 'Projects') + '</th><th>Report</th><th></th></tr></thead>';
     var tb = el('tbody');
@@ -4645,6 +4673,26 @@
     }, !rep);
     tr.appendChild(act);
     return tr;
+  }
+
+  // Flip the enabled flag for EVERY lead of a category in the selected period.
+  // Rows without a report yet default to enabled, so "disable" creates a stub
+  // (enabled:0, no pdf) and "enable" only has to touch existing rows.
+  function commSetAllEnabled(cat, on){
+    var news = [], upds = [];
+    commEntities(cat).forEach(function (ent){
+      var rep = commFindReport(ent.ref, COMM.year, COMM.month);
+      if (rep){
+        if ((rep.enabled !== 0) !== on){ rep.enabled = on ? 1 : 0; upds.push(rep); }
+      } else if (!on){
+        news.push({ category: ent.cat, ref: ent.ref, ref_name: ent.name, lead_id: ent.leadId,
+          year: COMM.year, month: COMM.month, enabled: 0, generated: null, sent: null, summary: null, pdf: null });
+      }
+    });
+    var jobs = [];
+    if (news.length) jobs.push(DB.insert('report', news));
+    if (upds.length) jobs.push(DB.persist('report', upds));
+    return Promise.all(jobs).then(renderComm);
   }
 
   // ---- batch generate & send (chunked so the UI stays alive) -------------------
@@ -4694,17 +4742,132 @@
     if (!reps.length){ commSay('No generated reports for ' + commPeriodLabel() + ' - hit Generate first.'); return; }
     var leads = {}; reps.forEach(function (r){ if (r.lead_id != null) leads[r.lead_id] = 1; });
     var nLeads = Object.keys(leads).length;
-    if (!confirm('Email ' + reps.length + ' ' + commPeriodLabel() + ' report' + (reps.length === 1 ? '' : 's') + ' to ' + nLeads + ' lead' + (nLeads === 1 ? '' : 's') + ', each with their PDF attached?')) return;
-    // marking sent is cheap - do it in one pass (a chained-timeout animation
-    // would be throttled to a crawl in a backgrounded tab)
-    var now = new Date().toISOString();
-    reps.forEach(function (r){ r.sent = now; });
-    Promise.resolve(DB.persist('report', reps)).then(function (){
-      commSay('✓ ' + reps.length + ' reports emailed to ' + nLeads + ' leads. (Demo build: sends are recorded here - no mail server is connected.)');
-      renderComm();
-    });
+    var cfg = commMailCfg();
+    if (!cfg){
+      // no mail service connected yet - record the sends locally
+      if (!confirm('No email service is connected (add your free Brevo key in the ✉ Email draft tab to really send).\n\nRecord ' + reps.length + ' ' + commPeriodLabel() + ' report' + (reps.length === 1 ? '' : 's') + ' to ' + nLeads + ' lead' + (nLeads === 1 ? '' : 's') + ' as sent?')) return;
+      var now0 = new Date().toISOString();
+      reps.forEach(function (r){ r.sent = now0; });
+      Promise.resolve(DB.persist('report', reps)).then(function (){
+        commSay('✓ ' + reps.length + ' reports recorded as sent. Connect Brevo in the ✉ Email draft tab for real delivery.');
+        renderComm();
+      });
+      return;
+    }
+    var destTxt = cfg.live
+      ? 'each lead\'s profile email address'
+      : 'YOUR OWN inbox (' + cfg.senderEmail + ') - test mode is on';
+    if (!confirm('Send ' + reps.length + ' ' + commPeriodLabel() + ' report' + (reps.length === 1 ? '' : 's') + ' (' + nLeads + ' lead' + (nLeads === 1 ? '' : 's') + ') via Brevo, each with its PDF attached?\n\nDelivery goes to ' + destTxt + '.')) return;
+    COMM.busy = true;
+    var i = 0, ok = 0, fail = 0, firstErr = null, now = new Date().toISOString();
+    function next(){
+      if (i >= reps.length){
+        COMM.busy = false;
+        commSay((fail ? '⚠ ' : '✓ ') + ok + ' of ' + reps.length + ' reports emailed via Brevo' + (cfg.live ? '' : ' (test mode - delivered to ' + esc(cfg.senderEmail) + ')') +
+          (fail ? ' · ' + fail + ' failed - first error: ' + esc(firstErr || '') : '.'));
+        renderComm();
+        return;
+      }
+      var batch = reps.slice(i, i + 3); i += batch.length;
+      var sentNow = [];
+      Promise.all(batch.map(function (rep){
+        return commMailSend(rep, cfg).then(
+          function (){ rep.sent = now; sentNow.push(rep); ok++; },
+          function (e){ fail++; if (!firstErr) firstErr = e.message; });
+      })).then(function (){
+        if (sentNow.length) DB.persist('report', sentNow);
+        commSay('📤 Sending via Brevo… ' + (ok + fail) + ' / ' + reps.length + (fail ? ' · ' + fail + ' failed' : ''));
+        next();
+      });
+    }
+    next();
   }
   function commSay(html){ var m = $('#commMsg'); if (m) m.innerHTML = html; }
+
+  // ---- real email delivery via Brevo (free tier: 300/day, browser-callable) ----
+  // The API key is the USER'S OWN (brevo.com -> SMTP & API -> API keys) and lives
+  // ONLY in localStorage - never in the repo, the DB, or the SQL export. Until a
+  // key is saved, "Send all" records sends locally (simulation). Test mode (the
+  // default) redirects every email to the sender's own inbox, so the fictional
+  // demo lead addresses are never actually mailed.
+  var COMM_MAIL_KEY = 'gr_mail_cfg_v1';
+  function commMailCfg(){
+    try {
+      var c = JSON.parse(localStorage.getItem(COMM_MAIL_KEY));
+      if (c && c.key && c.senderEmail) return c;
+    } catch (e) {}
+    return null;
+  }
+  function commMailSend(rep, cfg){
+    var ent = { cat: rep.category, code: '', name: rep.ref_name, leadId: rep.lead_id };
+    var tpl = commTpl();
+    var live = !!cfg.live;
+    var payload = {
+      sender: { name: cfg.senderName || 'The Grassroots', email: cfg.senderEmail },
+      to: [{ email: live ? leadEmail(rep.lead_id) : cfg.senderEmail, name: userName(rep.lead_id) }],
+      subject: commFill(tpl.subject, ent, rep) + (live ? '' : '  [test - would go to ' + userName(rep.lead_id) + ']'),
+      textContent: commFill(tpl.body, ent, rep),
+      attachment: [{ name: commFileName(rep), content: rep.pdf }]
+    };
+    return fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': cfg.key },
+      body: JSON.stringify(payload)
+    }).then(function (r){
+      if (!r.ok) return r.text().then(function (t){ throw new Error(r.status + ' ' + t.slice(0, 160)); });
+    });
+  }
+
+  // Delivery settings card (Email draft tab): connect the user's own free Brevo
+  // account, choose test mode vs live delivery, and fire a one-off test send.
+  function commMailSettings(){
+    var cfg = commMailCfg() || {};
+    var box = el('div', 'comm-svc');
+    box.appendChild(elHTML('div', 'comm-svc-h', '📮 Email delivery <span class="comm-svc-badge ' + (commMailCfg() ? 'on' : '') + '">' + (commMailCfg() ? (cfg.live ? 'Connected · LIVE' : 'Connected · test mode') : 'Not connected - sends are simulated') + '</span>'));
+    box.appendChild(elHTML('div', 'cp-note', 'Real sending uses <b>Brevo</b> (free: 300 emails/day, PDF attachments included). Create a free account at brevo.com, verify your sender address, copy an API key from <i>SMTP &amp; API → API keys</i>, and paste it here. The key stays in this browser\'s local storage only - it is never written to the database, the SQL export, or the repository.'));
+    var f = el('div', 'uform');
+    f.innerHTML =
+      '<div class="ufgrid" style="grid-template-columns:1fr 1fr">' +
+      '  <label><span>Sender name</span><input class="ms-name" type="text" value="' + esc(cfg.senderName || (CURRENT_USER ? CURRENT_USER.name : '')) + '" placeholder="The Grassroots M&E"></label>' +
+      '  <label><span>Sender email (verified in Brevo) *</span><input class="ms-email" type="email" value="' + esc(cfg.senderEmail || '') + '" placeholder="you@example.org"></label>' +
+      '</div>' +
+      '<div class="ufgrid" style="grid-template-columns:1fr">' +
+      '  <label><span>Brevo API key *</span><input class="ms-key" type="password" value="' + esc(cfg.key || '') + '" placeholder="xkeysib-…"></label>' +
+      '</div>' +
+      '<label class="comm-live"><input class="ms-live" type="checkbox"' + (cfg.live ? ' checked' : '') + '> Deliver to the leads\' real addresses (unchecked = TEST MODE: every email goes to the sender\'s own inbox instead - the demo leads\' addresses are fictional, so leave this off until your leads carry real emails)</label>' +
+      '<div class="ufbtns"><span class="ufmsg ms-msg"></span>' +
+      '<button class="hbtn ms-test" type="button">✉ Send me a test</button>' +
+      '<button class="hbtn ms-clear" type="button">Disconnect</button>' +
+      '<button class="hbtn primary ms-save" type="button">Save connection</button></div>';
+    var msg = f.querySelector('.ms-msg');
+    function readCfg(){
+      return { key: f.querySelector('.ms-key').value.trim(), senderName: f.querySelector('.ms-name').value.trim(),
+        senderEmail: f.querySelector('.ms-email').value.trim(), live: f.querySelector('.ms-live').checked ? 1 : 0 };
+    }
+    f.querySelector('.ms-save').onclick = function (){
+      var c = readCfg();
+      if (!c.key || !c.senderEmail){ msg.textContent = 'API key and sender email are required.'; return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.senderEmail)){ msg.textContent = 'Enter a valid sender email.'; return; }
+      try { localStorage.setItem(COMM_MAIL_KEY, JSON.stringify(c)); } catch (e) {}
+      msg.textContent = '✓ Saved. Use "Send me a test" to verify.'; renderComm();
+    };
+    f.querySelector('.ms-clear').onclick = function (){
+      try { localStorage.removeItem(COMM_MAIL_KEY); } catch (e) {}
+      renderComm();
+    };
+    f.querySelector('.ms-test').onclick = function (){
+      var c = readCfg();
+      if (!c.key || !c.senderEmail){ msg.textContent = 'Fill in the API key and sender email first.'; return; }
+      var rep = DB.tables.report.filter(function (r){ return r.year === COMM.year && r.month === COMM.month && r.pdf; })[0];
+      if (!rep){ msg.textContent = 'Generate at least one ' + commPeriodLabel() + ' report first.'; return; }
+      msg.textContent = 'Sending test to ' + c.senderEmail + '…';
+      commMailSend(rep, { key: c.key, senderName: c.senderName, senderEmail: c.senderEmail, live: 0 }).then(
+        function (){ msg.textContent = '✓ Test sent to ' + c.senderEmail + ' - check your inbox (and spam folder).'; },
+        function (e){ msg.textContent = '✗ Brevo said: ' + e.message; });
+    };
+    box.appendChild(f);
+    return box;
+  }
 
   // ---- Email draft tab: edit the template, preview a real example --------------
   function commEmailEditor(){
@@ -4731,6 +4894,7 @@
     };
     btns.appendChild(msg); btns.appendChild(reset); btns.appendChild(save);
     left.appendChild(subjLab); left.appendChild(bodyLab); left.appendChild(btns);
+    left.appendChild(commMailSettings());
     // live preview against a real lead (first entity that has one)
     var right = el('div', 'comm-mail-prev');
     function sampleEnt(){
@@ -4748,7 +4912,7 @@
       var head = el('div', 'comm-prev-head');
       head.innerHTML =
         '<div class="comm-prev-lbl">PREVIEW - as ' + esc(userName(ent.leadId)) + ' will receive it</div>' +
-        '<div class="comm-prev-row"><b>From</b> ' + esc((CURRENT_USER ? CURRENT_USER.name : 'The Grassroots') + ' <' + (CURRENT_USER ? CURRENT_USER.username : 'noreply') + '@thegrassroots.org>') + '</div>' +
+        '<div class="comm-prev-row"><b>From</b> ' + esc((CURRENT_USER ? CURRENT_USER.name : 'The Grassroots') + ' <' + (CURRENT_USER ? leadEmail(CURRENT_USER.id) : 'noreply@thegrassroots.org') + '>') + '</div>' +
         '<div class="comm-prev-row"><b>To</b> ' + esc(userName(ent.leadId) + ' <' + leadEmail(ent.leadId) + '>') + '</div>' +
         '<div class="comm-prev-row comm-prev-subj"><b>Subject</b> ' + esc(commFill(subj.value, ent, rep)) + '</div>';
       var bod = el('div', 'comm-prev-body');
@@ -5264,7 +5428,7 @@
     var dot = '<span class="udot" style="background:' + userColor(u) + '"></span>';
     tr.innerHTML =
       '<td>' + dot + esc(u.name) + '</td>' +
-      '<td class="umono">' + esc(u.username) + '</td>' +
+      '<td class="umono">' + esc(u.username) + (u.email ? '<div class="comm-email">' + esc(u.email) + '</div>' : '') + '</td>' +
       '<td>' + esc(SECTION_LABEL[userSection(u)] || '') + '</td>' +
       '<td><span class="ustatus ' + userStatus(u) + '">' + esc(STATUS_LABEL[userStatus(u)] || '') + '</span></td>' +
       '<td class="umono">' + esc(userScopeText(u)) + '</td>' +
@@ -5289,6 +5453,7 @@
       '<div class="ufgrid">' +
       '  <label><span>Full name *</span><input class="uf-name" type="text" value="' + esc(u ? u.name : '') + '"></label>' +
       '  <label><span>Username *</span><input class="uf-user" type="text" value="' + esc(u ? u.username : '') + '"></label>' +
+      '  <label><span>Email</span><input class="uf-email" type="email" value="' + esc(u && u.email ? u.email : '') + '" placeholder="name@example.org"></label>' +
       '  <label><span>' + (isNew ? 'Password *' : 'Reset password') + '</span><input class="uf-pass" type="text" placeholder="' + (isNew ? '' : 'leave blank to keep') + '" value=""></label>' +
       '  <label><span>Section *</span><select class="uf-section">' +
           [['hq', SECTION_LABEL.hq], ['co', SECTION_LABEL.co]].map(function (rl){ var cur = u ? userSection(u) : 'co'; return '<option value="' + rl[0] + '"' + (cur === rl[0] ? ' selected' : '') + '>' + rl[1] + '</option>'; }).join('') +
@@ -5327,19 +5492,21 @@
     f.querySelector('.uf-cancel').onclick = function (){ closeUserEdit(); };
     f.querySelector('.uf-save').onclick = function (){
       var name = f.querySelector('.uf-name').value.trim(), uname = f.querySelector('.uf-user').value.trim();
+      var email = f.querySelector('.uf-email').value.trim();
       var pass = f.querySelector('.uf-pass').value, section = sectionSel.value, status = statusSel.value;
       var msg = f.querySelector('.ufmsg');
       if (!name || !uname) { msg.textContent = 'Name and username are required.'; return; }
       if (usernameTaken(uname, u ? u.id : -1)) { msg.textContent = 'That username is already taken.'; return; }
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent = 'Enter a valid email address.'; return; }
       if (isNew && !pass) { msg.textContent = 'Set an initial password.'; return; }
       var region = section === 'co' ? regionSel.value : null;
       var iso = section === 'co' ? (countrySel.value || null) : null;
       var enabled = +f.querySelector('.uf-enabled').value;
       if (isNew) {
-        applyUserMutation(DB.insert('user', { username: uname, name: name, password: pass, section: section, status: status,
+        applyUserMutation(DB.insert('user', { username: uname, name: name, email: email || null, password: pass, section: section, status: status,
           region: region, country_iso3: iso, enabled: enabled, created: new Date(TODAY).toISOString().slice(0,10) }));
       } else {
-        u.name = name; u.username = uname; u.section = section; u.status = status; u.region = region; u.country_iso3 = iso; u.enabled = enabled;
+        u.name = name; u.username = uname; u.email = email || null; u.section = section; u.status = status; u.region = region; u.country_iso3 = iso; u.enabled = enabled;
         if (pass) u.password = pass;
         applyUserMutation(DB.persist('user', [u]));
       }

@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS user (
     id           INTEGER PRIMARY KEY,
     username     TEXT NOT NULL UNIQUE,
     name         TEXT NOT NULL,          -- display name attributed to activities
+    email        TEXT,                   -- profile email (report delivery goes here)
     password     TEXT,                   -- demo-grade, stored locally
     section      TEXT CHECK (section IN ('hq','co')),
     status       TEXT CHECK (status IN ('admin','user','viewer')),

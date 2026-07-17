@@ -72,6 +72,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8811"],
       "port": 8811
+    },
+    {
+      "name": "promon-geotabs",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8813"],
+      "port": 8813
     }
   ]
 }

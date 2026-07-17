@@ -536,6 +536,9 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .comm-chip.sent{border-color:#16a34a55;color:#16a34a;background:#16a34a14}
 .comm-chip.off{border-color:var(--border);color:var(--muted);background:var(--bg-soft)}
 .comm-act button{min-width:28px}
+/* per-category bulk enable/disable row above the leads table */
+.comm-bulk{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.comm-bulk-lbl{font-size:10px;color:var(--muted);margin-right:auto}
 /* email draft tab: editor left, live preview right */
 .comm-mail{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
 .comm-mail-edit .cp-note{margin-top:0}
@@ -556,7 +559,17 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .comm-att-k{margin-left:auto;font-size:8.5px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
 @media (max-width:900px){ .comm-mail{grid-template-columns:1fr} }
 
-/* ---- control panel : Regions & Countries lead assignment ------------------ */
+/* ---- Communication : email delivery settings (Brevo) ---------------------- */
+.comm-svc{margin-top:18px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg-soft)}
+.comm-svc-h{font-size:11.5px;font-weight:var(--w-title);color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.comm-svc-badge{font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:10px;
+  border:1px solid var(--border);color:var(--muted);background:var(--panel)}
+.comm-svc-badge.on{border-color:#16a34a55;color:#16a34a;background:#16a34a14}
+.comm-svc .uform input{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--ink);font-size:11px;box-sizing:border-box}
+.comm-live{display:flex;gap:8px;align-items:flex-start;font-size:10px;color:var(--ink-2);line-height:1.5;margin:8px 0 2px}
+.comm-live input{width:auto !important;margin-top:2px}
+
+/* ---- control panel : Regions / Countries lead assignment ------------------ */
 .cp-geo .utbl{margin-bottom:16px}
 .geo-lead{width:100%;max-width:220px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;
   background:var(--panel);color:var(--ink);font-size:10.5px}

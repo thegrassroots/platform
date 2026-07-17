@@ -586,6 +586,7 @@ def add_user(username, name, role, region=None, iso=None, enabled=1):
     global uid
     uid += 1
     users.append({"id":uid,"username":username,"name":name,"password":username,
+        "email":f"{username}@thegrassroots.org",   # profile email - report delivery goes here
         "section":_SECTION_FOR[role],"status":_STATUS_FOR[role],
         "region":region,"country_iso3":iso,"enabled":enabled,
         "created":"2021-01-01"})
