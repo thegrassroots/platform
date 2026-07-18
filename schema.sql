@@ -61,13 +61,14 @@ CREATE TABLE IF NOT EXISTS country (
 
 -- Affiliation lookup: the categories a user can be affiliated to ----------------
 -- One row per lead category (Plans, Impact, Outcome, Output, Projects, Donors,
--- Regions, Countries). user.affiliation_id references this table, and every Lead
--- dropdown filters to users affiliated to the matching category - e.g. a Donor
--- Lead must come from Donor-affiliated users. `key` is the stable code the app
--- matches on (it equals the report category keys).
+-- Partners, Regions, Countries). user.affiliation_id references this table, and
+-- every Lead dropdown filters to users affiliated to the matching category - e.g.
+-- a Donor Lead must come from Donor-affiliated users, a Partner Lead from
+-- Partner-affiliated users. `key` is the stable code the app matches on (it equals
+-- the report category keys).
 CREATE TABLE IF NOT EXISTS affiliation (
     id   INTEGER PRIMARY KEY,
-    key  TEXT NOT NULL UNIQUE,           -- plan|impact|outcome|output|project|donor|region|country
+    key  TEXT NOT NULL UNIQUE,           -- plan|impact|outcome|output|project|donor|partner|region|country
     name TEXT NOT NULL,                  -- display name, e.g. 'Donors'
     seq  INTEGER                         -- display order
 );
@@ -130,15 +131,36 @@ CREATE TABLE IF NOT EXISTS donor (
     lead_id    INTEGER REFERENCES user(id)  -- accountable Lead, selected from the user list
 );
 
+-- Implementing partner: an NGO that delivers projects on behalf of the org -------
+-- Distinct from a donor (who FUNDS): a partner IMPLEMENTS on the ground. Each
+-- partner carries full contact details and an accountable relationship Lead
+-- (selected from the user list, filtered to Partner-affiliated users). A project
+-- is either implemented THROUGH a partner (project.partner_id set) or DIRECTLY by
+-- the organisation (project.implementation = 'direct', partner_id NULL).
+CREATE TABLE IF NOT EXISTS partner (
+    id       INTEGER PRIMARY KEY,
+    name     TEXT NOT NULL,
+    acronym  TEXT,                       -- short label, e.g. 'HII'
+    address  TEXT,                       -- postal / office address
+    phone    TEXT,                       -- contact phone number
+    website  TEXT,                       -- organisation website URL
+    color    TEXT,                       -- identity colour (map / facet dot)
+    lead_id  INTEGER REFERENCES user(id) -- accountable Lead, selected from the user list
+);
+
 -- Project: a country-scoped, donor-funded initiative carrying a set of KPIs --------
 --   PRIMARY KPIs   = existing inventory indicators, linked via project_kpi
 --   SECONDARY KPIs = project-local indicators (indicator.secondary = 1, project_id)
+--   DELIVERY       = either 'direct' (by the org) or through an implementing
+--                    `partner` (partner_id set, implementation = 'partner').
 CREATE TABLE IF NOT EXISTS project (
     id           INTEGER PRIMARY KEY,
     plan_id      INTEGER REFERENCES plan(id),  -- the plan this project belongs to
     code         TEXT,                   -- e.g. 'PRJ-KEN-P2-01'
     name         TEXT NOT NULL,
     donor_id     INTEGER REFERENCES donor(id),
+    partner_id   INTEGER REFERENCES partner(id),  -- implementing partner (NULL = delivered directly)
+    implementation TEXT CHECK (implementation IN ('direct','partner')),  -- delivery modality
     country_iso3 TEXT REFERENCES country(iso3),
     region       TEXT,
     budget_usd   REAL,
@@ -242,8 +264,8 @@ CREATE TABLE IF NOT EXISTS beneficiary (
 -- generated report is a fixed snapshot; DB.exportSQL() omits the blob column.
 CREATE TABLE IF NOT EXISTS report (
     id        INTEGER PRIMARY KEY,
-    category  TEXT NOT NULL CHECK (category IN ('plan','impact','outcome','output','project','donor','region','country')),
-    ref       TEXT NOT NULL,             -- entity key, e.g. 'country:KEN' / 'donor:3' / 'outcome:1|<statement>'
+    category  TEXT NOT NULL CHECK (category IN ('plan','impact','outcome','output','project','donor','partner','region','country')),
+    ref       TEXT NOT NULL,             -- entity key, e.g. 'country:KEN' / 'donor:3' / 'partner:5' / 'outcome:1|<statement>'
     ref_name  TEXT,                      -- entity display name at generation time
     lead_id   INTEGER REFERENCES user(id),  -- the Lead the report is addressed to
     year      INTEGER NOT NULL,
@@ -269,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_measure_date      ON measurement(date);
 CREATE INDEX IF NOT EXISTS idx_measure_project   ON measurement(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_country   ON project(country_iso3);
 CREATE INDEX IF NOT EXISTS idx_project_donor     ON project(donor_id);
+CREATE INDEX IF NOT EXISTS idx_project_partner   ON project(partner_id);
 CREATE INDEX IF NOT EXISTS idx_projkpi_project   ON project_kpi(project_id);
 CREATE INDEX IF NOT EXISTS idx_projkpi_indicator ON project_kpi(indicator_id);
 CREATE INDEX IF NOT EXISTS idx_country_region    ON country(region_id);

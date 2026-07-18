@@ -48,12 +48,12 @@ list. Two complementary metrics are derived per indicator:
   timeframe has passed*. e.g. a 12-month KPI with target 12: at end-June (≈ 0.5 elapsed),
   3 done → 25 % / 50 % = **50 %**; 6 done → 50 % / 50 % = **100 %**.
 
-Because 0 % is the baseline and 100 % is the target, either metric maps to the same RAG bands:
-`Over Track` (blue) **> 100 %**, `On Track` (green) **75–100 %**, `At Risk` (amber) **50–74 %**,
-`Off Track` (red) **0–49 %**, and `Under Track` (crimson) **< 0 %** - a regression *below the
-baseline*; indicators with no measurement yet are `No Data` (grey). The map toggle
-**By Progress / By Performance** switches which metric colours the bubbles, legend and facets;
-the indicator detail shows both side by side.
+Because 0 % is the baseline and 100 % is the target, **Performance** maps to the RAG bands:
+`Over Track` (blue) **> 100 %**, `On Track` (green) **90–100 %**, `At Risk` (amber) **75–90 %**,
+`Off Track` (red) **50–75 %**, `Under Track` (crimson) **0–50 %**, and `Back Track` (near-black)
+**< 0 %** - a regression *below the baseline*; indicators with no measurement yet are `No Data`
+(grey). **Status is always Performance** - Progress cannot tell status; it is shown only for
+visibility (bars and %s), and any status badge on a Progress figure borrows the Performance band.
 
 ---
 

@@ -10,7 +10,7 @@
   'use strict';
 
   var DB_NAME = 'grassroots_v1';   // bump to force every browser to drop and reseed
-  var DB_VERSION = 8;              // v8 adds the reference lookup stores (unit … user_status); v7 added `affiliation`
+  var DB_VERSION = 9;              // v9 adds the `partner` store; v8 added the reference lookup stores (unit … user_status); v7 added `affiliation`
   var STAMP_KEY = 'ddi_seed_stamp'; // localStorage key: content stamp of last-seeded data (auto-reseed)
   // `plan` is the top of the results chain (Plan > Impact > Outcome > Output > KPI);
   // results & projects carry a plan_id. DB_NAME is unchanged - the content stamp
@@ -26,7 +26,7 @@
   // user status). Rows are {id, key, name, seq}; entities store the row's id
   // (unit_id, type_id, …) - never the text.
   var LOOKUPS = ['unit', 'frequency', 'collection_method', 'disaggregation', 'kpi_type', 'direction', 'donor_type', 'user_status'];
-  var TABLES = ['plan', 'region', 'affiliation', 'country', 'user', 'donor', 'programme', 'project', 'project_kpi', 'result', 'indicator', 'measurement', 'beneficiary_type', 'beneficiary', 'report'].concat(LOOKUPS);
+  var TABLES = ['plan', 'region', 'affiliation', 'country', 'user', 'donor', 'partner', 'programme', 'project', 'project_kpi', 'result', 'indicator', 'measurement', 'beneficiary_type', 'beneficiary', 'report'].concat(LOOKUPS);
 
   // In-memory mirror of every table (array of row objects).
   var mem = {};
@@ -263,10 +263,12 @@
       idx.measByIndicator = groupBy(mem.measurement, 'indicator_id');
       idx.resultByProgramme = groupBy(mem.result, 'programme_id');
       idx.indicatorByResult = groupBy(mem.indicator, 'result_id');
-      // ---- projects / donors -------------------------------------------------
+      // ---- projects / donors / partners --------------------------------------
       idx.donorById = byId(mem.donor);
+      idx.partnerById = byId(mem.partner);
       idx.projectById = byId(mem.project);
       idx.projectByCountry = groupBy(mem.project, 'country_iso3');
+      idx.projectByPartner = groupBy(mem.project, 'partner_id');
       idx.projectKpiByProject = groupBy(mem.project_kpi, 'project_id');
       idx.projectKpiByIndicator = groupBy(mem.project_kpi, 'indicator_id');
       // secondary (project-local) KPIs are indicators carrying a project_id

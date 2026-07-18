@@ -587,8 +587,9 @@ AFFILIATIONS = [
  (4, "output",  "Output"),
  (5, "project", "Projects"),
  (6, "donor",   "Donors"),
- (7, "region",  "Regions"),
- (8, "country", "Countries"),
+ (7, "partner", "Partners"),
+ (8, "region",  "Regions"),
+ (9, "country", "Countries"),
 ]
 affiliations = [{"id":i,"key":k,"name":n,"seq":i} for (i,k,n) in AFFILIATIONS]
 AFF = {k:i for (i,k,n) in AFFILIATIONS}
@@ -668,6 +669,8 @@ project_pool = _add_pool("project", ["Lena Fischer","Marcus Doyle","Sofia Marino
                                      "Mei Lund","Oscar Dubois"])
 donor_pool   = _add_pool("donor",   ["Clara Jensen","Omar Kassab","Grace Wanjiru","Henrik Sol",
                                      "Fatima Zahra","Andres Reyes","Lea Almeida","Samuel Kim"])
+partner_pool = _add_pool("partner", ["Rania Haddad","Kwame Mensah","Priya Nair","Tobias Frank",
+                                     "Noura Barakat","Felipe Ortiz","Mira Kowalski","Daniel Otieno"])
 region_pool  = _add_pool("region",  ["Elias Berg","Nadia Rahman","Carmen Diaz",
                                      "Theo Sorensen","Ana Moreau","Luca Bianchi"])
 
@@ -792,6 +795,32 @@ donors = [{"id":i+1,"name":n,"short_name":s,"type_id":DTYPE_ID[t],"color":DONOR_
            "lead_id":donor_pool[i % len(donor_pool)]}
           for i,(n,s,t) in enumerate(DONOR_DEFS)]
 
+# ---- Implementing partners (UNIVERSAL) --------------------------------------
+# NGOs that deliver projects on the ground on behalf of the organisation (as
+# opposed to donors, who fund). Each carries contact details, an identity colour
+# and a relationship Lead from the Partner-affiliated pool. Projects reference a
+# partner when implemented THROUGH one; otherwise they are delivered directly.
+PARTNER_DEFS = [
+ # (name, acronym, address, phone, website)
+ ("Health in Action International","HAI","12 Rue Ferou, Geneva, Switzerland","+41 22 555 0110","https://healthinaction.org"),
+ ("Rural Development Trust","RDT","44 Jinja Road, Kampala, Uganda","+256 41 555 0142","https://ruraldevtrust.org"),
+ ("WaterAid Frontier","WAF","8 Riverside Walk, Nairobi, Kenya","+254 20 555 0187","https://wateraidfrontier.org"),
+ ("Bright Futures Education Network","BFEN","210 Independence Ave, Accra, Ghana","+233 30 555 0163","https://brightfutures.ngo"),
+ ("Sahel Resilience Alliance","SRA","5 Avenue Kwame Nkrumah, Ouagadougou, Burkina Faso","+226 25 555 0129","https://sahelresilience.org"),
+ ("Mother & Child Care Foundation","MCCF","77 Marine Drive, Colombo, Sri Lanka","+94 11 555 0198","https://mccf.org"),
+ ("Green Harvest Cooperative","GHC","19 Selassie Street, Addis Ababa, Ethiopia","+251 11 555 0154","https://greenharvest.coop"),
+ ("Community Voice Initiative","CVI","3 Barangay Lane, Quezon City, Philippines","+63 2 555 0176","https://communityvoice.org"),
+ ("Hands Together Relief","HTR","61 Corniche Road, Amman, Jordan","+962 6 555 0133","https://handstogether.org"),
+ ("Andes Livelihoods Partnership","ALP","88 Calle Sucre, La Paz, Bolivia","+591 2 555 0145","https://andeslivelihoods.org"),
+ ("Coastal Care Network","CCN","24 Marina Bay, Dar es Salaam, Tanzania","+255 22 555 0159","https://coastalcare.org"),
+ ("Youth Empowerment Collective","YEC","102 Freedom Park, Lagos, Nigeria","+234 1 555 0171","https://youthempower.org"),
+]
+PARTNER_PAL = ["#5B8DEF","#2FB39B","#B07CE8","#EE9A57","#E284A8","#4C9BD6","#37B58A","#D7A83E",
+ "#79C06B","#E07E6C","#B888D8","#54AEBC"]
+partners = [{"id":i+1,"name":n,"acronym":a,"address":addr,"phone":ph,"website":w,
+             "color":PARTNER_PAL[i % len(PARTNER_PAL)],"lead_id":partner_pool[i % len(partner_pool)]}
+            for i,(n,a,addr,ph,w) in enumerate(PARTNER_DEFS)]
+
 # ---- Projects (plan-SCOPED) -------------------------------------------------
 # A project belongs to a country AND a plan, is funded by a donor, has a budget
 # and dates, and carries PRIMARY KPIs (that plan's inventory indicators, linked
@@ -865,6 +894,9 @@ for plan in PLANS:
             prj += 1
             code = f"PRJ-{iso}-P{plan['id']}-{j+1:02d}"
             donor = pick(donors)
+            # ~two thirds of projects are delivered THROUGH an implementing partner;
+            # the rest directly by the organisation.
+            partner = pick(partners) if chance(0.66) else None
             theme = pick(PROJECT_THEMES)
             proj_theme[prj] = theme
             sites = sample_sites(iso, ri(3, 6))
@@ -882,12 +914,17 @@ for plan in PLANS:
             projects.append({
                 "id":prj,"plan_id":plan["id"],"code":code,"name":f"{theme} - {p['name']}",
                 "budget_usd": ri(3, 45) * 100_000,
-                "donor_id":donor["id"],"country_iso3":iso,"region":region,
+                "donor_id":donor["id"],
+                "partner_id":partner["id"] if partner else None,
+                "implementation":"partner" if partner else "direct",
+                "country_iso3":iso,"region":region,
                 # Lead from the Projects-affiliated pool (activities still report via the country office)
                 "lead_id":project_pool[(prj - 1) % len(project_pool)],
                 "start_date":pick(plan["proj_starts"]),"end_date":pick(plan["proj_ends"]),
-                "description":f"{theme} initiative in {p['name']}, supported by {donor['name']}, "
-                              f"strengthening capacity and delivery in the field.",
+                "description":f"{theme} initiative in {p['name']}, funded by {donor['name']} and "
+                              + (f"implemented by {partner['name']} ({partner['acronym']})"
+                                 if partner else "implemented directly by the organisation")
+                              + ", strengthening capacity and delivery in the field.",
             })
             for s in range(ri(1, 3)):
                 make_secondary(prj, iso, reporter_id, f"SEC-{iso}-P{plan['id']}-{j+1:02d}.{s+1}", plan, sites=sites)
@@ -953,6 +990,7 @@ payload = {
     "country":countries,
     "user":users,
     "donor":donors,
+    "partner":partners,
     "programme":programmes,
     "project":projects,
     "project_kpi":project_kpi,
@@ -982,6 +1020,7 @@ print("regions:",len(regions))
 print("countries:",len(countries),"(",len(COUNTRIES),"with programmes )")
 print("users:",len(users))
 print("donors:",len(donors))
+print("partners:",len(partners))
 print("programmes:",len(programmes))
 print("projects:",len(projects))
 print("project_kpi:",len(project_kpi))

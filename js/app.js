@@ -5,10 +5,34 @@
   'use strict';
 
   // ---- constants -----------------------------------------------------------
-  // Single source of truth for the app version. Semantic versioning; bump the
-  // patch (or minor) on each change. Stays below 1.0.0 until sign-off - do not
-  // release 1.0.0 without explicit approval.
-  var APP_VERSION = '0.5.0';
+  // Single source of truth for the app version. The version advances by ONE every
+  // WORKING DAY (Mon-Fri): the patch (Z) climbs 1..99, then rolls into the minor
+  // (Y) which climbs 0..99, then into the major (X). It is a base-100 count of
+  // working days since the project's first working day (Thu 2026-07-16 = 0.0.1),
+  // read off the real wall clock (NOT the demo clock, which can jump ahead of the
+  // calendar), so any running install re-derives the current version on each load.
+  var VERSION_EPOCH = Date.UTC(2026, 6, 16);   // Thu 2026-07-16 = working day #1 = 0.0.1
+  function workingDaysSinceEpoch(){
+    var now = new Date();
+    var today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    if (today < VERSION_EPOCH) return 1;       // before launch: pin to 0.0.1
+    var n = 0;
+    for (var t = VERSION_EPOCH; t <= today; t += 86400000){
+      var dow = new Date(t).getUTCDay();        // 0=Sun .. 6=Sat
+      if (dow >= 1 && dow <= 5) n++;            // count weekdays only; weekends hold
+    }
+    return n < 1 ? 1 : n;
+  }
+  // Encode the working-day count base-100: 1 -> 0.0.1, 99 -> 0.0.99, 100 -> 0.1.0,
+  // 199 -> 0.1.99, 200 -> 0.2.0, 10000 -> 1.0.0.
+  function computeAppVersion(){
+    var v = workingDaysSinceEpoch();
+    var z = v % 100;
+    var y = Math.floor(v / 100) % 100;
+    var x = Math.floor(v / 10000);
+    return x + '.' + y + '.' + z;
+  }
+  var APP_VERSION = computeAppVersion();        // e.g. 0.0.2 on Sat 2026-07-18
   /** True on the public GitHub Pages demo (thegrassroots.github.io). Real email
    *  delivery is disabled there - the send button is shown but inert - so the
    *  hosted demo can never fire mail. Runs normally on localhost / self-hosted. */
@@ -140,6 +164,7 @@
     amber:{c:'#f59e0b', label:'At Risk'},
     red:{c:'#ef4444', label:'Off Track'},
     maroon:{c:'#9f1239', label:'Under Track'},
+    black:{c:'#450a0a', label:'Back Track'},
     nodata:{c:'#94a3b8', label:'No Data'}
   };
   var LEVELS = {impact:0, outcome:1, output:2, activity:3};
@@ -266,7 +291,7 @@
   // a stable colour identity. An affiliation beyond the known eight still gets
   // a deterministic palette colour instead of collapsing to grey.
   var AFF_COLORS = { plan:'#9D7BEE', impact:'#EC7BA6', outcome:'#2CC4A0', output:'#F2934A',
-                     project:'#5399EA', donor:'#E0A93B', region:'#6FBF73', country:'#8FA3C4' };
+                     project:'#5399EA', donor:'#E0A93B', partner:'#5B8DEF', region:'#6FBF73', country:'#8FA3C4' };
   function affColor(key){
     return AFF_COLORS[key] || NEW_PILLAR_PALETTE[hashKey(key || '') % NEW_PILLAR_PALETTE.length];
   }
@@ -334,16 +359,18 @@
     kpiShown: 10,           // how many KPIs the inventory filter reveals (More/Less)
     userShown: {},          // per-section reveal count for the Reported-By filter (More/Less)
     selUser: new Set(),     // Reported-By selections: user ids
-    selStatus: new Set(),   // performance status: blue|green|amber|red|maroon|nodata
+    selStatus: new Set(),   // performance status: blue|green|amber|red|maroon|black|nodata
     selType: new Set(),     // KPI type: quantitative|qualitative
     selDonor: new Set(),    // donor ids (project funding partner)
+    selPartner: new Set(),  // partner ids (implementing partner)
     selProject: new Set(),  // project ids (specific projects)
     selBenType: new Set(),  // beneficiary type ids (Project Beneficiaries filter)
     projectShown: 10,       // Projects filter reveal count (More/Less)
     donorShown: 10,         // Donors filter reveal count (More/Less)
+    partnerShown: 10,       // Partners filter reveal count (More/Less)
     progShown: {},          // per-region reveal count for the Programme Portfolio country sublists
     selCountry: null,       // iso3 (map click)
-    qList: '', qProg: '', qSdg: '', qKpi: '', qUser: '', qDonor: '', qProject: '',
+    qList: '', qProg: '', qSdg: '', qKpi: '', qUser: '', qDonor: '', qPartner: '', qProject: '',
     sort: 'name', sortDir: 'asc',
     listMode: 'projects',   // right pane: 'projects' | 'kpis'
     countBasis: 'projects', // facet/map counts: 'projects' (distinct projects) | 'activities' (measurements)
@@ -366,6 +393,9 @@
     fcDim: 'plans',      // plans | outcomes | outputs | projects | countries
     fcHorizon: 'plan',   // plan (end of plan) | 6m | 12m | 24m
     fcSel: null,         // selected entity key ('' / null = whole portfolio)
+    // timeline (Gantt) config - groups by the SAME dimensions as the Forecast tab
+    tlDim: 'donors',     // plans | impacts | outcomes | outputs | projects | donors | partners | regions | countries
+    tlActs: true,        // overlay logged-activity ticks on each project bar
     // Insights measures whatever S.countBasis says (Projects | Activities) - no separate Value setting.
     // resizable pane widths (px); null = use default (15% of screen width)
     leftW: null, rightW: null,
@@ -387,13 +417,17 @@
   }
   // RAG thresholds on progress = (value − baseline) / (target − baseline), so 0% is the
   // baseline and 100% is the target. Below baseline (negative) is a regression.
-  //   Over Track > 100% · On Track 75–100% · At Risk 50–74% · Off Track 0–49% ·
-  //   Under Track < 0% (below baseline) · No Data (no report).
+  //   Over Track > 100% · On Track 90–100% · At Risk 75–90% · Off Track 50–75% ·
+  //   Under Track 0–50% (a KPI with no report yet counts as 0%) · Back Track < 0%
+  //   (below baseline) · No Data = genuinely unmeasurable (no baseline/target).
   function ratioToCode(ratio) {
     if (ratio == null || isNaN(ratio)) return 'nodata';
-    if (ratio > 1) return 'blue';
-    if (ratio < 0) return 'maroon';
-    return ratio >= 0.75 ? 'green' : (ratio >= 0.50 ? 'amber' : 'red');
+    if (ratio > 1) return 'blue';        // Over Track  (>100%)
+    if (ratio < 0) return 'black';       // Back Track  (<0%, regressed below baseline)
+    if (ratio >= 0.90) return 'green';   // On Track    (90–100%)
+    if (ratio >= 0.75) return 'amber';   // At Risk     (75–90%)
+    if (ratio >= 0.50) return 'red';     // Off Track   (50–75%)
+    return 'maroon';                      // Under Track (0–50%)
   }
 
   /** Fraction of the KPI's timeframe elapsed by `asOf` (default TODAY; day
@@ -417,10 +451,16 @@
     var ms = DB.measurementsFor(ind.id);
     var latest = ms.length ? ms[ms.length - 1] : null;
     var b = ind.baseline_value, t = ind.target_value;
-    // b/t may be null (unset) or strings - a zero gap in any form means "unmeasurable"
-    if (!latest || b == null || t == null || +t === +b) return {
+    // No baseline/target, or a zero gap in any form, is genuinely unmeasurable - No Data.
+    if (b == null || t == null || +t === +b) return {
       progress: null, performance: null, progressCode: 'nodata', perfCode: 'nodata',
       code: 'nodata', frac: null, perf: null, latest: latest, series: ms };
+    // No report yet counts as 0% progress (nothing achieved above the baseline) ->
+    // Under Track, so an unreported KPI is included in averages/rollups as 0, not
+    // silently dropped. The value stays null (we don't invent a measurement).
+    if (!latest) return {
+      progress: 0, performance: 0, progressCode: ratioToCode(0), perfCode: ratioToCode(0),
+      code: ratioToCode(0), frac: 0, perf: 0, value: null, latest: null, series: ms };
     var v = indicatorValue(ind, ms);
     var progress = (v - b) / (t - b);                    // flat achievement of the gap
     var elapsed = elapsedFraction(ind);
@@ -480,10 +520,17 @@
       if (r.secondary && r.raw.project_id != null) pids.push(r.raw.project_id);
       (pkByInd[r.id] || []).forEach(function (pk) { if (pids.indexOf(pk.project_id) < 0) pids.push(pk.project_id); });
       r.projectIds = pids;
-      var dset = {}; pids.forEach(function (pid) { var p = DB._idx.projectById[pid]; if (p && p.donor_id != null) dset[p.donor_id] = 1; });
+      var dset = {}, ptset = {};
+      pids.forEach(function (pid) {
+        var p = DB._idx.projectById[pid];
+        if (p && p.donor_id != null) dset[p.donor_id] = 1;
+        if (p && p.partner_id != null) ptset[p.partner_id] = 1;   // implementing partners funding this KPI's projects
+      });
       r.donorIds = Object.keys(dset).map(Number);
+      r.partnerIds = Object.keys(ptset).map(Number);
       r.projPrimary = pids.length ? DB._idx.projectById[pids[0]] : null;
       r.donorPrimary = (r.projPrimary && r.projPrimary.donor_id != null) ? DB._idx.donorById[r.projPrimary.donor_id] : null;
+      r.partnerPrimary = (r.projPrimary && r.projPrimary.partner_id != null) ? DB._idx.partnerById[r.projPrimary.partner_id] : null;
       // distinct beneficiary types this KPI reaches, across all its measurements'
       // beneficiary entries (drives the Project Beneficiaries filter).
       var bset = {};
@@ -519,6 +566,7 @@
         region: proj ? proj.region : ind.region,
         progId: prog ? prog.id : null,
         donorId: (proj && proj.donor_id != null) ? proj.donor_id : null,
+        partnerId: (proj && proj.partner_id != null) ? proj.partner_id : null,
         sdg: ind.sdg, chainKeys: ind.chainKeys || [], name: ind.name,
         status: ind.status, type: ind.type,
         reporterId: m.reported_by_id != null ? +m.reported_by_id : null,
@@ -570,6 +618,9 @@
       return {
         raw: p, id: p.id, code: p.code, name: stripCountry(p.name, co),
         donor: p.donor_id != null ? DB._idx.donorById[p.donor_id] : null,
+        partner: p.partner_id != null ? DB._idx.partnerById[p.partner_id] : null,
+        // delivery modality: 'partner' when an implementing partner is set, else 'direct'
+        implementation: p.partner_id != null ? 'partner' : (p.implementation || 'direct'),
         iso: p.country_iso3, country: co, region: p.region, budget: p.budget_usd,
         start: p.start_date, end: p.end_date,
         primary: prim, secondary: secs, kpis: all,
@@ -581,15 +632,14 @@
     PROJECTSBYID = {}; PROJECTS.forEach(function (p) { PROJECTSBYID[p.id] = p; });
   }
 
-  /** Bind the active RAG basis (Progress vs Performance) onto every KPI, then
-   *  re-roll it up to each ancestor result. Progress (achievement of target) is
-   *  always what the % bars show; `status`/`ratio` follow the chosen basis. */
+  /** Bind the RAG status onto every KPI, then re-roll it up to each ancestor
+   *  result. Status is ALWAYS performance — progress cannot tell status. Progress
+   *  (achievement of target) is only ever the % the bars show for visibility. */
   function applyBasis() {
-    var prog = S.perfBasis === 'progress';
     IND.forEach(function (r) {
-      r.status = prog ? r.progressCode : r.perfCode;
-      r.ratio = prog ? r.progress : r.performance;   // the metric the RAG judges
-      r.frac = r.progress;                           // % bars always show achievement
+      r.status = r.perfCode;        // status is always performance
+      r.ratio = r.performance;      // the metric the RAG judges is always performance
+      r.frac = r.progress;          // % bars still show achievement, for visibility only
     });
     // roll the active metric up to every ancestor result (Output → Outcome → Pillar)
     STATUS_BY_RESULT = {};
@@ -685,7 +735,10 @@
   function inTimeRange(r) {
     var b = timeBounds();
     if (b.start == null && b.end == null) return true;
-    if (r.updated == null) return false;
+    // A KPI with no report yet is a STANDING 0% (Under Track) status, not a dated
+    // event - a time-window filter must not delete it, or it vanishes from every
+    // band. Keep it in range regardless of the window.
+    if (r.updated == null) return true;
     var d = r.updatedMs != null ? r.updatedMs : Date.parse(r.updated);
     if (b.start != null && d < b.start) return false;
     if (b.end != null && d > b.end) return false;
@@ -712,9 +765,11 @@
         !(r.reporterIds || []).some(function (id) { return S.selUser.has(id); })) return false;
     if (skip.indexOf('status') < 0 && S.selStatus.size && !S.selStatus.has(r.status)) return false;
     if (skip.indexOf('type') < 0 && S.selType.size && !S.selType.has(r.type)) return false;
-    // donor / project are project-level; a KPI passes if it belongs to a matching project
+    // donor / partner / project are project-level; a KPI passes if it belongs to a matching project
     if (skip.indexOf('donor') < 0 && S.selDonor.size &&
         !(r.donorIds || []).some(function (id) { return S.selDonor.has(id); })) return false;
+    if (skip.indexOf('partner') < 0 && S.selPartner.size &&
+        !(r.partnerIds || []).some(function (id) { return S.selPartner.has(id); })) return false;
     if (skip.indexOf('project') < 0 && S.selProject.size &&
         !(r.projectIds || []).some(function (id) { return S.selProject.has(id); })) return false;
     if (skip.indexOf('bentype') < 0 && S.selBenType.size &&
@@ -753,6 +808,7 @@
     if (skip.indexOf('status') < 0 && S.selStatus.size && !S.selStatus.has(a.status)) return false;
     if (skip.indexOf('type') < 0 && S.selType.size && !S.selType.has(a.type)) return false;
     if (skip.indexOf('donor') < 0 && S.selDonor.size && !(a.donorId != null && S.selDonor.has(a.donorId))) return false;
+    if (skip.indexOf('partner') < 0 && S.selPartner.size && !(a.partnerId != null && S.selPartner.has(a.partnerId))) return false;
     if (skip.indexOf('project') < 0 && S.selProject.size && !(a.pid != null && S.selProject.has(a.pid))) return false;
     if (skip.indexOf('bentype') < 0 && S.selBenType.size && !a.benTypeIds.some(function (id) { return S.selBenType.has(id); })) return false;
     if (skip.indexOf('country') < 0 && S.selCountry && a.iso !== S.selCountry) return false;
@@ -1059,7 +1115,7 @@
   }
 
   // Worst-first dominant status among a list carrying a `.status` code.
-  var _STORDER = ['maroon','red','amber','green','blue','nodata'];
+  var _STORDER = ['black','maroon','red','amber','green','blue','nodata'];
   function domStatus(list, keyFn) {
     var sc = {};
     list.forEach(function (x) { var c = keyFn(x); sc[c] = (sc[c] || 0) + 1; });
@@ -1097,6 +1153,8 @@
       // drive the alternative legend colourings (by Donor / by Impact).
       l.donorId = domFreq(l.projList, function (p) { return p.donor ? p.donor.id : null; });
       if (l.donorId != null) l.donorId = +l.donorId;
+      l.partnerId = domFreq(l.projList, function (p) { return p.partner ? p.partner.id : null; });
+      if (l.partnerId != null) l.partnerId = +l.partnerId;
       l.pillar = domFreq(l.projList, function (p) { return projPillar(p); });
       if (l.pillar != null) l.pillar = +l.pillar;
       // total budget of the (distinct) projects at this location - bands the "by Budget" legend
@@ -1183,6 +1241,11 @@
       var did = domFreq(c.locs, function (l) { return l.donorId; });
       var d = did != null ? DB._idx.donorById[+did] : null;
       return d && d.color ? d.color : '#94a3b8';
+    }
+    if (S.colorMode === 'partner') {
+      var pid = domFreq(c.locs, function (l) { return l.partnerId; });
+      var pt = pid != null ? DB._idx.partnerById[+pid] : null;
+      return pt && pt.color ? pt.color : '#94a3b8';
     }
     if (S.colorMode === 'budget') {
       var bnd = domFreq(c.locs, function (l) { return budgetBand(l.budget || 0); });
@@ -1411,6 +1474,27 @@
       }
       return;
     }
+    if (S.colorMode === 'partner') {
+      $('#colorNote').textContent = 'partner';
+      var pcnt = {}, pref = {};
+      locs.forEach(function (l) {
+        var d = l.partnerId != null ? DB._idx.partnerById[l.partnerId] : null;
+        var key = d ? d.id : 0; pcnt[key] = (pcnt[key] || 0) + 1; if (d) pref[key] = d;
+      });
+      var porder = Object.keys(pcnt).sort(function (a, b) { return pcnt[b] - pcnt[a]; });
+      var PCAP = 10, pshown = porder.slice(0, PCAP), prest = porder.slice(PCAP);
+      pshown.forEach(function (key) {
+        var d = pref[key];
+        var col = d && d.color ? d.color : '#94a3b8';
+        var label = d ? d.name : 'Direct (no partner)';
+        box.appendChild(legRow(col, label, pcnt[key], true));
+      });
+      if (prest.length) {
+        var pother = prest.reduce(function (s, k) { return s + pcnt[k]; }, 0);
+        box.appendChild(legRow('#94a3b8', 'Other partners (' + prest.length + ')', pother, true));
+      }
+      return;
+    }
     if (S.colorMode === 'budget') {
       $('#colorNote').textContent = 'total budget (quartiles)';
       var bc = [0, 0, 0, 0];
@@ -1418,10 +1502,10 @@
       [0, 1, 2, 3].forEach(function (i) { if (bc[i]) box.appendChild(legRow(BUDGET_RAMP[i], budgetLabel(i), bc[i], false)); });
       return;
     }
-    $('#colorNote').textContent = 'project status · by ' + (S.perfBasis === 'progress' ? 'Progress' : 'Performance');
-    var sc = { blue:0, green:0, amber:0, red:0, maroon:0, nodata:0 };
+    $('#colorNote').textContent = 'project status · by Performance';
+    var sc = { blue:0, green:0, amber:0, red:0, maroon:0, black:0, nodata:0 };
     locs.forEach(function (l) { sc[l.status]++; });
-    ['blue','green','amber','red','maroon','nodata'].forEach(function (k) { box.appendChild(legRow(STATUS[k].c, STATUS[k].label, sc[k], true)); });
+    ['blue','green','amber','red','maroon','black'].forEach(function (k) { box.appendChild(legRow(STATUS[k].c, STATUS[k].label, sc[k], true)); });
   }
   function legRow(color, text, val, round) {
     var row = el('div', 'lrow');
@@ -1493,6 +1577,7 @@
   function renderFacets() {
     renderProgFacet();
     renderDonorFacet();
+    renderPartnerFacet();
     renderProjectFacet();
     renderStatusFacet();
     renderFrameworkFacet();
@@ -1502,7 +1587,7 @@
   }
 
   // ---- filter-group layout: drag-to-reorder + collapse, persisted in prefs ----
-  var FACET_ORDER_DEFAULT = ['prog', 'level', 'donor', 'project', 'status', 'bentype', 'kpi', 'user'];
+  var FACET_ORDER_DEFAULT = ['prog', 'level', 'donor', 'partner', 'project', 'status', 'bentype', 'kpi', 'user'];
 
   function facetGroupEls() {
     var scroll = $('#facetGroups');
@@ -1569,6 +1654,22 @@
     return best.el;
   }
 
+  // ---------------------------------------------------------------------------
+  //  Filter-pane rule: an option that OTHER active filters cross-filter down to
+  //  zero must stay VISIBLE showing "0", never disappear. The enumerated facets
+  //  (status / level / region / beneficiary …) already iterate their full
+  //  universe, so this holds for them. The count-sorted, paginated facets
+  //  (donor / partner / project / kpi / user) would instead re-rank a zeroed
+  //  option below the "＋ more" fold - so they order by a SELECTION-INDEPENDENT
+  //  rank (below) and let only the displayed count vary with the other filters.
+  // ---------------------------------------------------------------------------
+  var ALL_FACET_SKIP = ['region','prog','nodes','sdg','kpi','user','status','type','donor','partner','project','bentype','country'];
+  /** Count projects per key across the active plan, ignoring every facet
+   *  selection (PROJECTS is already plan-scoped) - a stable ordering key. */
+  function projRankCounts(keyOf) {
+    var m = {}; PROJECTS.forEach(function (p) { var k = keyOf(p); if (k != null) m[k] = (m[k] || 0) + 1; }); return m;
+  }
+
   /** DONORS facet - one row per funding partner, counting the projects it funds
    *  under the other active filters. Selecting donors narrows the project list. */
   function renderDonorFacet() {
@@ -1586,9 +1687,13 @@
       });
     }
     var maxN = 1; Object.keys(counts).forEach(function (k) { if (counts[k] > maxN) maxN = counts[k]; });
+    // order by a selection-independent rank so cross-filtering only zeroes a
+    // row's count, never re-ranks it out of the reveal window (filter-pane rule).
+    var rank = isActs() ? actCountsBy(ALL_FACET_SKIP, function (a) { return a.donorId != null ? a.donorId : 0; })
+                        : projRankCounts(function (p) { return p.donor ? p.donor.id : 0; });
     var all = DB.tables.donor.slice()
       .filter(function (d) { return !q || d.name.toLowerCase().indexOf(q) >= 0 || (d.short_name || '').toLowerCase().indexOf(q) >= 0; })
-      .sort(function (a, b) { return (counts[b.id] || 0) - (counts[a.id] || 0) || (a.name < b.name ? -1 : 1); });
+      .sort(function (a, b) { return (rank[b.id] || 0) - (rank[a.id] || 0) || (a.name < b.name ? -1 : 1); });
     var total = all.length, win = q ? total : Math.min(S.donorShown, total);
     var shown = all.slice(0, win);
     all.forEach(function (d) { if (S.selDonor.has(d.id) && shown.indexOf(d) < 0) shown.push(d); });   // keep selected visible
@@ -1606,6 +1711,47 @@
       function () { return S.donorShown; }, function (v) { S.donorShown = v; }, renderDonorFacet);
   }
 
+  /** PARTNERS facet - one row per implementing partner (the NGO delivering a
+   *  project on the ground), counting the projects it implements under the other
+   *  active filters. Selecting partners narrows the project list. Projects with no
+   *  partner (delivered directly) fall under id 0 and are not listed here. */
+  function renderPartnerFacet() {
+    var host = $('#facetPartner'); if (!host) return; host.innerHTML = '';
+    var q = (S.qPartner || '').toLowerCase(), progIso = progIsoSet();
+    var counts;
+    if (isActs()) {
+      counts = actCountsBy(['partner'], function (a) { return a.partnerId != null ? a.partnerId : 0; });
+    } else {
+      counts = {};
+      PROJECTS.forEach(function (p) {
+        if (!projectPassesFacets(p, false, progIso, false, false, true)) return;   // ignore partner selection for counts
+        var id = p.partner ? p.partner.id : 0;
+        counts[id] = (counts[id] || 0) + 1;
+      });
+    }
+    var maxN = 1; Object.keys(counts).forEach(function (k) { if (+k && counts[k] > maxN) maxN = counts[k]; });
+    var rank = isActs() ? actCountsBy(ALL_FACET_SKIP, function (a) { return a.partnerId != null ? a.partnerId : 0; })
+                        : projRankCounts(function (p) { return p.partner ? p.partner.id : 0; });
+    var all = DB.tables.partner.slice()
+      .filter(function (d) { return !q || d.name.toLowerCase().indexOf(q) >= 0 || (d.acronym || '').toLowerCase().indexOf(q) >= 0; })
+      .sort(function (a, b) { return (rank[b.id] || 0) - (rank[a.id] || 0) || (a.name < b.name ? -1 : 1); });
+    var total = all.length, win = q ? total : Math.min(S.partnerShown, total);
+    var shown = all.slice(0, win);
+    all.forEach(function (d) { if (S.selPartner.has(d.id) && shown.indexOf(d) < 0) shown.push(d); });   // keep selected visible
+    shown.forEach(function (d) {
+      var col = d.color || '#7c8aa5';
+      host.appendChild(facetRow({
+        checkbox: true, checked: S.selPartner.has(d.id), color: col,
+        name: d.name, title: (d.acronym ? d.acronym + ' · ' : '') + 'implementing partner', count: counts[d.id] || 0,
+        barPct: (counts[d.id] || 0) / maxN, barColor: col, selected: S.selPartner.has(d.id),
+        onCheck: function () { toggle(S.selPartner, d.id); S.page = 0; renderAll(); },
+        onOpen: function () { openEntitySummary('partner', d.id); }
+      }));
+    });
+    if (!q) facetMoreLess(host, win, total,
+      function () { return S.partnerShown; }, function (v) { S.partnerShown = v; }, renderPartnerFacet);
+  }
+
   /** PROJECTS facet - one checkable row per project, cross-filtered by the other
    *  active facets (its own selection skipped). Selecting projects narrows the
    *  portfolio to exactly those. Like every facet the count follows S.countBasis:
@@ -1615,25 +1761,29 @@
     var host = $('#facetProject'); if (!host) return; host.innerHTML = '';
     var q = (S.qProject || '').toLowerCase(), progIso = progIsoSet();
     var acts = isActs();
-    var counts = acts ? actCountsBy(['project'], function (a) { return a.pid; }) : null;   // activities per project
-    var all = PROJECTS
-      .filter(function (p) { return projectPassesFacets(p, false, progIso, true); })   // skip own project selection
-      .filter(function (p) {
-        if (!q) return true;
-        var co = p.country ? p.country.name : '';
-        return ((p.code || '') + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co).toLowerCase().indexOf(q) >= 0;
-      });
-    if (acts) all.sort(function (a, b) { return (counts[b.id] || 0) - (counts[a.id] || 0) || ((a.name || '') < (b.name || '') ? -1 : 1); });
+    var counts = acts ? actCountsBy(['project'], function (a) { return a.pid; }) : null;   // activities per project (cross-filtered)
+    var rank = acts ? actCountsBy(ALL_FACET_SKIP, function (a) { return a.pid; }) : null;   // selection-independent order
+    // Full plan universe (only search narrows). A project the OTHER facets filter
+    // out is kept and shown with a 0 count, never hidden (filter-pane rule); its
+    // own selection is skipped so checking projects doesn't zero its siblings.
+    var pass = {}; PROJECTS.forEach(function (p) { pass[p.id] = projectPassesFacets(p, false, progIso, true); });
+    var all = PROJECTS.filter(function (p) {
+      if (!q) return true;
+      var co = p.country ? p.country.name : '';
+      return ((p.code || '') + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co).toLowerCase().indexOf(q) >= 0;
+    });
+    if (acts) all.sort(function (a, b) { return (rank[b.id] || 0) - (rank[a.id] || 0) || ((a.name || '') < (b.name || '') ? -1 : 1); });
     else all.sort(function (a, b) { var an = (a.name || '').toLowerCase(), bn = (b.name || '').toLowerCase(); return an < bn ? -1 : (an > bn ? 1 : 0); });
-    var maxN = 1; if (acts) all.forEach(function (p) { if ((counts[p.id] || 0) > maxN) maxN = counts[p.id] || 0; });
+    var maxN = 1; if (acts) all.forEach(function (p) { if (pass[p.id] && (counts[p.id] || 0) > maxN) maxN = counts[p.id] || 0; });
     var total = all.length, win = q ? total : Math.min(S.projectShown, total);
     var shown = all.slice(0, win);
     PROJECTS.forEach(function (p) { if (S.selProject.has(p.id) && shown.indexOf(p) < 0) shown.push(p); });   // keep selected visible
     shown.forEach(function (p) {
-      var col = STATUS[projStat(p).code].c, n = acts ? (counts[p.id] || 0) : 1;
+      var ok = pass[p.id], col = STATUS[projStat(p).code].c;
+      var n = ok ? (acts ? (counts[p.id] || 0) : 1) : 0;
       host.appendChild(facetRow({
         checkbox: true, checked: S.selProject.has(p.id), color: col,
-        count: n, barPct: acts ? n / maxN : 1, barColor: col,
+        count: n, barPct: acts ? n / maxN : (ok ? 1 : 0), barColor: col,
         name: (p.code ? p.code + ' · ' : '') + p.name,
         title: acts ? (p.name + ' - ' + fmt(n) + ' activit' + (n === 1 ? 'y' : 'ies')) : p.name,
         selected: S.selProject.has(p.id),
@@ -1699,7 +1849,7 @@
   }
   function renderStatusFacet() {
     renderSimpleFacet('facetStatus', S.selStatus, 'status', function (r) { return r.status; },
-      ['blue','green','amber','red','maroon','nodata'].map(function (k) { return { key: k, label: STATUS[k].label, color: STATUS[k].c }; }), 'status',
+      ['blue','green','amber','red','maroon','black'].map(function (k) { return { key: k, label: STATUS[k].label, color: STATUS[k].c }; }), 'status',
       function (a) { return a.status; });
   }
   /** Filter tree: SDG (= impact) → (expand) Outcome → Output. The impact
@@ -1863,6 +2013,7 @@
     }
     if (o.checkbox) {
       var cb = el('input'); cb.type = 'checkbox'; cb.checked = o.checked; cb.tabIndex = -1;
+      if (o.indeterminate) cb.indeterminate = true;   // some-but-not-all members selected (group headers)
       cb.title = 'Check to filter by this';
       // the checkbox is the FILTER control; clicking it must not also open the summary
       cb.onclick = function (e) { e.stopPropagation(); if (o.onCheck) o.onCheck(); };
@@ -1882,11 +2033,11 @@
     i.style.width = Math.max(3, Math.round((o.barPct||0) * 100)) + '%'; i.style.background = o.barColor;
     bar.appendChild(i); row.appendChild(bar);
     // clicking the checkbox filters; clicking the row body opens the item's
-    // results summary. Rows without a summary (e.g. group headers) fall back to
-    // toggling the filter, then to expand/collapse.
+    // results summary. An expandable header with no summary expands on body-click;
+    // a flat row with no summary falls back to toggling its filter.
     if (o.onOpen) { row.classList.add('openable'); row.onclick = function () { o.onOpen(); }; }
-    else if (o.onCheck) row.onclick = function () { o.onCheck(); };
     else if (o.onExpand) row.onclick = function () { o.onExpand(); };
+    else if (o.onCheck) row.onclick = function () { o.onCheck(); };
     return row;
   }
 
@@ -1929,8 +2080,18 @@
     var pillarOf = {};   // full KPI universe → its pillar (for the identity shade)
     IND.forEach(function (r) { if (pillarOf[r.name] == null) pillarOf[r.name] = r.sdg || 0; });
     var q = (S.qKpi || '').toLowerCase();
+    // selection-independent rank (top = most reported across the plan) so cross-
+    // filtering only zeroes a KPI's count, never re-ranks it out of the window.
+    var rank;
+    if (isActs()) {
+      rank = actCountsBy(ALL_FACET_SKIP, function (a) { return a.name; });
+    } else {
+      var rankSets = {};
+      IND.filter(function (r) { return inTimeRange(r); }).forEach(function (r) { accProjects(rankSets, r.name, r.projectIds); });
+      rank = finalizeCounts(rankSets);
+    }
     var names = Object.keys(pillarOf).filter(function (n) { return !q || n.toLowerCase().indexOf(q) >= 0; });
-    names.sort(function (a, b) { return (poolCounts[b] || 0) - (poolCounts[a] || 0) || (a < b ? -1 : 1); });   // top = most reported
+    names.sort(function (a, b) { return (rank[b] || 0) - (rank[a] || 0) || (a < b ? -1 : 1); });   // top = most reported
     var total = names.length;
     var window = q ? total : Math.min(S.kpiShown, total);   // items revealed by the More/Less window
     var shown = names.slice(0, window);
@@ -1970,16 +2131,29 @@
       });
       counts = finalizeCounts(userSets);
     }
+    // selection-independent per-user rank so cross-filtering only zeroes a user's
+    // count, never re-ranks them out of a group's reveal window (filter-pane rule).
+    var rank;
+    if (acts) {
+      rank = actCountsBy(ALL_FACET_SKIP, function (a) { return a.reporterId; });
+    } else {
+      var rankSets = {};
+      IND.filter(function (r) { return inTimeRange(r); }).forEach(function (r) { (r.reporterIds || []).forEach(function (id) { accProjects(rankSets, id, r.projectIds); }); });
+      rank = finalizeCounts(rankSets);
+    }
     var q = (S.qUser || '').toLowerCase();
     // one collapsible group per affiliation (Plans … Countries), in table order
     var groups = DB.tables.affiliation.slice().sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
+    // first pass: resolve each visible group's members + total, so the category
+    // bars scale against the busiest group (like every other facet's mini-bars).
+    var grpRows = [], maxGroupTotal = 1;
     groups.forEach(function (aff) {
       var section = aff.key;
       var us = DB.tables.user.filter(function (u) {
         if (userAffKey(u) !== section) return false;
         // zero-count users are NOT hidden - they show a value of 0 (only search narrows)
         return !q || u.name.toLowerCase().indexOf(q) >= 0 || userCountryIsos(u).join(' ').toLowerCase().indexOf(q) >= 0;
-      }).sort(function (a, b) { return (counts[b.id] || 0) - (counts[a.id] || 0) || (a.name < b.name ? -1 : 1); });
+      }).sort(function (a, b) { return (rank[b.id] || 0) - (rank[a.id] || 0) || (a.name < b.name ? -1 : 1); });
       if (!us.length) return;
       // group total: activities basis sums per-user counts (each activity has ONE
       // reporter, so no double-count); projects basis unions the members' project
@@ -1991,10 +2165,28 @@
         us.forEach(function (u) { var s = userSets[u.id]; if (s) Object.keys(s).forEach(function (pid) { stot[pid] = 1; }); });
         total = Object.keys(stot).length;
       }
+      if (total > maxGroupTotal) maxGroupTotal = total;
+      grpRows.push({ aff: aff, section: section, us: us, total: total });
+    });
+    grpRows.forEach(function (grp) {
+      var aff = grp.aff, section = grp.section, us = grp.us, total = grp.total;
       var base = affColor(section);
       var open = S.expandUserRole.has(section) || !!q;
+      // group header checkbox = select ALL its members at once (uses the same
+      // selUser dimension as the leaf rows). Checked when every member is picked,
+      // indeterminate when only some are — matching the region/pillar headers.
+      var memberIds = us.map(function (u) { return u.id; });
+      var selN = memberIds.filter(function (id) { return S.selUser.has(id); }).length;
+      var allSel = memberIds.length > 0 && selN === memberIds.length;
       host.appendChild(facetRow({
-        cat: true, expandable: true, open: open, color: base, name: aff.name, count: total, barPct: 1, barColor: base,
+        cat: true, expandable: true, open: open, color: base, name: aff.name, count: total,
+        barPct: total / maxGroupTotal, barColor: base,
+        checkbox: true, checked: allSel, indeterminate: selN > 0 && !allSel, selected: allSel,
+        onCheck: function () {
+          if (allSel) memberIds.forEach(function (id) { S.selUser.delete(id); });
+          else memberIds.forEach(function (id) { S.selUser.add(id); });
+          S.page = 0; renderAll();
+        },
         onExpand: function () { toggle(S.expandUserRole, section); renderUserFacet(); persist(); }
       }));
       if (!open) return;
@@ -2044,14 +2236,16 @@
     return s;
   }
 
-  /** Does a project pass the active facets? Country/region/donor are matched on
-   *  the project itself; KPI-level facets (framework node / impact / KPI / status /
-   *  type / reporter) require the project to own at least one KPI that passes. */
-  function projectPassesFacets(p, skipDonor, progIso, skipProject, skipBenType) {
+  /** Does a project pass the active facets? Country/region/donor/partner are
+   *  matched on the project itself; KPI-level facets (framework node / impact /
+   *  KPI / status / type / reporter) require the project to own at least one KPI
+   *  that passes. */
+  function projectPassesFacets(p, skipDonor, progIso, skipProject, skipBenType, skipPartner) {
     if (S.selRegion.size && !S.selRegion.has(p.region)) return false;
     if (S.selCountry && p.iso !== S.selCountry) return false;
     if (S.selProg.size && !(progIso || progIsoSet())[p.iso]) return false;
     if (!skipDonor && S.selDonor.size && !(p.donor && S.selDonor.has(p.donor.id))) return false;
+    if (!skipPartner && S.selPartner.size && !(p.partner && S.selPartner.has(p.partner.id))) return false;
     if (!skipProject && S.selProject.size && !S.selProject.has(p.id)) return false;
     // Project Beneficiaries: keep a project only when one of its OWN activities
     // logged a selected beneficiary type (see p.benTypeIds in buildProjects). This
@@ -2063,7 +2257,7 @@
       // Skip the project-level dims here (already handled above) to avoid
       // double-filtering.
       var pool = p.kpis;
-      var hit = pool.some(function (r) { return inTimeRange(r) && passAll(r, ['region', 'prog', 'country', 'donor', 'project', 'bentype']); });
+      var hit = pool.some(function (r) { return inTimeRange(r) && passAll(r, ['region', 'prog', 'country', 'donor', 'partner', 'project', 'bentype']); });
       if (!hit) return false;
     }
     return true;
@@ -2073,7 +2267,7 @@
    *  activities-basis metric so both bases search the same fields. */
   function projectSearchHay(p) {
     var co = p.country ? p.country.name : '';
-    return (p.code + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + co + ' ' + (p.raw.lead_id != null ? userName(+p.raw.lead_id) : '')).toLowerCase();
+    return (p.code + ' ' + p.name + ' ' + (p.donor ? p.donor.name : '') + ' ' + (p.partner ? p.partner.name + ' ' + (p.partner.acronym || '') : '') + ' ' + co + ' ' + (p.raw.lead_id != null ? userName(+p.raw.lead_id) : '')).toLowerCase();
   }
   /** Filtered + searched list of enriched projects for the right pane. */
   function projectsFor() {
@@ -2085,6 +2279,15 @@
     });
   }
   function projStat(p) { return p.statAll; }
+  /** A project's rolled-up stat over ONLY the KPIs that survive the active
+   *  filters - the exact scope the results panel shows. With no KPI-level filter
+   *  active, passFacets() passes every KPI, so this equals statAll and the
+   *  unfiltered views are unchanged. Used where a view must agree with the panel
+   *  it drills into (e.g. the Timeline under a Performance-status filter). */
+  function projStatScoped(p) {
+    var inds = (p.kpis || []).filter(function (r) { return inTimeRange(r) && passFacets(r); });
+    return inds.length ? aggKpis(inds) : p.statAll;
+  }
   function sortProjects(list) {
     var s = S.sort, dir = S.sortDir === 'asc' ? 1 : -1;
     return list.slice().sort(function (a, b) {
@@ -2222,7 +2425,7 @@
 
     // progress + performance chips
     var agg = el('div', 'pagg');
-    agg.appendChild(kpiChip('Progress', r.progress, r.progressCode));
+    agg.appendChild(kpiChip('Progress', r.progress, r.perfCode));   // status badge borrowed from performance
     agg.appendChild(kpiChip('Perf.', r.performance, r.perfCode));
     c.appendChild(agg);
 
@@ -2274,8 +2477,10 @@
     if (p.secondary.length) agg.appendChild(aggChip('Secondary', p.secondary.length, p.statSecondary));
     c.appendChild(agg);
 
-    // tags: dates · activities · status
+    // tags: delivery (partner / direct) · dates · activities · status
     var tags = el('div', 'tags');
+    if (p.partner) { var pt = el('span', 'tag', p.partner.acronym || p.partner.name); pt.title = 'Implemented by ' + p.partner.name; softTag(pt, p.partner.color || '#5B8DEF'); tags.appendChild(pt); }
+    else { var dr = el('span', 'tag', 'Direct'); dr.title = 'Implemented directly by the organisation'; softTag(dr, '#7c8aa5'); tags.appendChild(dr); }
     if (p.start || p.end) { var dt = el('span', 'tag geo2', shortDate(p.start) + ' → ' + shortDate(p.end)); softTag(dt, '#7c8aa5'); tags.appendChild(dt); }
     var ac = el('span', 'tag', fmt(p.activityN) + ' activit' + (p.activityN === 1 ? 'y' : 'ies')); softTag(ac, '#33C2B4'); tags.appendChild(ac);
     var stt = el('span', 'tag st', STATUS[st.code].label); softTag(stt, STATUS[st.code].c); tags.appendChild(stt);
@@ -2329,6 +2534,29 @@
     var b = $('#mBody .rc-export'); if (!b) return;
     b.onclick = function (){ try { exportResultsPDF(lastResultsExport); } catch (e){ console.error(e); alert('Could not build the PDF: ' + (e && e.message || e)); } };
   }
+  // The plain-language name for the KIND of thing a report is about - the pill
+  // that tells a reader "this is an Impact / a Project / a Country" at a glance.
+  // Keys are the entityScope `badge` codes (and forecast ref kinds resolve to the
+  // same set via entityScope), so one map serves every report and PDF.
+  var TYPE_PILL = { plan:'Plan', impact:'Impact', outcome:'Outcome', output:'Output',
+    project:'Project', country:'Country', region:'Region', donor:'Donor', partner:'Partner',
+    kpi:'KPI', person:'Person', beneficiary:'Beneficiary', status:'Status' };
+  function typePillLabel(badge){ return TYPE_PILL[badge] || cap(badge || ''); }
+
+  // The eyebrow above the modal title telling the reader WHICH report this is -
+  // 'RESULTS REPORT' vs 'FORECAST REPORT' - so the two screens are never confused.
+  // The optional type pill (Impact / Project / Country …) says what it is ABOUT.
+  function setModalKicker(txt, typeLabel, color){
+    var k = $('#mKicker'); if (!k) return;
+    k.className = 'mkicker' + (/FORECAST/.test(txt || '') ? ' fc' : '');
+    k.textContent = '';
+    if (txt) k.appendChild(el('span', 'mk-lbl', txt));
+    if (typeLabel){
+      var pill = el('span', 'mk-type', typeLabel);
+      if (color) pill.style.background = color;
+      k.appendChild(pill);
+    }
+  }
   // Drill-down history for the detail popup: opening a project/KPI from inside a
   // results box pushes the current view, so Close / Esc / ‹ steps back to it
   // instead of dismissing the whole popup.
@@ -2349,9 +2577,14 @@
     var s = Object.create(r);
     s.series = ms;
     var latest = ms.length ? ms[ms.length - 1] : null, b = ind.baseline_value, t = ind.target_value;
-    if (!latest || b == null || t == null || +t === +b){
+    if (b == null || t == null || +t === +b){
       s.value = null; s.updated = null; s.progress = null; s.performance = null;
       s.progressCode = 'nodata'; s.perfCode = 'nodata'; s.status = 'nodata';
+      return s;
+    }
+    if (!latest){   // no report from this project yet = 0% progress -> Under Track
+      s.value = null; s.updated = null; s.progress = 0; s.performance = 0;
+      s.progressCode = ratioToCode(0); s.perfCode = ratioToCode(0); s.status = ratioToCode(0);
       return s;
     }
     var v = indicatorValue(ind, ms);
@@ -2360,7 +2593,7 @@
     s.value = v; s.updated = latest.date;
     s.progress = progress; s.performance = performance;
     s.progressCode = ratioToCode(progress); s.perfCode = ratioToCode(performance);
-    s.status = ratioToCode(S.perfBasis === 'progress' ? progress : performance);
+    s.status = ratioToCode(performance);   // status is always performance
     return s;
   }
   function openDetail(r, push, projectId){
@@ -2370,6 +2603,7 @@
     var _tabs = $('#mTabs'); if (_tabs) _tabs.style.display = 'none';   // match the generic results box - no tabs
     $('#mProjects').classList.add('hide'); $('#mResults').classList.add('hide');
     $('#mBody').classList.remove('hide');
+    setModalKicker('RESULTS REPORT', 'KPI', r.sdg ? (PILLAR_COLORS[r.sdg] || '#7c8aa5') : '#7c8aa5');
     var ind = r.raw;
     var co = r.iso ? DB._idx.countryByIso[r.iso] : null;
     var scopeProj = projectId != null ? PROJECTSBYID[projectId] : null;
@@ -2471,7 +2705,17 @@
     // box counts only what that user logged, a beneficiary box only what recorded
     // that type, a project box only that project's own reports.
     var actScope = null;
-    if (kind === 'region'){
+    if (kind === 'plan'){
+      // The whole active plan - the top of the results chain. Its scope is every
+      // KPI and project the app carries; the filter-narrowing step below then
+      // makes the box mirror whatever slice the dashboard is showing.
+      var ap = planById(key) || activePlan();
+      inds = IND.slice(); projs = PROJECTS.slice();
+      var apPeriod = ap ? ((ap.start_date ? yearOf(ap.start_date) : '?') + '–' + (ap.end_date ? yearOf(ap.end_date) : '?')) : '';
+      title = ap ? ap.name : 'Development plan';
+      sub = (apPeriod ? apPeriod + '  ·  ' : '') + 'Development plan';
+      color = '#2563eb'; badge = 'plan';
+    } else if (kind === 'region'){
       inds = IND.filter(function (r){ return r.region === key; });
       projs = PROJECTS.filter(function (p){ return p.region === key; });
       title = regionFull(key); sub = 'Region'; color = regionColor(key); badge = 'region';
@@ -2489,6 +2733,12 @@
       inds = IND.filter(function (r){ return (r.donorIds || []).indexOf(key) >= 0; });
       title = d ? d.name : 'Donor'; sub = d ? (donorType(d) + ' donor') : 'Donor';
       color = (d && d.color) || color; badge = 'donor';
+    } else if (kind === 'partner'){
+      var pt = DB._idx.partnerById[key];
+      projs = PROJECTS.filter(function (p){ return p.partner && p.partner.id === key; });
+      inds = IND.filter(function (r){ return (r.partnerIds || []).indexOf(key) >= 0; });
+      title = pt ? pt.name : 'Partner'; sub = pt ? ((pt.acronym ? pt.acronym + '  ·  ' : '') + 'Implementing partner') : 'Implementing partner';
+      color = (pt && pt.color) || color; badge = 'partner';
     } else if (kind === 'status'){
       inds = IND.filter(function (r){ return r.status === key; });
       projsFromInds = true;
@@ -2618,6 +2868,84 @@
     $('#modal').classList.add('on');
   }
 
+  // Section an entity's projects by the NEXT level down the results chain, so a
+  // results page never shows a flat wall of projects: Plan → Impacts, Impact →
+  // Outcomes, Outcome → Outputs, Region → Countries. Each project lands in the
+  // single group its in-scope KPIs contribute the most to (so it appears once).
+  // Returns null for leaf/flat kinds (Output, Donor, Partner, Country, …) - those
+  // list their projects flat. `scopeInds` are the entity's in-scope KPIs.
+  // The read-only hierarchy code ('Outcome 1.2' / 'Output 1.2.1') for a framework
+  // node identified by a chainKey ('level~|~statement'). Country instances of an
+  // output share one code, so the first match in the active plan is authoritative.
+  function chainKeyCode(ck){
+    var i = ck.indexOf(SEP); if (i < 0) return '';
+    var lvl = ck.slice(0, i), stmt = ck.slice(i + SEP.length), arr = DB.tables.result;
+    for (var j = 0; j < arr.length; j++){
+      var r = arr[j];
+      if (r.plan_id === S.plan && r.level === lvl && r.statement === stmt && r.code) return r.code;
+    }
+    return '';
+  }
+
+  function esumProjectGroups(kind, key, projs, scopeInds){
+    if (!projs || !projs.length) return null;
+    // Region is a geographic parent - group by the project's own country.
+    if (kind === 'region'){
+      var byC = {}, cord = [];
+      projs.forEach(function (p){
+        var k = p.iso || '?';
+        var g = byC[k];
+        if (!g){ var cnm = p.country ? p.country.name : (p.iso || '—'); g = byC[k] = { code: '', name: cnm, title: cnm, color: p.iso ? countryColor(p.iso) : null, projs: [] }; cord.push(g); }
+        g.projs.push(p);
+      });
+      cord.sort(function (a, b){ return a.title < b.title ? -1 : a.title > b.title ? 1 : 0; });
+      return cord.length ? cord : null;
+    }
+    // Framework chain: the child level's chainKey prefix.
+    var childPrefix = null, childIsImpact = false;
+    if (kind === 'plan'){ childPrefix = 'sdg'; childIsImpact = true; }
+    else if (kind === 'node'){
+      var lvl = String(key).split(SEP)[0];
+      if (lvl === 'sdg') childPrefix = 'outcome';
+      else if (lvl === 'outcome') childPrefix = 'output';
+      else return null;                 // output is a leaf → flat project list
+    } else return null;                 // donor, partner, country, kpi, … → flat
+    var inScope = {}; (scopeInds || []).forEach(function (r){ inScope[r.id] = 1; });
+    var pre = childPrefix + SEP;
+    var groups = {}, order = [];
+    var unmapped = { code: '', name: 'Project-specific KPIs (no framework parent)', title: 'Project-specific KPIs (no framework parent)', color: '#94a3b8', projs: [] };
+    projs.forEach(function (p){
+      var tally = {}, best = null, bestN = 0;
+      (p.kpis || []).forEach(function (r){
+        if (!inScope[r.id]) return;
+        (r.chainKeys || []).forEach(function (ck){
+          if (ck.indexOf(pre) !== 0) return;
+          tally[ck] = (tally[ck] || 0) + 1;
+          if (tally[ck] > bestN){ bestN = tally[ck]; best = ck; }
+        });
+      });
+      if (!best){ unmapped.projs.push(p); return; }
+      var g = groups[best];
+      if (!g){
+        var val = best.slice(pre.length);
+        if (childIsImpact){
+          var inm = PILLAR_NAMES[+val] || '';
+          g = groups[best] = { code: pillarLabel(+val), name: inm, title: pillarLabel(+val) + (inm ? ' · ' + inm : ''), color: PILLAR_COLORS[+val] || '#94a3b8', sort: +val, projs: [] };
+        } else {
+          var ocode = chainKeyCode(best);
+          g = groups[best] = { code: ocode, name: val, title: ocode ? ocode + ' · ' + val : val, color: null, sort: val, projs: [] };
+        }
+        order.push(best);
+      }
+      g.projs.push(p);
+    });
+    var out = order.map(function (k){ return groups[k]; });
+    out.sort(function (a, b){ return a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0; });
+    if (unmapped.projs.length) out.push(unmapped);
+    // Only a framework mapping justifies sections; if nothing mapped, stay flat.
+    return out.length && out.some(function (g){ return g !== unmapped; }) ? out : null;
+  }
+
   function openEntitySummary(kind, key, push){
     var sc = entityScope(kind, key); if (!sc) return;
     navEnter({ t: 'entity', kind: kind, key: key }, push);
@@ -2625,6 +2953,7 @@
     var tabs = $('#mTabs'); if (tabs) tabs.style.display = 'none';
     $('#mProjects').classList.add('hide'); $('#mResults').classList.add('hide');
     $('#mBody').classList.remove('hide');
+    setModalKicker('RESULTS REPORT', typePillLabel(sc.badge), sc.color);
     $('#mTitle').textContent = sc.title;
     $('#mSub').textContent = sc.sub || '';
     $('#mImpact').textContent = '';
@@ -2642,7 +2971,7 @@
     var budget = 0, hasBudget = false;
     projs.forEach(function (p){ if (p.budget != null){ budget += +p.budget; hasBudget = true; } });
     var progAvg = aggMetric(inds, 'progress'), perfAvg = aggMetric(inds, 'performance');
-    var progCode = ratioToCode(progAvg), perfCode = ratioToCode(perfAvg);
+    var perfCode = ratioToCode(perfAvg);   // status is always performance; progress badges borrow it
     function ragPill(code){ return '<span class="pill" style="background:' + STATUS[code].c + '">' + STATUS[code].label + '</span>'; }
     function pctStat(label, avg, code){
       return '<div class="stat"><div class="sl">' + label + '</div><div class="sv">'
@@ -2684,14 +3013,14 @@
     if (theProject){
       expStats.push({ label: 'Timeline', value: (theProject.start ? shortDate(theProject.start) : '–') + ' → ' + (theProject.end ? shortDate(theProject.end) : '–') });
     }
-    expStats.push({ label: 'Progress', value: progAvg != null ? Math.round(progAvg * 100) + '%' : '–', sub: progAvg != null ? STATUS[progCode].label : '', color: progAvg != null ? STATUS[progCode].c : null });
+    expStats.push({ label: 'Progress', value: progAvg != null ? Math.round(progAvg * 100) + '%' : '–', sub: progAvg != null ? STATUS[perfCode].label : '', color: progAvg != null ? STATUS[perfCode].c : null });
     expStats.push({ label: 'Performance', value: perfAvg != null ? Math.round(perfAvg * 100) + '%' : '–', sub: perfAvg != null ? STATUS[perfCode].label : '', color: perfAvg != null ? STATUS[perfCode].c : null });
 
     html += '<div class="esum-grid">'
       + stat(countLbl, countVal, actSub)
       + stat('Budget', hasBudget ? '$' + fmtBudget(budget) : '–')
       + (tlVal ? stat('Timeline', tlVal) : '')
-      + pctStat('Progress', progAvg, progCode)
+      + pctStat('Progress', progAvg, perfCode)
       + pctStat('Performance', perfAvg, perfCode)
       + '</div>';
 
@@ -2699,7 +3028,7 @@
     // A single project shows its KPIs; every other item shows its projects. KPIs
     // are never listed on a non-project results box. The same rows are pushed into
     // expCols/expRows so the PDF export mirrors exactly what is on screen.
-    var expCols = [], expRows = [], expSection = '', expNote = '';
+    var expCols = [], expRows = [], expSections = [], expSection = '', expNote = '';
     var indsHead = 'KPIs - ' + ofTotal(inds.length, sc.indsAll.length, 'KPI', 'KPIs').replace(/ KPIs?$/, '');
     var projsHead = 'Projects - ' + ofTotal(projs.length, sc.projsAll.length, 'project', 'projects').replace(/ projects?$/, '');
     if (isProject){
@@ -2709,7 +3038,7 @@
       html += '<div class="msec"><h4>' + esc(indsHead) + '</h4>';
       if (!inds.length) html += '<div class="empty">' + (sc.indsAll.length ? 'No KPIs on this project match the active filters.' : 'No KPIs attached to this project.') + '</div>';
       else {
-        html += '<table class="esum-tbl esum-kpi"><thead><tr><th>KPI</th><th class="tcol">Type</th><th class="num">Baseline</th><th class="num">Target</th><th class="num">Latest</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead><tbody>';
+        html += '<div class="esum-card"><table class="esum-tbl esum-kpi"><thead><tr><th>KPI</th><th class="tcol">Type</th><th class="num">Baseline</th><th class="num">Target</th><th class="num">Latest</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead><tbody>';
         inds.slice().sort(function (a, b){ return (b.updated || '') < (a.updated || '') ? -1 : 1; }).forEach(function (r){
           var u = r.unit === '%' ? '%' : '', col = r.sdg ? PILLAR_COLORS[r.sdg] : '#94a3b8', ind = r.raw;
           // this project's own reports against the KPI, under the active filters
@@ -2723,7 +3052,7 @@
             + '<td class="num">' + (ind.target_value != null ? fmtNum(ind.target_value) + u : '–') + '</td>'
             + '<td class="num">' + (r.value != null ? fmtNum(r.value) + u : '–') + '</td>'
             + '<td class="num">' + fmt(kActs) + '</td>'
-            + '<td class="num"><b style="color:' + STATUS[r.progressCode].c + '">' + pro + '</b></td>'
+            + '<td class="num"><b style="color:' + STATUS[r.perfCode].c + '">' + pro + '</b></td>'
             + '<td class="num"><b style="color:' + STATUS[r.perfCode].c + '">' + per + '</b></td></tr>';
           expRows.push([
             { t: (r.code ? r.code + ' · ' : '') + r.name, dot: col },
@@ -2734,16 +3063,16 @@
             { t: ind.target_value != null ? fmtNum(ind.target_value) + u : '–' },
             { t: r.value != null ? fmtNum(r.value) + u : '–' },
             { t: fmt(kActs) },
-            { t: pro, color: STATUS[r.progressCode].c },
+            { t: pro, color: STATUS[r.perfCode].c },
             { t: per, color: STATUS[r.perfCode].c }
           ]);
         });
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
       }
       html += '</div>';
     } else {
       expSection = projsHead;
-      expCols = [{ t: 'Project' }, { t: 'Country' }, { t: 'Donor' }, { t: 'Budget', align: 'right' },
+      expCols = [{ t: 'Project' }, { t: 'Country' }, { t: 'Donor' }, { t: 'Partner' }, { t: 'Budget', align: 'right' },
                  { t: 'Activities', align: 'right' }, { t: 'Progress', align: 'right' }, { t: 'Performance', align: 'right' }];
       html += '<div class="msec"><h4>' + esc(projsHead) + '</h4>';
       if (!projs.length) html += '<div class="empty">No projects match this item under the current filters.</div>';
@@ -2753,39 +3082,68 @@
         // to that stat rather than to the project's lifetime total.
         var actByProj = {};
         sc.acts.forEach(function (m){ if (m.project_id != null) actByProj[m.project_id] = (actByProj[m.project_id] || 0) + 1; });
-        html += '<table class="esum-tbl esum-proj"><thead><tr><th>Project</th><th>Country</th><th>Donor</th><th class="num">Budget</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead><tbody>';
-        projs.slice().sort(function (a, b){ return (actByProj[b.id] || 0) - (actByProj[a.id] || 0); }).forEach(function (p){
+        var byActs = function (a, b){ return (actByProj[b.id] || 0) - (actByProj[a.id] || 0); };
+        // one row's on-screen HTML + its export cell array, built once and reused
+        function projRow(p){
           var pActs = actByProj[p.id] || 0;
           var proV = aggMetric(p.kpis, 'progress'), perV = aggMetric(p.kpis, 'performance');
           var pro = proV != null ? Math.round(proV * 100) + '%' : '–';
           var per = perV != null ? Math.round(perV * 100) + '%' : '–';
           var col = (p.donor && p.donor.color) || countryColor(p.iso);
-          html += '<tr class="esum-trow" data-proj="' + p.id + '">'
+          var h = '<tr class="esum-trow" data-proj="' + p.id + '">'
             + '<td class="esum-nm"><span class="esum-dot" style="background:' + col + '"></span>' + esc((p.code ? p.code + ' · ' : '') + p.name) + '</td>'
             + '<td>' + esc(p.country ? p.country.name : p.iso) + '</td>'
             + '<td>' + esc(p.donor ? (p.donor.short_name || p.donor.name) : '–') + '</td>'
+            + '<td>' + esc(p.partner ? (p.partner.acronym || p.partner.name) : 'Direct') + '</td>'
             + '<td class="num">' + (p.budget != null ? '$' + fmtBudget(p.budget) : '–') + '</td>'
             + '<td class="num">' + fmt(pActs) + '</td>'
-            + '<td class="num"><b style="color:' + STATUS[ratioToCode(proV)].c + '">' + pro + '</b></td>'
+            + '<td class="num"><b style="color:' + STATUS[ratioToCode(perV)].c + '">' + pro + '</b></td>'
             + '<td class="num"><b style="color:' + STATUS[ratioToCode(perV)].c + '">' + per + '</b></td></tr>';
-          expRows.push([
+          var row = [
             { t: (p.code ? p.code + ' · ' : '') + p.name, dot: col },
             { t: p.country ? p.country.name : p.iso },
             { t: p.donor ? (p.donor.short_name || p.donor.name) : '–' },
+            { t: p.partner ? (p.partner.acronym || p.partner.name) : 'Direct' },
             { t: p.budget != null ? '$' + fmtBudget(p.budget) : '–' },
             { t: fmt(pActs) },
-            { t: pro, color: STATUS[ratioToCode(proV)].c },
+            { t: pro, color: STATUS[ratioToCode(perV)].c },
             { t: per, color: STATUS[ratioToCode(perV)].c }
-          ]);
-        });
-        html += '</tbody></table>';
+          ];
+          return { html: h, row: row };
+        }
+        // group projects one level down the chain (Plan→Impacts, …); null = flat.
+        // Each group is its own rounded card: the hierarchy code + statement sit
+        // OUTSIDE the card as a label; the column header + rows live INSIDE it.
+        var pgroups = esumProjectGroups(kind, key, projs, sc.inds);
+        var projThead = '<thead><tr><th>Project</th><th>Country</th><th>Donor</th><th>Partner</th><th class="num">Budget</th><th class="num">Activities</th><th class="num">Progress</th><th class="num">Performance</th></tr></thead>';
+        if (pgroups){
+          pgroups.forEach(function (g){
+            var gRows = g.projs.slice().sort(byActs);
+            html += '<div class="esum-group">'
+              + '<div class="esum-group-hd">'
+              +   '<span class="esum-grp-bar" style="background:' + (g.color || '#94a3b8') + '"></span>'
+              +   (g.code ? '<span class="esum-grp-code">' + esc(g.code) + '</span>' : '')
+              +   '<span class="esum-grp-t">' + esc(g.name || g.title) + '</span>'
+              +   '<span class="esum-grp-n">' + gRows.length + ' project' + (gRows.length === 1 ? '' : 's') + '</span>'
+              + '</div>'
+              + '<div class="esum-card"><table class="esum-tbl esum-proj">' + projThead + '<tbody>';
+            var secRows = [];
+            gRows.forEach(function (p){ var r = projRow(p); html += r.html; expRows.push(r.row); secRows.push(r.row); });
+            html += '</tbody></table></div></div>';
+            expSections.push({ code: g.code, title: g.title, name: g.name || g.title, color: g.color || '#94a3b8', rows: secRows });
+          });
+        } else {
+          html += '<div class="esum-card"><table class="esum-tbl esum-proj">' + projThead + '<tbody>';
+          projs.slice().sort(byActs).forEach(function (p){ var r = projRow(p); html += r.html; expRows.push(r.row); });
+          html += '</tbody></table></div>';
+        }
       }
       html += '</div>';
     }
 
     lastResultsExport = { badge: sc.badge, badgeColor: sc.color, title: sc.title, sub: sc.sub || '',
       summary: kidsTxt, filters: activeFilterSummary(), stats: expStats, section: expSection,
-      columns: expCols, rows: expRows, note: expNote };
+      columns: expCols, rows: expRows, sections: expSections.length ? expSections : null, note: expNote };
 
     $('#mBody').innerHTML = html;
     wireExportBtn();
@@ -2843,6 +3201,7 @@
     var actsAllN = activitiesAtCluster(c, true).length;
     var color = STATUS[c.status] ? STATUS[c.status].c : '#7c8aa5';
     var badge = multi ? 'Locations' : 'Location';
+    setModalKicker('RESULTS REPORT', badge, color);
 
     var title = multi ? (fmt(c.locs.length) + ' activity locations') : ((loc0 && loc0.name) ? loc0.name : 'Location');
     var sub = multi
@@ -3306,9 +3665,11 @@
     $('#prTitle').textContent = curProject ? ((curProject.code ? curProject.code + ' · ' : '') + curProject.name) : '＋ New project';
     var co = curProject ? DB._idx.countryByIso[curProject.country_iso3] : null;
     var don = curProject && curProject.donor_id != null ? DB._idx.donorById[curProject.donor_id] : null;
+    var pt = curProject && curProject.partner_id != null ? DB._idx.partnerById[curProject.partner_id] : null;
+    var via = curProject ? (pt ? ('via ' + (pt.acronym || pt.name)) : (projImpl(curProject) === 'direct' ? 'direct delivery' : '')) : '';
     $('#prSub').textContent = curProject
-      ? [co ? co.name : '', don ? don.name : '', curProject.budget_usd != null ? '$' + fmtBudget(curProject.budget_usd) : ''].filter(Boolean).join('  ·  ')
-      : 'Create a country programme project - donor, budget, KPIs and activities';
+      ? [co ? co.name : '', don ? don.name : '', via, curProject.budget_usd != null ? '$' + fmtBudget(curProject.budget_usd) : ''].filter(Boolean).join('  ·  ')
+      : 'Create a country programme project - donor, partner, budget, KPIs and activities';
     setProjectTab('details');
     $('#projectModal').classList.add('on');
   }
@@ -3331,6 +3692,19 @@
     else if (tab === 'secondary') node = projectSecondaryEditor();
     else if (tab === 'activities') node = projectActivitiesEditor();
     if (node) { body.appendChild(node); if (node.__init) node.__init(); }
+    configProjectFoot(node);
+  }
+  /** Wire the persistent modal footer to the tab that is currently on screen.
+   *  Export PDF is offered once the project exists; the primary Save button takes
+   *  the active tab's own save handler (details / primary KPIs) and hides itself on
+   *  the list-style tabs that save through their own child popups. */
+  function configProjectFoot(node){
+    var msg = $('#prMsg'); if (msg){ msg.textContent = ''; msg.classList.remove('ok'); }
+    var exp = $('#prExportPdf'); if (exp) exp.style.display = curProject ? '' : 'none';
+    var save = $('#prSaveBtn'); if (!save) return;
+    var saver = node && node.__save;
+    if (saver){ save.style.display = ''; save.textContent = (node && node.__saveLabel) || 'Save changes'; save.onclick = saver; }
+    else { save.style.display = 'none'; save.onclick = null; }
   }
   function projectNeedsSaveNote(){
     var d = el('div', 'cp-note'); d.style.margin = '18px';
@@ -3344,6 +3718,14 @@
       .sort(function (a, b){ return a.name < b.name ? -1 : 1; })
       .map(function (d){ return '<option value="' + d.id + '"' + (d.id === cur ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('');
   }
+  function partnerOptions(cur){
+    return '<option value="">– select partner –</option>' + DB.tables.partner.slice()
+      .sort(function (a, b){ return a.name < b.name ? -1 : 1; })
+      .map(function (d){ return '<option value="' + d.id + '"' + (d.id === cur ? ' selected' : '') + '>' + esc(d.name) + (d.acronym ? ' (' + esc(d.acronym) + ')' : '') + '</option>'; }).join('');
+  }
+  // Delivery modality of a raw project row: 'partner' when an implementing partner
+  // is attached, otherwise the stored implementation flag (default 'direct').
+  function projImpl(p){ return (p && p.partner_id != null) ? 'partner' : ((p && p.implementation) || 'direct'); }
   function countryOptionsGrouped(cur, restrictIso){
     var byReg = {}; DB.tables.country.forEach(function (c){ (byReg[c.region] = byReg[c.region] || []).push(c); });
     return '<option value="">– select country –</option>' + regionNames().map(function (rg){
@@ -3363,25 +3745,33 @@
     f.innerHTML =
       '<div class="ufgrid prgrid">' +
       '  <label><span>Project code</span><input class="pf-code" type="text" value="' + esc(p ? (p.code || '') : '') + '" placeholder="e.g. PRJ-KEN-01"></label>' +
-      '  <label class="pf-wide"><span>Project name *</span><input class="pf-name" type="text" value="' + esc(p ? p.name : '') + '" placeholder="What this project delivers"></label>' +
+      '  <label><span>Project name *</span><input class="pf-name" type="text" value="' + esc(p ? p.name : '') + '" placeholder="What this project delivers"></label>' +
       '  <label><span>Donor</span><select class="pf-donor">' + donorOptions(p ? p.donor_id : null) + '</select></label>' +
       '  <label><span>Country *</span><select class="pf-country"' + (lock ? ' disabled' : '') + '>' + countryOptionsGrouped(iso, lock) + '</select></label>' +
+      '  <label><span>Delivery</span><select class="pf-impl">' +
+          '<option value="direct"' + (projImpl(p) === 'direct' ? ' selected' : '') + '>Directly by organisation</option>' +
+          '<option value="partner"' + (projImpl(p) === 'partner' ? ' selected' : '') + '>Through an implementing partner</option>' +
+        '</select></label>' +
+      '  <label><span>Implementing partner</span><select class="pf-partner"' + (projImpl(p) === 'partner' ? '' : ' disabled') + '>' + partnerOptions(p ? p.partner_id : null) + '</select></label>' +
       '  <label><span>Budget (USD)</span><input class="pf-budget" type="text" inputmode="numeric" value="' + esc(p && p.budget_usd != null ? fmt(p.budget_usd) : '') + '" placeholder="0"></label>' +
       '  <label><span>Lead</span><select class="pf-lead">' + userOptions(projectLeadId(p), 'project') + '</select></label>' +
       '  <label><span>Start date</span><input class="pf-start" type="date" value="' + esc(p ? (p.start_date || '') : '') + '"></label>' +
       '  <label><span>End date</span><input class="pf-end" type="date" value="' + esc(p ? (p.end_date || '') : '') + '"></label>' +
       '  <label class="pf-wide"><span>Description</span><textarea class="pf-desc" rows="3" placeholder="Objectives, scope, partners…">' + esc(p ? (p.description || '') : '') + '</textarea></label>' +
       '</div>' +
-      (ro ? '<div class="cp-note">Read-only - you do not have permission to edit this project.</div>'
-          : '<div class="cp-note">A project belongs to a <b>country</b>, is funded by a <b>donor</b>, and carries <b>primary</b> KPIs (from the inventory) and <b>secondary</b> KPIs (project-local). Save details to unlock the other tabs.</div>') +
-      '<div class="ufbtns"><span class="ufmsg pf-msg"></span>' +
-        (ro ? '' :
-        '<button class="hbtn pf-cancel" type="button">Close</button>' +
-        '<button class="hbtn primary pf-save" type="button">' + (p ? 'Save changes' : 'Create project') + '</button>') +
-      '</div>';
+      (ro ? '<div class="cp-note">Read-only - you do not have permission to edit this project.</div>' : '');
     if (ro) { f.querySelectorAll('input,select,textarea').forEach(function (x){ x.disabled = true; }); return f; }
-    f.querySelector('.pf-cancel').onclick = closeProject;
-    f.querySelector('.pf-save').onclick = function (){ saveProjectDetails(f); };
+    // Save is driven from the persistent modal footer (configProjectFoot).
+    f.__saveLabel = p ? 'Save changes' : 'Create project';
+    f.__save = function (){ saveProjectDetails(f); };
+    // Delivery toggle: the partner dropdown is only live when 'Through a partner'
+    // is chosen; switching back to 'Directly' disables and clears the partner.
+    var impl = f.querySelector('.pf-impl'), pfPartner = f.querySelector('.pf-partner');
+    if (impl && pfPartner) impl.addEventListener('change', function (){
+      var on = impl.value === 'partner';
+      pfPartner.disabled = !on;
+      if (!on) pfPartner.value = '';
+    });
     // Budget: re-insert thousands separators as the user types (keeps caret at end).
     // Decimals survive: only the integer part is re-grouped, the fraction rides along.
     var bud = f.querySelector('.pf-budget');
@@ -3398,15 +3788,22 @@
   function saveProjectDetails(f){
     var v = function (c){ var e = f.querySelector(c); return e ? e.value : ''; };
     var name = v('.pf-name').trim(), iso = v('.pf-country') || projectCountryLock();
-    var msg = f.querySelector('.pf-msg');
+    var msg = $('#prMsg');
     if (msg) msg.classList.remove('ok');   // reset to error/neutral colour before revalidating
     if (!name){ msg.textContent = 'Project name is required.'; return; }
     if (!iso){ msg.textContent = 'Select a country.'; return; }
     var co = DB._idx.countryByIso[iso];
     var num = function (x){ return x === '' || isNaN(+x) ? null : +x; };
+    // Delivery: through a partner (partner_id set) or directly (partner_id null).
+    // Choosing 'Through a partner' but leaving the partner blank still records the
+    // intent as 'partner' so the modality is explicit.
+    var impl = v('.pf-impl') === 'partner' ? 'partner' : 'direct';
+    var partnerId = impl === 'partner' && v('.pf-partner') ? +v('.pf-partner') : null;
     var fields = {
       code: v('.pf-code').trim(), name: name,
       donor_id: v('.pf-donor') ? +v('.pf-donor') : null,
+      partner_id: partnerId,
+      implementation: impl,
       country_iso3: iso, region: co ? co.region : null,
       budget_usd: num(v('.pf-budget').replace(/,/g, '')), lead_id: v('.pf-lead') ? +v('.pf-lead') : null,
       start_date: v('.pf-start') || null, end_date: v('.pf-end') || null,
@@ -3416,7 +3813,7 @@
     var done = function (){
       enrich(); renderTicker(); renderAll();
       openProject(curProject);   // refresh header + tabs against the saved row
-      var m2 = $('#prBody .pf-msg'); if (m2) { m2.textContent = 'Saved.'; m2.classList.add('ok'); }
+      var m2 = $('#prMsg'); if (m2) { m2.textContent = 'Saved.'; m2.classList.add('ok'); }
     };
     if (curProject){
       Object.keys(fields).forEach(function (k){ curProject[k] = fields[k]; });
@@ -3459,12 +3856,8 @@
       });
     });
     box.appendChild(list);
-    if (!ro) {
-      var bar = el('div', 'ufbtns'); bar.innerHTML = '<span class="ufmsg pk-msg"></span>';
-      var save = el('button', 'hbtn primary', 'Save primary KPIs');
-      save.onclick = function (){ savePrimaryKpis(box, linked); };
-      bar.appendChild(save); box.appendChild(bar);
-    }
+    // Save is driven from the persistent modal footer (configProjectFoot).
+    if (!ro) { box.__saveLabel = 'Save primary KPIs'; box.__save = function (){ savePrimaryKpis(box, linked); }; }
     return box;
   }
   function savePrimaryKpis(box, linked){
@@ -3481,8 +3874,11 @@
     adds.forEach(function (iid){ (DB._idx.measByIndicator[iid] || []).forEach(function (m){ if (m.project_id == null){ m.project_id = pid; mChanged.push(m); } }); });
     box.querySelectorAll('input[data-iid]').forEach(function (cb){ if (!cb.checked){ (DB._idx.measByIndicator[+cb.dataset.iid] || []).forEach(function (m){ if (m.project_id === pid){ m.project_id = null; mChanged.push(m); } }); } });
     if (mChanged.length) jobs.push(DB.persist('measurement', mChanged));
-    var msg = box.querySelector('.pk-msg'); if (msg) msg.textContent = 'Saving…';
-    Promise.all(jobs).then(function (){ enrich(); renderTicker(); renderAll(); setProjectTab('primary'); });
+    var msg = $('#prMsg'); if (msg){ msg.classList.remove('ok'); msg.textContent = 'Saving…'; }
+    Promise.all(jobs).then(function (){
+      enrich(); renderTicker(); renderAll(); setProjectTab('primary');
+      var m2 = $('#prMsg'); if (m2){ m2.textContent = 'Saved.'; m2.classList.add('ok'); }
+    });
   }
 
   // ---- TAB 3 · secondary KPIs (project-local) ------------------------------
@@ -3911,6 +4307,8 @@
     if (ut) ut.classList.toggle('hide', !canManageUsers());
     var dt = $('#cpTabs').querySelector('[data-cptab="donors"]');
     if (dt) dt.classList.toggle('hide', !canEditFramework());
+    var pt = $('#cpTabs').querySelector('[data-cptab="partners"]');
+    if (pt) pt.classList.toggle('hide', !canEditFramework());
     var bt = $('#cpTabs').querySelector('[data-cptab="beneficiaries"]');
     if (bt) bt.classList.toggle('hide', !canEditFramework());
     var rt = $('#cpTabs').querySelector('[data-cptab="regions"]');
@@ -4039,10 +4437,11 @@
   function renderControl(tab){
     tab = tab || 'donors';
     if (tab === 'users' && !canManageUsers()) tab = 'donors';
-    if ((tab === 'donors' || tab === 'beneficiaries' || tab === 'regions' || tab === 'countries') && !canEditFramework()) tab = 'donors';
+    if ((tab === 'donors' || tab === 'partners' || tab === 'beneficiaries' || tab === 'regions' || tab === 'countries') && !canEditFramework()) tab = 'donors';
     Array.prototype.forEach.call($('#cpTabs').children, function (x){ x.classList.toggle('on', x.dataset.cptab === tab); });
     var body = $('#cpBody'); body.innerHTML = '';
     if (tab === 'users') body.appendChild(usersEditor());
+    else if (tab === 'partners') body.appendChild(partnersEditor());
     else if (tab === 'beneficiaries') body.appendChild(beneficiaryTypesEditor());
     else if (tab === 'regions') body.appendChild(regionLeadsEditor());
     else if (tab === 'countries') body.appendChild(countryLeadsEditor());
@@ -4151,6 +4550,105 @@
   }
 
   // =========================================================================
+  //  CONTROL PANEL - Partners (implementing NGOs; editable; Admin only)
+  // =========================================================================
+  // A partner delivers projects on the ground on behalf of the organisation. It
+  // carries full contact details, an identity colour and a relationship Lead.
+  var PARTNER_PALETTE = ['#5B8DEF','#2FB39B','#B07CE8','#EE9A57','#E284A8','#4C9BD6','#37B58A','#D7A83E',
+    '#79C06B','#E07E6C','#B888D8','#54AEBC'];
+  function partners(){ return DB.tables.partner.slice().sort(function (a, b){ return a.name < b.name ? -1 : 1; }); }
+  function nextPartnerColor(){
+    var used = {}; DB.tables.partner.forEach(function (d){ if (d.color) used[d.color.toUpperCase()] = 1; });
+    for (var i = 0; i < PARTNER_PALETTE.length; i++){ if (!used[PARTNER_PALETTE[i].toUpperCase()]) return PARTNER_PALETTE[i]; }
+    return PARTNER_PALETTE[DB.tables.partner.length % PARTNER_PALETTE.length];
+  }
+  function partnerProjectCount(id){ return DB.tables.project.reduce(function (n, p){ return n + (p.partner_id === id ? 1 : 0); }, 0); }
+  function applyPartnerMutation(p){
+    return Promise.resolve(p).then(function (){ closePartnerEdit(); enrich(); renderTicker(); renderAll(); renderControl('partners'); });
+  }
+  function partnersEditor(){
+    var box = el('div', 'cp-users');
+    var note = el('div', 'cp-note');
+    note.innerHTML = 'Partners are the <b>implementing NGOs</b> that deliver projects on the ground on behalf of your organization (as opposed to donors, who fund). Add, edit or delete them here - they populate the Partner drop-down on every project, the Partners filter, the Partner colouring on the map and the monthly partner reports. A project is delivered either <b>directly</b> or <b>through</b> one of these partners.';
+    box.appendChild(note);
+    var add = el('button', 'hbtn primary', '＋ Add partner'); add.onclick = function (){ openPartnerEdit(null); };
+    box.appendChild(add);
+    var tbl = el('table', 'utbl');
+    tbl.innerHTML = '<thead><tr><th>Partner</th><th>Acronym</th><th>Contact</th><th>Lead</th><th>Projects</th><th></th></tr></thead>';
+    var tb = el('tbody');
+    var list = partners();
+    if (!list.length) tb.innerHTML = '<tr><td colspan="6" class="re-empty">No partners yet.</td></tr>';
+    list.forEach(function (d){
+      var used = partnerProjectCount(d.id);
+      var contact = [];
+      if (d.phone) contact.push(esc(d.phone));
+      if (d.website) contact.push('<a href="' + esc(d.website) + '" target="_blank" rel="noopener noreferrer">' + esc(String(d.website).replace(/^https?:\/\//, '')) + '</a>');
+      var tr = el('tr');
+      tr.innerHTML =
+        '<td><span class="udot" style="background:' + (d.color || '#94a3b8') + '"></span>' + esc(d.name) + (d.address ? '<div class="umuted">' + esc(d.address) + '</div>' : '') + '</td>' +
+        '<td class="umono">' + esc(d.acronym || '') + '</td>' +
+        '<td>' + (contact.join('<br>') || '–') + '</td>' +
+        '<td>' + (d.lead_id != null ? esc(userName(+d.lead_id)) : '–') + '</td>' +
+        '<td class="umono">' + fmt(used) + '</td>';
+      var act = el('td', 'uact');
+      var ed = el('button', 'cp-mini', 'Edit'); ed.onclick = function (){ openPartnerEdit(d); };
+      var del = el('button', 'cp-del', '🗑'); del.title = used ? 'In use by ' + used + ' project(s) - cannot delete' : 'Delete partner';
+      del.disabled = !!used;
+      del.onclick = function (){ if (used) return; if (confirm('Delete partner "' + d.name + '"?')) deletePartner(d); };
+      act.appendChild(ed); act.appendChild(del); tr.appendChild(act); tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); box.appendChild(tbl);
+    return box;
+  }
+  function openPartnerEdit(d){
+    var body = $('#partnerEditBody'); body.innerHTML = '';
+    $('#partnerEditTitle').textContent = d ? ('Edit partner · ' + d.name) : '＋ Add partner';
+    var color = d && d.color ? d.color : nextPartnerColor();
+    var f = el('div', 'uform');
+    f.innerHTML =
+      '<div class="ufgrid" style="grid-template-columns:2fr 1fr">' +
+      '  <label><span>Partner name *</span><input class="pn-name" type="text" value="' + esc(d ? d.name : '') + '" placeholder="e.g. Health in Action International"></label>' +
+      '  <label><span>Acronym</span><input class="pn-acr" type="text" value="' + esc(d && d.acronym ? d.acronym : '') + '" placeholder="e.g. HAI"></label>' +
+      '</div>' +
+      '<div class="ufgrid" style="grid-template-columns:1fr">' +
+      '  <label><span>Address</span><input class="pn-addr" type="text" value="' + esc(d && d.address ? d.address : '') + '" placeholder="Office / postal address"></label>' +
+      '</div>' +
+      '<div class="ufgrid" style="grid-template-columns:1fr 1fr">' +
+      '  <label><span>Phone number</span><input class="pn-phone" type="tel" value="' + esc(d && d.phone ? d.phone : '') + '" placeholder="e.g. +254 20 555 0187"></label>' +
+      '  <label><span>Website</span><input class="pn-web" type="url" value="' + esc(d && d.website ? d.website : '') + '" placeholder="https://…"></label>' +
+      '</div>' +
+      '<div class="ufgrid" style="grid-template-columns:2fr 1fr">' +
+      '  <label><span>Lead</span><select class="pn-lead">' + userOptions(d && d.lead_id != null ? +d.lead_id : null, 'partner') + '</select></label>' +
+      '  <label><span>Identity colour</span><input class="pn-color" type="color" value="' + esc(color) + '"></label>' +
+      '</div>' +
+      '<div class="ufbtns"><span class="ufmsg"></span>' +
+        '<button class="hbtn pn-cancel" type="button">Cancel</button>' +
+        '<button class="hbtn primary pn-save" type="button">' + (d ? 'Save changes' : 'Add partner') + '</button></div>';
+    f.querySelector('.pn-cancel').onclick = closePartnerEdit;
+    f.querySelector('.pn-save').onclick = function (){
+      var name = f.querySelector('.pn-name').value.trim(), msg = f.querySelector('.ufmsg');
+      var acronym = f.querySelector('.pn-acr').value.trim();
+      var address = f.querySelector('.pn-addr').value.trim();
+      var phone = f.querySelector('.pn-phone').value.trim();
+      var website = f.querySelector('.pn-web').value.trim();
+      var col = f.querySelector('.pn-color').value;
+      var leadId = f.querySelector('.pn-lead').value ? +f.querySelector('.pn-lead').value : null;
+      if (!name){ msg.textContent = 'Partner name is required.'; return; }
+      msg.textContent = 'Saving…';
+      if (d){ d.name = name; d.acronym = acronym; d.address = address; d.phone = phone; d.website = website; d.color = col; d.lead_id = leadId; applyPartnerMutation(DB.persist('partner', [d])); }
+      else { applyPartnerMutation(DB.insert('partner', { name: name, acronym: acronym, address: address, phone: phone, website: website, color: col, lead_id: leadId })); }
+    };
+    body.appendChild(f);
+    $('#partnerEditOverlay').classList.add('on');
+    var fn = f.querySelector('.pn-name'); if (fn) fn.focus();
+  }
+  function closePartnerEdit(){ var o = $('#partnerEditOverlay'); if (o) o.classList.remove('on'); }
+  function deletePartner(d){
+    if (partnerProjectCount(d.id)) return;   // guarded in the UI too
+    Promise.resolve(DB.remove('partner', [d.id])).then(function (){ enrich(); renderTicker(); renderAll(); renderControl('partners'); });
+  }
+
+  // =========================================================================
   //  CONTROL PANEL - Regions / Countries tabs (assign Leads; Admin only)
   // =========================================================================
   // Inline Lead dropdown for a lookup row - selecting a user persists the row's
@@ -4231,6 +4729,7 @@
     { key:'output',  label:'Outputs',   one:'Output' },
     { key:'project', label:'Projects',  one:'Project' },
     { key:'donor',   label:'Donors',    one:'Donor' },
+    { key:'partner', label:'Partners',  one:'Partner' },
     { key:'region',  label:'Regions',   one:'Region' },
     { key:'country', label:'Countries', one:'Country' }
   ];
@@ -4278,6 +4777,8 @@
       DB.tables.project.forEach(function (p){ if (p.plan_id === S.plan && p.lead_id != null) out.push({ cat:cat, ref:'project:'+p.id, name:p.name, code:p.code || '', leadId:+p.lead_id, project:p }); });
     } else if (cat === 'donor'){
       DB.tables.donor.forEach(function (d){ if (d.lead_id != null) out.push({ cat:cat, ref:'donor:'+d.id, name:d.name, code:d.short_name || '', leadId:+d.lead_id, donor:d }); });
+    } else if (cat === 'partner'){
+      DB.tables.partner.forEach(function (d){ if (d.lead_id != null) out.push({ cat:cat, ref:'partner:'+d.id, name:d.name, code:d.acronym || '', leadId:+d.lead_id, partner:d }); });
     } else if (cat === 'region'){
       DB.tables.region.forEach(function (r){ if (r.lead_id != null) out.push({ cat:cat, ref:'region:'+r.id, name:r.name, code:'', leadId:+r.lead_id, region:r }); });
     } else if (cat === 'country'){
@@ -4303,6 +4804,7 @@
     }
     if (cat === 'project') return DB.tables.project.filter(function (p){ return p.plan_id === S.plan && p.lead_id == null; }).length;
     if (cat === 'donor') return DB.tables.donor.filter(function (d){ return d.lead_id == null; }).length;
+    if (cat === 'partner') return DB.tables.partner.filter(function (d){ return d.lead_id == null; }).length;
     if (cat === 'region') return DB.tables.region.filter(function (r){ return r.lead_id == null; }).length;
     if (cat === 'country') return DB.tables.country.filter(function (c){ return c.lead_id == null; }).length;
     return 0;
@@ -4331,12 +4833,14 @@
       var prim = (DB._idx.projectKpiByProject[p.id] || []).map(function (pk){ return DB._idx.indicatorById[pk.indicator_id]; }).filter(Boolean);
       return prim.concat(DB._idx.secondaryByProject[p.id] || []);
     }
-    if (cat === 'donor'){
-      // active plan only - commProjectsFor lists the donor's ACTIVE-plan projects,
+    if (cat === 'donor' || cat === 'partner'){
+      // active plan only - commProjectsFor lists the entity's ACTIVE-plan projects,
       // so the KPI scope (headline tiles, forecast) must cover the same universe
+      var entId = cat === 'donor' ? ent.donor.id : ent.partner.id;
+      var fld = cat === 'donor' ? 'donor_id' : 'partner_id';
       var set = {}, res = [];
       DB.tables.project.forEach(function (p){
-        if (p.donor_id !== ent.donor.id || p.plan_id !== S.plan) return;
+        if (p[fld] !== entId || p.plan_id !== S.plan) return;
         (DB._idx.projectKpiByProject[p.id] || []).forEach(function (pk){
           if (!set[pk.indicator_id]){ set[pk.indicator_id] = 1; var i = DB._idx.indicatorById[pk.indicator_id]; if (i) res.push(i); }
         });
@@ -4369,7 +4873,9 @@
     if (projId != null) inMonth = inMonth.filter(function (m){ return m.project_id === projId; });
     var b = ind.baseline_value, t = ind.target_value;
     var v = indicatorValue(ind, upto);
-    var progress = (v == null || t == null || b == null || +t === +b) ? null : (v - b) / (t - b);
+    // No baseline/target or a zero gap is unmeasurable (null); no report yet as of
+    // month end counts as 0% progress -> Under Track (not excluded from the report).
+    var progress = (t == null || b == null || +t === +b) ? null : (v == null ? 0 : (v - b) / (t - b));
     var perf = progress == null ? null : progress / elapsedFraction(ind, endISO);
     var ben = 0;
     inMonth.forEach(function (m){ (DB._idx.benByMeasurement[m.id] || []).forEach(function (x){ ben += (+x.value || 0); }); });
@@ -4595,9 +5101,10 @@
       return DB.tables.project.filter(function (p){ return p.plan_id === pid; })
         .map(function (p){ return { p: p, kpis: commProjectKpis(p) }; });
     }
-    if (cat === 'donor' || cat === 'region' || cat === 'country'){
+    if (cat === 'donor' || cat === 'partner' || cat === 'region' || cat === 'country'){
       var ok;
       if (cat === 'donor') ok = function (p){ return p.donor_id === ent.donor.id; };
+      else if (cat === 'partner') ok = function (p){ return p.partner_id === ent.partner.id; };
       else if (cat === 'country') ok = function (p){ return p.country_iso3 === ent.country.iso3; };
       else { var iso = {}; DB.tables.country.forEach(function (c){ if (c.region_id === ent.region.id) iso[c.iso3] = 1; }); ok = function (p){ return !!iso[p.country_iso3]; }; }
       return DB.tables.project.filter(function (p){ return p.plan_id === S.plan && ok(p); })
@@ -4622,7 +5129,7 @@
     if (cat === 'region'){
       var by = {};
       projRows.forEach(function (r){ var c = DB._idx.countryByIso[r.p.country_iso3]; var k = c ? c.name : (r.p.country_iso3 || '?'); (by[k] = by[k] || []).push(r); });
-      return Object.keys(by).sort().map(function (k){ return { title: k, color: null, rows: by[k] }; });
+      return Object.keys(by).sort().map(function (k){ return { code: '', name: k, title: k, color: null, rows: by[k] }; });
     }
     var level = cat === 'plan' ? 'impact' : cat === 'impact' ? 'outcome' : cat === 'outcome' ? 'output' : null;
     if (!level) return null;
@@ -4637,7 +5144,8 @@
       }
       var k = (r.sdg == null ? 0 : r.sdg) + '|' + r.statement;
       if (!kids[k]){
-        kids[k] = { key: k, title: (r.code ? r.code + ' - ' : '') + (level === 'impact' ? (r.pillar_name || r.statement) : r.statement),
+        var gname = level === 'impact' ? (r.pillar_name || r.statement) : r.statement;
+        kids[k] = { key: k, code: r.code || '', name: gname, title: (r.code ? r.code + ' · ' : '') + gname,
           color: level === 'impact' ? (r.pillar_color || PILLAR_COLORS[r.sdg] || '#94a3b8') : null, ids: {}, rows: [] };
         order.push(kids[k]);
       }
@@ -4655,7 +5163,7 @@
         (byParent[n.id] || []).forEach(function (c){ stack.push(c); });
       }
     });
-    var other = { title: 'Project-specific KPIs (no framework parent)', color: null, rows: [] };
+    var other = { code: '', name: 'Project-specific KPIs (no framework parent)', title: 'Project-specific KPIs (no framework parent)', color: null, rows: [] };
     projRows.forEach(function (row){
       var best = null, bestN = 0;
       order.forEach(function (g){
@@ -4699,7 +5207,7 @@
     var catLabel = commCatOne(ent.cat);
     var projMode = ent.cat !== 'project';
     var snaps = null, projRows = null, groups = null, total;
-    var acts = 0, ben = 0, counts = { blue:0, green:0, amber:0, red:0, maroon:0, nodata:0 };
+    var acts = 0, ben = 0, counts = { blue:0, green:0, amber:0, red:0, maroon:0, black:0, nodata:0 };
     if (projMode){
       projRows = commProjectsFor(ent);
       projRows.forEach(function (row){ row.s = commProjectSnap(row, startISO, endISO); });
@@ -4791,7 +5299,7 @@
     // status distribution bar
     doc.text(M, y, 'PERFORMANCE STATUS', 7, true, mut);
     y -= 12;
-    var order = ['blue','green','amber','red','maroon','nodata'], barW = PDF_W - 2 * M, bx = M;
+    var order = ['blue','green','amber','red','maroon','black'], barW = PDF_W - 2 * M, bx = M;
     if (total){
       order.forEach(function (k){
         var w = barW * counts[k] / total;
@@ -4917,9 +5425,14 @@
   // any on-screen filters. Returns the PDF base64-encoded for the email.
   function commBuildForecastPdf(ent, year, month){
     var period = MONTH_NAMES[month - 1] + ' ' + year;
-    var savedH = S.fcHorizon, savedD = S.fcDim;
+    var asOf = new Date(year, month, 0).getDate() + ' ' + MONTH_NAMES[month - 1] + ' ' + year;
+    var savedH = S.fcHorizon, savedD = S.fcDim, savedAsOf = FC_ASOF_MI;
     S.fcHorizon = 'plan';   // lead briefs always look to the end of the plan
     S.fcDim = 'projects';   // the breakdown below is per project (labels follow)
+    // Anchor the brief to the SAME as-of snapshot as its results report (end of the
+    // report month), never past today - so the NOW column tallies with the report's
+    // progress instead of quietly folding in a later, still-open month's data.
+    FC_ASOF_MI = Math.min(year * 12 + (month - 1), fcMi(TODAY.getTime()));
     try {
       // INDBYID only holds the ACTIVE plan's enriched rows; a lead of another
       // plan still gets a populated brief via a lightweight row (kpiForecast
@@ -4965,7 +5478,7 @@
         if (rawGroups) groups = rawGroups.map(function (g){
           var ge = g.rows.map(function (row){ return entByPid[row.p.id]; });
           ge.sort(byRisk);
-          return { title: g.title, color: g.color, ents: ge };
+          return { code: g.code || '', name: g.name || g.title, title: g.title, color: g.color, ents: ge };
         });
       }
       // riskiest first, same ordering as the Forecast tab
@@ -4973,14 +5486,15 @@
       var doc = fcPdfDoc(scope, ents, null, {
         groups: groups,
         tag: 'Forecast Brief  ·  ' + period,
+        subjectType: commCatOne(ent.cat),
         preparedFor: ent,
         noFilters: true,
         dimLabel: dimLabel, entityLabel: entityLabel,
-        ctx: commCatOne(ent.cat) + '  ·  forecast to end of plan  ·  generated ' + pdfDate(TODAY)
+        ctx: commCatOne(ent.cat) + '  ·  forecast to end of plan  ·  as of ' + asOf
       });
       return btoa(doc.build());
     } finally {
-      S.fcHorizon = savedH; S.fcDim = savedD;
+      S.fcHorizon = savedH; S.fcDim = savedD; FC_ASOF_MI = savedAsOf;
     }
   }
 
@@ -5959,6 +6473,7 @@
       DB.tables.result.forEach(function (r){ if (r.level === key && r.owner_id === u.id) add(r.code || r.statement); });   // country instances share a code → dedupe
     else if (key === 'project') DB.tables.project.forEach(function (p){ if (p.lead_id === u.id) add(p.code || p.name); });
     else if (key === 'donor') DB.tables.donor.forEach(function (d){ if (d.lead_id === u.id) add(d.short_name || d.name); });
+    else if (key === 'partner') DB.tables.partner.forEach(function (d){ if (d.lead_id === u.id) add(d.acronym || d.name); });
     else if (key === 'region') DB.tables.region.forEach(function (r){ if (r.lead_id === u.id) add(r.name); });
     else if (key === 'country') userCountryIsos(u).forEach(add);
     return out;
@@ -5967,7 +6482,7 @@
   var AFF_NOUN = {
     plan:['Plan','Plans'], impact:['Impact','Impacts'], outcome:['Outcome','Outcomes'],
     output:['Output','Outputs'], project:['Project','Projects'], donor:['Donor','Donors'],
-    region:['Region','Regions'], country:['Country','Countries']
+    partner:['Partner','Partners'], region:['Region','Regions'], country:['Country','Countries']
   };
   // count only, never names - e.g. '1 Plan', '2 Impacts', '7 Projects'
   function userAssignedText(u){
@@ -6550,6 +7065,8 @@
     country:   { label:'Country',      val:function(r){ return r.iso ? (DB._idx.countryByIso[r.iso]||{}).name : null; }, color:function(k){ var c=DB.tables.country.filter(function(x){return x.name===k;})[0]; return c?countryColor(c.iso3):catColor(k); } },
     donor:     { label:'Donor',        val:function(r){ return r.donorPrimary ? r.donorPrimary.name : null; },
                  color:function(k){ var d=DB.tables.donor.filter(function(x){return x.name===k;})[0]; return d && d.color ? d.color : catColor(k); } },
+    partner:   { label:'Partner',      val:function(r){ return r.partnerPrimary ? r.partnerPrimary.name : null; },
+                 color:function(k){ var d=DB.tables.partner.filter(function(x){return x.name===k;})[0]; return d && d.color ? d.color : catColor(k); } },
     project:   { label:'Project',      val:function(r){ return r.projPrimary ? (r.projPrimary.code || r.projPrimary.name) : null; }, color:catColor },
     budget:    { label:'Budget',       val:function(r){ var v = insBudgetVal(r); return v == null ? null : insBudgetLevel(insBudgetBand(v)); },
                  color:function(k){ var i = insBudgetIdx(k); return i < 4 ? BUDGET_RAMP[i] : catColor(k); },
@@ -6563,7 +7080,7 @@
     type:      { label:'KPI type',     val:function(r){ return r.type ? cap(r.type) : null; }, color:function(k){ return k === 'Qualitative' ? '#9D7BEE' : '#4FA9E8'; } },
     status:    { label:'Status',       val:function(r){ return STATUS[r.status].label; }, color:function(k){ for (var s in STATUS) if (STATUS[s].label === k) return STATUS[s].c; return '#999'; } }
   };
-  var DIM_LIST = ['sdg','region','country','donor','project','budget','programme','kpi','user','date','status'];
+  var DIM_LIST = ['sdg','region','country','donor','partner','project','budget','programme','kpi','user','date','status'];
   var TOPN = [5,10,15,20,25,50,9999];
   function firstOtherDim(v){ for (var i = 0; i < DIM_LIST.length; i++) if (DIM_LIST[i] !== v) return DIM_LIST[i]; }
   function niceMax(v){ if (v <= 0) return 1; var p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
@@ -6761,6 +7278,502 @@
   function truncTxt(s, n){ s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
   // =========================================================================
+  //  TIMELINE - portfolio delivery Gantt (projects & activities over time)
+  // =========================================================================
+  //  A schedule view: every project in the current filter set becomes a bar
+  //  from its start to end date, coloured by delivery status and filled by
+  //  achievement, with its logged activities plotted as ticks along the bar and
+  //  a shared TODAY marker. Projects group under the chosen dimension (status,
+  //  region, donor, country) so a manager reads the portfolio's shape at a
+  //  glance. Everything fits the pane width (no horizontal scroll); the domain
+  //  snaps to whole calendar years so the axis is always clean.
+  var TL_LABEL_W = 250;   // px - MUST match --tl-label-w in styles.css
+  var TL_PAD = 1.6;       // % buffer on each side of the plot band (keeps bars off the card edges)
+
+  // Parse an ISO date to ms (UTC midnight - dates are stored/compared in UTC).
+  function tlParse(iso){ if (!iso) return null; var t = Date.parse(String(iso).slice(0, 10)); return isNaN(t) ? null : t; }
+  // ms -> "YYYY-MM-DD" (UTC) so shortDate() can format it consistently.
+  function tlIso(ms){ var d = new Date(ms); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); }
+
+  /** The group bucket(s) {key,label,sub,color,sort} a project belongs to under
+   *  the active Timeline dimension - the SAME dimensions the Forecast tab uses.
+   *  Most dimensions map a project to ONE group; results-chain dimensions
+   *  (impacts / outcomes / outputs) can place it in several (its KPIs may span
+   *  more than one), exactly as the Forecast entities do. */
+  function tlProjectGroups(p){
+    var dim = S.tlDim, out = [];
+    function push(key, label, color, sort, sub){ out.push({ key: key, label: label, color: color || '#94a3b8', sort: sort, sub: sub || '' }); }
+    if (dim === 'plans'){
+      var ap = activePlan(); push('plan', ap ? ap.name : 'Active plan', '#2563eb', '', ap ? planPeriod(ap) : '');
+    } else if (dim === 'projects'){
+      push('flat', '', '#94a3b8', '');   // no grouping - one flat card of every project bar
+    } else if (dim === 'donors'){
+      var d = p.donor; push('d:' + (d ? d.id : 0), d ? d.name : 'No donor', (d && d.color) || '#94a3b8', d ? '0' + d.name : '1', d ? donorType(d) : '');
+    } else if (dim === 'partners'){
+      var pt = p.partner; push('pt:' + (pt ? pt.id : 0), pt ? pt.name : 'No partner', (pt && pt.color) || '#94a3b8', pt ? '0' + pt.name : '1', pt && pt.acronym ? pt.acronym : '');
+    } else if (dim === 'regions'){
+      var rg = p.region || 'Unassigned'; push('r:' + rg, rg, p.region ? regionColor(p.region) : '#94a3b8', p.region ? '0' + rg : '1');
+    } else if (dim === 'countries'){
+      var c = p.country; push('c:' + (p.iso || 0), c ? c.name : (p.iso || 'Unknown'), p.iso ? countryColor(p.iso) : '#94a3b8', c ? '0' + c.name : '1', c ? c.region : '');
+    } else if (dim === 'impacts'){
+      var seen = {};
+      (p.kpis || []).forEach(function (r){
+        var sdg = r.sdg || 0; if (seen[sdg]) return; seen[sdg] = 1;
+        var stmt = ''; FRAMEWORK.forEach(function (g){ if (g.sdg === sdg) stmt = g.impact; });
+        push('i:' + sdg, pillarLabel(sdg) + (PILLAR_NAMES[sdg] ? ' · ' + PILLAR_NAMES[sdg] : ''), PILLAR_COLORS[sdg] || '#94a3b8', sdg ? '0' + ('00' + sdg).slice(-3) : '1', stmt);
+      });
+      if (!out.length) push('i:0', pillarLabel(0), '#94a3b8', '1');
+    } else {   // outcomes | outputs
+      var lvl = dim === 'outcomes' ? 'outcome' : 'output', pre = lvl + SEP, seen2 = {};
+      (p.kpis || []).forEach(function (r){
+        (r.chainKeys || []).forEach(function (k){
+          if (k.indexOf(pre) !== 0) return;
+          var stmt = k.slice(pre.length); if (seen2[stmt]) return; seen2[stmt] = 1;
+          var sdg = r.sdg || 0;
+          push(lvl + ':' + stmt, stmt, sdg ? PILLAR_COLORS[sdg] : '#94a3b8', '0' + stmt,
+            sdg ? (pillarLabel(sdg) + (PILLAR_NAMES[sdg] ? ' · ' + PILLAR_NAMES[sdg] : '')) : cap(lvl));
+        });
+      });
+      if (!out.length) push(lvl + ':0', 'Unassigned ' + lvl, '#94a3b8', '1');
+    }
+    return out;
+  }
+
+  function tlControls(){
+    var bar = el('div', 'tl-ctrl');
+    var seg = el('span', 'tl-seg');
+    FC_DIMS.forEach(function (g){
+      var b = el('button', S.tlDim === g[0] ? 'on' : null, g[1]);
+      b.onclick = function (){ if (S.tlDim === g[0]) return; S.tlDim = g[0]; renderTimeline(); persist(); };
+      seg.appendChild(b);
+    });
+    bar.appendChild(seg);
+    var tog = el('label', 'tl-toggle');
+    var cb = el('input'); cb.type = 'checkbox'; cb.checked = !!S.tlActs;
+    cb.onchange = function (){ S.tlActs = cb.checked; renderTimeline(); persist(); };
+    tog.appendChild(cb); tog.appendChild(document.createTextNode('Show activities'));
+    bar.appendChild(tog);
+    // Export PDF - same right-aligned control the Forecast tab carries (fc-export
+    // owns the margin-left:auto that pushes it to the end of the bar).
+    var ex = el('button', 'fc-export');
+    ex.type = 'button';
+    ex.title = 'Export this timeline as a PDF report';
+    ex.innerHTML = '<span class="ic">⤓</span>Export PDF';
+    ex.onclick = function (){ try { exportTimelinePDF(); } catch (e){ console.error(e); alert('Could not build the PDF: ' + (e && e.message || e)); } };
+    bar.appendChild(ex);
+    return bar;
+  }
+
+  /** A per-card gridline overlay (year + quarter lines), aligned to the track
+   *  column and drawn BEHIND the rows so the lines segment neatly between cards. */
+  function tlGridOverlay(xPct, y0, y1, showQ){
+    var grid = el('div', 'tl-grid');
+    // faint quarter lines first (so the stronger year lines sit on top)
+    if (showQ) for (var qy = y0; qy <= y1; qy++){
+      [3, 6, 9].forEach(function (m){ var q = el('div', 'gl q'); q.style.left = xPct(Date.UTC(qy, m, 1)) + '%'; grid.appendChild(q); });
+    }
+    for (var yy = y0; yy <= y1 + 1; yy++){
+      var gl = el('div', 'gl'); gl.style.left = xPct(Date.UTC(yy, 0, 1)) + '%'; grid.appendChild(gl);
+    }
+    return grid;
+  }
+
+  /** The TODAY marker, in its own overlay ABOVE the bars (so the line and label
+   *  are never hidden behind a project bar). Only the first card gets the label. */
+  function tlTodayOverlay(xPct, d0, d1, todayMs, withLabel){
+    if (todayMs < d0 || todayMs > d1) return null;
+    var ov = el('div', 'tl-today-ov');
+    var td = el('div', 'tl-today'); td.style.left = xPct(todayMs) + '%';
+    if (withLabel) td.appendChild(el('span', 'tdlab', 'TODAY'));
+    ov.appendChild(td);
+    return ov;
+  }
+
+  function tlLegend(){
+    var leg = el('div', 'tl-legend');
+    ['blue','green','amber','red','maroon','black'].forEach(function (c){
+      var li = el('span', 'li'); var sq = el('span', 'sq'); sq.style.background = STATUS[c].c;
+      li.appendChild(sq); li.appendChild(document.createTextNode(STATUS[c].label)); leg.appendChild(li);
+    });
+    var la = el('span', 'li'); la.appendChild(el('span', 'actmk')); la.appendChild(document.createTextNode('Activity logged')); leg.appendChild(la);
+    var lt = el('span', 'li'); lt.appendChild(el('span', 'todaymk')); lt.appendChild(document.createTextNode('Today')); leg.appendChild(lt);
+    var le = el('span', 'li mut'); le.appendChild(el('span', 'estmk')); le.appendChild(document.createTextNode('Estimated dates')); leg.appendChild(le);
+    return leg;
+  }
+
+  /** One project row: fixed label + a positioned bar with progress fill and
+   *  activity ticks. left/width are % of the whole-years domain. */
+  function tlRow(r, xPct, d0, d1){
+    var p = r.p, st = projStatScoped(p), code = st.code || 'nodata', s = STATUS[code] || STATUS.nodata;
+    var row = el('div', 'tl-row');
+
+    var lab = el('div', 'tl-label');
+    var dot = el('span', 'ldot'); dot.style.background = p.iso ? countryColor(p.iso) : '#94a3b8'; lab.appendChild(dot);
+    var lt = el('div', 'ltx');
+    lt.appendChild(el('div', 'lnm', (p.code ? p.code + ' · ' : '') + p.name));
+    var subTxt = [p.country ? p.country.name : '', p.donor ? (p.donor.short_name || p.donor.name) : ''].filter(Boolean).join(' · ');
+    lt.appendChild(el('div', 'lsub', subTxt || '—'));
+    lab.appendChild(lt);
+    lab.title = (p.code ? p.code + ' · ' : '') + p.name + ' — open this project’s results';
+    lab.onclick = function (){ openEntitySummary('project', p.id, true); };
+    row.appendChild(lab);
+
+    var track = el('div', 'tl-track');
+    var left = Math.max(0, xPct(r.s)), right = Math.min(100, xPct(r.e));
+    var bar = el('div', 'tl-bar' + (r.estimated ? ' est' : ''));
+    bar.style.left = left + '%'; bar.style.width = Math.max(0.7, right - left) + '%';
+    bar.style.setProperty('--bc', s.c);
+    // The bar shows PROGRESS (achievement of target) as its meter fill and number -
+    // that is the "how far along" figure for visibility. The bar's COLOUR is the
+    // performance status (always performance); the tooltip spells out both so the
+    // small progress % and the status band never look contradictory.
+    var prog = st.frac, perf = st.ratio;
+    var fillFrac = prog == null ? null : Math.max(0, Math.min(1, prog));
+    if (fillFrac != null){ var fill = el('i', 'fill'); fill.style.width = (fillFrac * 100) + '%'; bar.appendChild(fill); }
+    bar.appendChild(el('span', 'blab', prog != null ? Math.round(prog * 100) + '%' : ''));
+    bar.title = (p.code ? p.code + ' · ' : '') + p.name + '\n' +
+      shortDate(tlIso(r.s)) + ' → ' + shortDate(tlIso(r.e)) + '\n' +
+      s.label + (perf != null ? ' (performance ' + Math.round(perf * 100) + '%)' : '') +
+      (prog != null ? ' · ' + Math.round(prog * 100) + '% progress' : '') +
+      (r.estimated ? '\n(dates estimated from the active plan)' : '') +
+      '\n(click to open this project’s results)';
+    bar.onclick = function (){ openEntitySummary('project', p.id, true); };
+    track.appendChild(bar);
+
+    if (S.tlActs){
+      var acts = DB._idx.measByProject[p.id] || [], seen = {}, nAct = 0;
+      acts.forEach(function (m){
+        var ms = tlParse(m.date); if (ms == null || ms < d0 || ms > d1) return;
+        var xp = xPct(ms), bucket = Math.round(xp * 2);   // coalesce ticks within ~0.5% columns
+        if (seen[bucket]) { seen[bucket]++; return; } seen[bucket] = 1; nAct++;
+        var tk = el('span', 'tl-act'); tk.style.left = xp + '%';
+        tk.title = shortDate(tlIso(ms)) + ' · activity logged'; track.appendChild(tk);
+      });
+      if (nAct) bar.title += '\n' + fmt(p.activityN || acts.length) + ' activit' + ((p.activityN || acts.length) === 1 ? 'y' : 'ies') + ' logged';
+    }
+    row.appendChild(track);
+    return row;
+  }
+
+  /** The Timeline's data model - the projects placed on the year domain, fanned
+   *  out into the active dimension's groups. One source shared by the on-screen
+   *  Gantt (renderTimeline) and the PDF export (tlPdfDoc) so the two can never
+   *  drift. Returns { rows, noDate, projects } alone when nothing is placeable;
+   *  otherwise adds the domain (y0/y1/d0/d1/span/showQ/todayMs) and the sorted
+   *  groups/order. Coordinate mapping is left to each caller (screen plots into a
+   *  % band, the PDF into a point rectangle). */
+  function tlModel(){
+    var projects = projectsFor();
+    var ap = activePlan();
+    var planS = tlParse(ap && ap.start_date), planE = tlParse(ap && ap.end_date);
+    var rows = [], noDate = 0;
+    projects.forEach(function (p){
+      var s = tlParse(p.start), e = tlParse(p.end);
+      var s2 = s != null ? s : (planS != null ? planS : e);
+      var e2 = e != null ? e : (planE != null ? planE : s);
+      if (s2 == null || e2 == null){ noDate++; return; }
+      if (e2 < s2){ var t = s2; s2 = e2; e2 = t; }
+      rows.push({ p: p, s: s2, e: e2, estimated: (s == null || e == null) });
+    });
+    if (!rows.length) return { rows: rows, noDate: noDate, projects: projects };
+
+    // domain: cover every bar, the plan window and today, then snap to whole years
+    var t0 = Infinity, t1 = -Infinity, todayMs = TODAY.getTime();
+    rows.forEach(function (r){ if (r.s < t0) t0 = r.s; if (r.e > t1) t1 = r.e; });
+    if (planS != null && planS < t0) t0 = planS;
+    if (planE != null && planE > t1) t1 = planE;
+    if (todayMs < t0) t0 = todayMs; if (todayMs > t1) t1 = todayMs;
+    var y0 = new Date(t0).getUTCFullYear(), y1 = new Date(t1).getUTCFullYear();
+    var d0 = Date.UTC(y0, 0, 1), d1 = Date.UTC(y1 + 1, 0, 1), span = Math.max(1, d1 - d0);
+    // Show quarter ticks only when the years are wide enough to fit them.
+    var showQ = (y1 - y0 + 1) <= 12;
+
+    // group + sort: a project can land in several buckets (impacts/outcomes/
+    // outputs), so we fan each row out over tlProjectGroups(). Groups by the
+    // group sort key; rows within a group by start date.
+    var flat = (S.tlDim === 'projects');
+    var groups = {}, order = [];
+    rows.forEach(function (r){
+      tlProjectGroups(r.p).forEach(function (g){
+        var b = groups[g.key];
+        if (!b){ b = groups[g.key] = { meta: g, rows: [] }; order.push(g.key); }
+        b.rows.push(r);
+      });
+    });
+    order.sort(function (a, b){ var ga = groups[a].meta.sort, gb = groups[b].meta.sort; return ga < gb ? -1 : ga > gb ? 1 : 0; });
+    order.forEach(function (k){ groups[k].rows.sort(function (a, b){ return a.s - b.s || a.e - b.e; }); });
+
+    return { rows: rows, noDate: noDate, projects: projects, todayMs: todayMs,
+      y0: y0, y1: y1, d0: d0, d1: d1, span: span, showQ: showQ, flat: flat,
+      groups: groups, order: order };
+  }
+
+  function renderTimeline(){
+    var host = $('#timelineView'); if (!host) return;
+    host.innerHTML = '';
+    host.appendChild(tlControls());
+
+    var model = tlModel();
+    var rows = model.rows, noDate = model.noDate;
+
+    if (!rows.length){
+      host.appendChild(el('div', 'tl-empty', model.projects.length
+        ? 'The projects under the current filters carry no dates to place on a timeline.'
+        : 'No projects match the current filters.'));
+      return;
+    }
+
+    var todayMs = model.todayMs, y0 = model.y0, y1 = model.y1,
+        d0 = model.d0, d1 = model.d1, span = model.span, showQ = model.showQ, flat = model.flat,
+        groups = model.groups, order = model.order;
+    // Plot into an inset band [TL_PAD .. 100-TL_PAD] so bars, gridlines and the
+    // year/quarter axis all share one coordinate system AND leave a small buffer
+    // off each card edge (nothing touches the border).
+    function xPct(ms){ return TL_PAD + (ms - d0) / span * (100 - 2 * TL_PAD); }
+
+    var wrap = el('div', 'tl-wrap');
+    wrap.style.setProperty('--tl-label-w', TL_LABEL_W + 'px');
+
+    // ---- sticky header: summary + year/quarter axis ----
+    var head = el('div', 'tl-head');
+    var hlab = el('div', 'tl-head-label');
+    hlab.appendChild(el('span', 'tl-head-title', fmt(rows.length) + (rows.length === 1 ? ' project' : ' projects')));
+    hlab.appendChild(el('span', 'tl-head-sub', y0 === y1 ? String(y0) : (y0 + ' – ' + y1)));
+    head.appendChild(hlab);
+    var axis = el('div', 'tl-axis');
+    // year bands + quarter labels, all positioned by xPct so the axis lines up
+    // exactly with the body gridlines (years AND quarters match)
+    for (var y = y0; y <= y1; y++){
+      var yl = xPct(Date.UTC(y, 0, 1)), yr = xPct(Date.UTC(y + 1, 0, 1));
+      var yc = el('div', 'tl-year');
+      yc.style.left = yl + '%'; yc.style.width = (yr - yl) + '%';
+      yc.appendChild(el('span', 'yl', String(y)));
+      axis.appendChild(yc);
+      if (showQ) [0, 3, 6, 9].forEach(function (m, qi){
+        var qa = xPct(Date.UTC(y, m, 1)), qb = xPct(Date.UTC(y, m + 3, 1));
+        var ql = el('div', 'tl-q', 'Q' + (qi + 1)); ql.style.left = ((qa + qb) / 2) + '%';
+        axis.appendChild(ql);
+      });
+    }
+    head.appendChild(axis);
+    wrap.appendChild(head);
+
+    // ---- one rounded card per group, each with its own gridline overlay ----
+    var gwrap = el('div', 'tl-groups');
+    order.forEach(function (k, gi){
+      var gr = groups[k], card = el('div', 'tl-gcard');
+      if (!flat){
+        var gh = el('div', 'tl-ghead');
+        var gd = el('span', 'gdot'); gd.style.background = gr.meta.color; gh.appendChild(gd);
+        gh.appendChild(el('span', 'gnm', gr.meta.label));
+        if (gr.meta.sub) gh.appendChild(el('span', 'gsub', truncTxt(gr.meta.sub, 90)));
+        gh.appendChild(el('span', 'gct', fmt(gr.rows.length) + (gr.rows.length === 1 ? ' project' : ' projects')));
+        card.appendChild(gh);
+      }
+      var body = el('div', 'tl-gbody');
+      body.appendChild(tlGridOverlay(xPct, y0, y1, showQ));
+      gr.rows.forEach(function (r){ body.appendChild(tlRow(r, xPct, d0, d1)); });
+      var todayOv = tlTodayOverlay(xPct, d0, d1, todayMs, gi === 0);
+      if (todayOv) body.appendChild(todayOv);
+      card.appendChild(body);
+      gwrap.appendChild(card);
+    });
+    if (noDate) gwrap.appendChild(el('div', 'tl-note', fmt(noDate) + ' project' + (noDate === 1 ? '' : 's') + ' hidden — no start or end date set.'));
+    wrap.appendChild(gwrap);
+
+    host.appendChild(wrap);
+    host.appendChild(tlLegend());
+  }
+
+  /** Label for the active Timeline group-by dimension (mirrors the segment). */
+  function tlDimLabel(){ var f = null; FC_DIMS.forEach(function (d){ if (d[0] === S.tlDim) f = d[1]; }); return f || S.tlDim; }
+
+  /** Build and download the Timeline (portfolio delivery Gantt) as a PDF. Runs
+   *  off the same tlModel() the on-screen view uses, so the export can never
+   *  drift from the screen. Landscape - a Gantt needs the width. */
+  function exportTimelinePDF(){
+    var model = tlModel();
+    if (!model.rows.length){ alert('The timeline has no dated projects to export under the current filters.'); return; }
+    tlPdfDoc(model).save(pdfFileName({ title: 'timeline-' + S.tlDim }));
+  }
+
+  /** The Timeline panel as a pdfWriter doc - letterhead, plan stamp, a year/
+   *  quarter axis and one Gantt block per group (bar coloured by performance
+   *  status, filled by progress, activity ticks, a TODAY line), then a legend.
+   *  Paginates row-by-row, redrawing the axis at the top of each new page. */
+  function tlPdfDoc(model){
+    var doc = pdfWriter({ landscape: true }), PW = doc.PW, M = doc.margin, AW = PW - 2 * M;
+    doc.addPage();
+    var INK = doc.rgb('#1a2230'), MUT = doc.rgb('#8792a3'), SUB = doc.rgb('#5b6675'), NAVY = doc.rgb('#0c447c');
+    var rows = model.rows, y0 = model.y0, y1 = model.y1, d0 = model.d0, d1 = model.d1,
+        span = model.span, showQ = model.showQ, flat = model.flat,
+        groups = model.groups, order = model.order, todayMs = model.todayMs;
+    doc.footer = orgBrand() + '  ·  Timeline  ·  ' + fmt(rows.length) + (rows.length === 1 ? ' project' : ' projects');
+
+    // ---- colour + geometry helpers -----------------------------------------
+    function mixWhite(hex, t){ var c = doc.rgb(hex); return [c[0] + (1 - c[0]) * t, c[1] + (1 - c[1]) * t, c[2] + (1 - c[2]) * t]; }
+    function vline(x, ya, yb, hex, lw, dash){
+      var c = doc.rgb(hex), s = 'q ' + c[0] + ' ' + c[1] + ' ' + c[2] + ' RG ' + (lw || 0.5) + ' w ';
+      if (dash) s += dash + ' d ';
+      s += x.toFixed(2) + ' ' + ya.toFixed(2) + ' m ' + x.toFixed(2) + ' ' + yb.toFixed(2) + ' l S Q';
+      doc.raw(s);
+    }
+    function fit(str, maxW, size, bold){
+      var t = String(str == null ? '' : str);
+      if (doc.textW(t, size, bold) <= maxW) return t;
+      while (t.length > 1 && doc.textW(t + '…', size, bold) > maxW) t = t.slice(0, -1);
+      return t + '…';
+    }
+    var labelW = 178, padL = 6;
+    var plotX0 = M + labelW, plotX1 = PW - M, plotW = plotX1 - plotX0;
+    function xAt(ms){ return plotX0 + padL + (ms - d0) / span * (plotW - 2 * padL); }
+
+    // ---- letterhead + heading (page 1 only) --------------------------------
+    var rt = 'Timeline Export  ·  ' + pdfDate(TODAY);
+    pdfBrandHead(doc, M, PW - M - doc.textW(rt, 8.5, false) - 14);
+    doc.text(rt, PW - M - doc.textW(rt, 8.5, false), doc.PH - 26, { size: 8.5, color: doc.rgb('#d7e3f0') });
+    var y = doc.PH - 63;
+
+    var _ap = activePlan();
+    if (_ap){
+      var px = M;
+      doc.text('PLAN', px, y - 8, { size: 6.5, bold: true, color: MUT });
+      px += doc.textW('PLAN', 6.5, true) + 7;
+      doc.text(_ap.name, px, y - 8, { size: 9, bold: true, color: NAVY });
+      if (planPeriod(_ap)){
+        px += doc.textW(_ap.name, 9, true) + 7;
+        doc.text('·  ' + planPeriod(_ap), px, y - 8, { size: 8.5, color: MUT });
+      }
+      y -= 17;
+    }
+    y -= 7;
+
+    var bw = doc.textW('TIMELINE', 7.5, true) + 16;
+    doc.roundRect(M, y - 12.5, bw, 16, 8, NAVY);
+    doc.text('TIMELINE', M + 8, y - 8, { size: 7.5, bold: true, color: [1, 1, 1] });
+    doc.text('Portfolio delivery timeline', M + bw + 10, y - 9.5, { size: 16, bold: true, color: INK });
+    y -= 24;
+    var ctx = 'Grouped by ' + tlDimLabel() + '  ·  ' + fmt(rows.length) + (rows.length === 1 ? ' project' : ' projects')
+            + '  ·  ' + (y0 === y1 ? String(y0) : (y0 + ' – ' + y1)) + (S.tlActs ? '  ·  activities shown' : '');
+    doc.text(ctx, M, y - 8, { size: 9, color: SUB });
+    y -= 18;
+    y = pdfFilterStrip(doc, activeFilterSummary(), M, AW, y);
+
+    // ---- year / quarter axis (redrawn atop every page) ---------------------
+    function drawAxis(){
+      var top = y, tickTop = top - 26;
+      for (var yy = y0; yy <= y1; yy++){
+        var xl = xAt(Date.UTC(yy, 0, 1)), xr = xAt(Date.UTC(yy + 1, 0, 1));
+        vline(xl, tickTop, top - 2, '#d7dce4', 0.7);
+        var yl = String(yy), wl = doc.textW(yl, 8.5, true);
+        doc.text(yl, Math.max((xl + xr) / 2 - wl / 2, xl + 1), top - 11, { size: 8.5, bold: true, color: SUB });
+        if (showQ) ['Q1', 'Q2', 'Q3', 'Q4'].forEach(function (q, qi){
+          var qa = xAt(Date.UTC(yy, qi * 3, 1)), qb = xAt(Date.UTC(yy, qi * 3 + 3, 1)), wq = doc.textW(q, 6, false);
+          doc.text(q, (qa + qb) / 2 - wq / 2, top - 21, { size: 6, color: MUT });
+        });
+      }
+      vline(xAt(Date.UTC(y1 + 1, 0, 1)), tickTop, top - 2, '#d7dce4', 0.7);
+      doc.text('PROJECT', M, top - 11, { size: 6.5, bold: true, color: MUT });
+      if (todayMs >= d0 && todayMs <= d1){
+        var tx = xAt(todayMs), tl = 'TODAY';
+        doc.text(tl, Math.min(tx + 3, plotX1 - doc.textW(tl, 6, true)), top - 11, { size: 6, bold: true, color: doc.rgb('#2563eb') });
+      }
+      y = top - (showQ ? 30 : 26);
+    }
+
+    // faint year + quarter gridlines behind a [ya..yb] row band
+    function drawGrid(ya, yb){
+      for (var yy = y0; yy <= y1 + 1; yy++) vline(xAt(Date.UTC(yy, 0, 1)), ya, yb, '#eef1f5', 0.5);
+      if (showQ) for (var yq = y0; yq <= y1; yq++) [3, 6, 9].forEach(function (m){ vline(xAt(Date.UTC(yq, m, 1)), ya, yb, '#f5f7fa', 0.5); });
+    }
+
+    var BOT = 46, rowH = 15, barH = 8.5, headH = 17;
+    function need(h){ if (y - h < BOT){ doc.addPage(); y = doc.PH - M; drawAxis(); } }
+
+    drawAxis();
+
+    // ---- one Gantt block per group -----------------------------------------
+    order.forEach(function (k){
+      var gr = groups[k];
+      need((flat ? 0 : headH) + rowH + 6);   // keep a header with at least its first row
+      if (!flat){
+        var hy = y;
+        doc.roundRect(M, hy - headH, AW, headH, 3, doc.rgb('#f2f5f9'));
+        doc.roundRect(M + 9, hy - headH / 2 - 3, 6, 6, 1.5, doc.rgb(gr.meta.color || '#94a3b8'));
+        var gl = fit(gr.meta.label, labelW + 120, 9, true);
+        doc.text(gl, M + 21, hy - 11.5, { size: 9, bold: true, color: INK });
+        if (gr.meta.sub){
+          var glW = doc.textW(gl, 9, true);
+          doc.text(fit(gr.meta.sub, 260, 7.5, false), M + 21 + glW + 8, hy - 11.5, { size: 7.5, color: MUT });
+        }
+        var cnt = fmt(gr.rows.length) + (gr.rows.length === 1 ? ' project' : ' projects');
+        doc.text(cnt, PW - M - doc.textW(cnt, 7.5, false), hy - 11.5, { size: 7.5, color: MUT });
+        y -= headH + 2;
+      }
+      gr.rows.forEach(function (r){
+        need(rowH);
+        var top = y, mid = top - rowH / 2;
+        drawGrid(top, top - rowH);
+        if (todayMs >= d0 && todayMs <= d1) vline(xAt(todayMs), top, top - rowH, '#2563eb', 1, '[2 2] 0');
+
+        var p = r.p, st = projStatScoped(p), code = st.code || 'nodata', s = STATUS[code] || STATUS.nodata;
+        var nm = (p.code ? p.code + ' · ' : '') + p.name;
+        doc.text(fit(nm, labelW - 8, 8, true), M, mid + 1.5, { size: 8, bold: true, color: INK });
+        var sub = [p.country ? p.country.name : '', p.donor ? (p.donor.short_name || p.donor.name) : ''].filter(Boolean).join(' · ');
+        doc.text(fit(sub || '—', labelW - 8, 6.5, false), M, mid - 6.5, { size: 6.5, color: MUT });
+
+        var bx0 = Math.max(xAt(r.s), plotX0 + 1), bx1 = Math.min(xAt(r.e), plotX1 - 1);
+        var bw2 = Math.max(3, bx1 - bx0), by = mid - barH / 2;
+        doc.roundRect(bx0, by, bw2, barH, 2.5, mixWhite(s.c, 0.78));            // track tint
+        var prog = st.frac == null ? null : Math.max(0, Math.min(1, st.frac));
+        if (prog != null && prog > 0) doc.roundRect(bx0, by, Math.max(1.4, bw2 * prog), barH, 2.5, doc.rgb(s.c));
+        doc.roundRect(bx0, by, bw2, barH, 2.5, r.estimated ? doc.rgb('#b7bfca') : doc.rgb(s.c), r.estimated ? 0.7 : 0.9);
+
+        if (S.tlActs){
+          var acts = DB._idx.measByProject[p.id] || [], seen = {};
+          acts.forEach(function (m){
+            var ms = tlParse(m.date); if (ms == null || ms < d0 || ms > d1) return;
+            var xp = xAt(ms); if (xp < bx0 + 1 || xp > bx1 - 1) return;
+            var b = Math.round(xp); if (seen[b]) return; seen[b] = 1;
+            doc.rect(xp - 0.6, by + barH / 2 - 1.3, 1.2, 2.6, doc.rgb('#3a4658'));
+          });
+        }
+        if (prog != null){
+          var pl = Math.round(prog * 100) + '%', plw = doc.textW(pl, 6.5, true);
+          if (bx1 + 4 + plw <= plotX1) doc.text(pl, bx1 + 4, mid - 2.2, { size: 6.5, bold: true, color: SUB });
+          else if (bw2 > plw + 8) doc.text(pl, bx1 - plw - 3, mid - 2.2, { size: 6.5, bold: true, color: INK });
+        }
+        y -= rowH;
+      });
+      y -= 6;
+    });
+
+    if (model.noDate){
+      need(14);
+      doc.text(fmt(model.noDate) + ' project' + (model.noDate === 1 ? '' : 's') + ' hidden - no start or end date set.',
+        M, y - 8, { size: 7.5, italic: true, color: MUT });
+      y -= 14;
+    }
+
+    // ---- legend ------------------------------------------------------------
+    need(20);
+    var ly = y - 8, lx = M;
+    doc.text('LEGEND', lx, ly, { size: 6.5, bold: true, color: MUT }); lx += doc.textW('LEGEND', 6.5, true) + 12;
+    ['blue', 'green', 'amber', 'red', 'maroon', 'black'].forEach(function (c){
+      doc.roundRect(lx, ly - 6.5, 9, 8, 2, doc.rgb(STATUS[c].c)); lx += 12;
+      doc.text(STATUS[c].label, lx, ly, { size: 7, color: SUB }); lx += doc.textW(STATUS[c].label, 7, false) + 14;
+    });
+    doc.rect(lx, ly - 5, 1.4, 6, doc.rgb('#3a4658')); lx += 6;
+    doc.text('Activity logged', lx, ly, { size: 7, color: SUB }); lx += doc.textW('Activity logged', 7, false) + 14;
+    vline(lx + 0.7, ly - 6, ly + 2, '#2563eb', 1, '[2 2] 0'); lx += 6;
+    doc.text('Today', lx, ly, { size: 7, color: SUB }); lx += doc.textW('Today', 7, false) + 14;
+    doc.roundRect(lx, ly - 6.5, 13, 8, 2, doc.rgb('#b7bfca'), 0.7); lx += 16;
+    doc.text('Estimated dates', lx, ly, { size: 7, color: SUB });
+
+    return doc;
+  }
+
+  // =========================================================================
   //  FORECAST - scenario projections toward targets (senior-management view)
   // =========================================================================
   // The engine works in ACHIEVEMENT space: a = (value − baseline) / (target −
@@ -6773,16 +7786,22 @@
   // an arbitrary %. Projections freeze at each KPI's own target date - no
   // progress is assumed beyond the plan window.
 
-  var FC_DIMS = [['plans','Plans'],['impacts','Impacts'],['outcomes','Outcomes'],['outputs','Outputs'],['projects','Projects'],['donors','Donors'],['regions','Regions'],['countries','Countries']];
-  var FC_SING = { plans:'Plan', impacts:'Impact', outcomes:'Outcome', outputs:'Output', projects:'Project', donors:'Donor', regions:'Region', countries:'Country' };
+  var FC_DIMS = [['plans','Plans'],['impacts','Impacts'],['outcomes','Outcomes'],['outputs','Outputs'],['projects','Projects'],['donors','Donors'],['partners','Partners'],['regions','Regions'],['countries','Countries']];
+  var FC_SING = { plans:'Plan', impacts:'Impact', outcomes:'Outcome', outputs:'Output', projects:'Project', donors:'Donor', partners:'Partner', regions:'Region', countries:'Country' };
   var FC_HORIZONS = [['plan','End of plan'],['6m','+6 months'],['12m','+12 months'],['24m','+24 months']];
   var FC_MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var FC_COL = { hi:'#16a34a', mid:'#2563eb', lo:'#ef4444' };
+  // When set (a month index), the forecast anchors "now" here instead of the wall
+  // clock. The monthly-report bundle uses it so the brief's NOW column is the same
+  // as-of snapshot as its results report (end of the report month), rather than
+  // silently folding in partial data from a later, still-open month. null = live
+  // (the on-screen Forecast tab and standalone export always run from TODAY).
+  var FC_ASOF_MI = null;
 
   // UTC getters: measurement dates parse to UTC midnight, so local getters would
   // bucket every 1st-of-month report into the previous month west of UTC.
   function fcMi(ms){ var d = new Date(ms); return d.getUTCFullYear() * 12 + d.getUTCMonth(); }
-  function fcNowMi(){ return fcMi(TODAY.getTime()); }
+  function fcNowMi(){ return FC_ASOF_MI != null ? FC_ASOF_MI : fcMi(TODAY.getTime()); }
   function fcMiLab(mi){ return FC_MONS[((mi % 12) + 12) % 12] + ' ' + String(Math.floor(mi / 12)).slice(2); }
   function fcMiFull(mi){ return FC_MONS[((mi % 12) + 12) % 12] + ' ' + Math.floor(mi / 12); }
   function fcPct(a){ return a == null ? '–' : Math.round(a * 100) + '%'; }
@@ -6813,13 +7832,24 @@
     var ind = r.raw, b = +ind.baseline_value, t = +ind.target_value;
     if (!isFinite(b) || !isFinite(t) || t === b) return null;            // unmeasurable
     var series = r.series || [];
-    if (!series.length) return { nodata: true };
     var span = t - b;
     var yrs = kpiWindowYears(ind);
     var m0 = fcMi(ind.baseline_date ? Date.parse(ind.baseline_date) : Date.UTC(yrs.start, 0, 1));
     var mEnd = fcMi(ind.target_date ? Date.parse(ind.target_date) : Date.UTC(yrs.end, 11, 31));
     if (mEnd <= m0) mEnd = m0 + 1;
     var mNow = Math.max(fcNowMi(), m0);
+    // Measurable but never reported: the results engine treats this as a STANDING
+    // 0% (Under Track) that is COUNTED, never dropped, in every average. The
+    // forecast mirrors that - 0% now and, with no data to imply otherwise, held
+    // flat at 0 across every scenario - and keeps it in `fcs`, so NOW, the history
+    // line and the scenarios all average over the SAME KPI set the results screens
+    // use. That is what makes the forecast NOW column tally with results Progress.
+    // It stays flagged `unreported` so the "no reports yet" advice can still count it.
+    if (!series.length) return {
+      ok: true, unreported: true, a0: 0, aArr: [0], m0: m0, mEnd: mEnd, mNow: mNow,
+      slope: 0, slopeHi: 0, slopeLo: 0, monthsLeft: Math.max(0, mEnd - mNow),
+      needSlope: mEnd - mNow > 0 ? 1 / (mEnd - mNow) : Infinity, reps: 0, lastMi: m0
+    };
     // monthly achievement positions from the baseline month to now (carry-forward)
     var acc = kpiUnit(ind) === 'count', sumBy = {}, lvlBy = {};
     series.forEach(function (m){
@@ -6865,7 +7895,7 @@
     var fcs = [], nodata = 0, pset = {};
     members.forEach(function (r){
       var f = kpiForecast(r);
-      if (f && f.ok) fcs.push(f); else if (f && f.nodata) nodata++;
+      if (f && f.ok){ fcs.push(f); if (f.unreported) nodata++; }
       (r.projectIds || []).forEach(function (pid){
         if (!projFilter || projFilter(DB._idx.projectById[pid])) pset[pid] = 1;
       });
@@ -6904,7 +7934,12 @@
       ent.reps = 0; ent.staleN = 0; ent.regressN = 0; ent.winsN = 0; ent.unreachN = 0; ent.overN = 0; ent.conf = '–';
       return;
     }
-    ent.aNow = fcMean(ent, 'mid', mNow);
+    // NOW is a pure ACTUAL: the mean achieved progress of every measurable KPI
+    // (unreported ones counted as 0), computed exactly as the results screens
+    // compute Progress, so the two always tally. Predictions (aW/aR/aB) extend
+    // FROM this actual into the future - they are never blended into NOW.
+    var aNowSum = 0; ent.fcs.forEach(function (f){ aNowSum += f.a0; });
+    ent.aNow = aNowSum / ent.fcs.length;
     ent.aW = fcMean(ent, 'lo', mH); ent.aR = fcMean(ent, 'mid', mH); ent.aB = fcMean(ent, 'hi', mH);
     // expected-by-horizon share of each KPI's window → projected RAG (Performance logic)
     var ex = 0;
@@ -6993,6 +8028,18 @@
           d ? (d.short_name ? d.short_name + ' · ' : '') + donorType(d) + (donorType(d) ? ' donor' : '') : '',
           (d && d.color) || '#94a3b8', byDon[idS],
           function (p){ return p && p.donor_id === +idS; }));
+      });
+    } else if (S.fcDim === 'partners'){
+      var byPt = {};
+      rows.forEach(function (r){
+        (r.partnerIds || []).forEach(function (id){ (byPt[id] = byPt[id] || []).push(r); });
+      });
+      Object.keys(byPt).forEach(function (idS){
+        var d = DB._idx.partnerById[+idS];
+        ents.push(fcEntity('partner:' + idS, d ? d.name : 'Partner ' + idS,
+          d ? ((d.acronym ? d.acronym + ' · ' : '') + 'implementing partner') : '',
+          (d && d.color) || '#94a3b8', byPt[idS],
+          function (p){ return p && p.partner_id === +idS; }));
       });
     } else if (S.fcDim === 'regions'){
       var byReg = {};
@@ -7117,9 +8164,13 @@
     return tiles;
   }
 
-  function fcTiles(scope, ents){
+  function fcTiles(scope, ents, onCourseLabel){
     var grid = el('div', 'fc-tiles');
-    fcTileData(scope, ents).forEach(function (d){
+    var data = fcTileData(scope, ents);
+    // the third tile is "<dimension> on course" - a forecast report counts the
+    // breakdown below (projects / KPIs), so let the caller relabel it to match
+    if (onCourseLabel && data[2]) data[2].l = onCourseLabel;
+    data.forEach(function (d){
       var t = el('div', 'fc-tile');
       t.appendChild(el('div', 'tl', d.l));
       t.appendChild(el('div', 'tv', d.v));
@@ -7214,13 +8265,22 @@
     card.appendChild(el('div', 'fc-h', 'To meet the targets'));
     var list = el('div', 'fc-recs');
     fcRecs(scope, ents, isEntity).forEach(function (r){
-      var it = el('div', 'fc-rec ' + r.tone);
+      var it = el('div', 'fc-rec ' + r.tone + fcRecSpan(r));
       it.appendChild(el('div', 'rt', r.t));
       it.appendChild(el('div', 'rb', r.b));
       list.appendChild(it);
     });
     card.appendChild(list);
     return card;
+  }
+
+  /** The advice cards are a plain 3-column table - one card per cell. Only a
+   *  genuinely oversized entry (rare - e.g. the long Over-Track write-up) claims a
+   *  second column so it does not force its whole row tall; the dense grid then
+   *  backfills the freed cell. Everything else stays a tidy single cell. */
+  function fcRecSpan(r){
+    var n = (r.t ? r.t.length : 0) + (r.b ? r.b.length : 0);
+    return n >= 400 ? ' fc-wide' : '';
   }
 
   /** Plain-language, prioritised advice derived from the numbers on screen. */
@@ -7309,27 +8369,169 @@
       '<i class="dotr" style="left:' + md.toFixed(1) + '%"></i></span>';
   }
 
-  function fcTableCard(ents, sel){
+
+  /** Map a forecast-entity key ('impact:3', 'project:12', 'country:KEN', …) to the
+   *  entityScope (kind, key) that resolves its KPIs and projects - the same scope
+   *  the results report uses, so the two reports break down identically. */
+  function fcEntityScopeRef(key){
+    var i = String(key || '').indexOf(':'); if (i < 0) return null;
+    var pre = key.slice(0, i), val = key.slice(i + 1);
+    switch (pre){
+      case 'plan':    return { kind: 'plan', key: +val };
+      case 'impact':  return { kind: 'node', key: 'sdg' + SEP + val };
+      case 'outcome': return { kind: 'node', key: 'outcome' + SEP + val };
+      case 'output':  return { kind: 'node', key: 'output' + SEP + val };
+      case 'project': return { kind: 'project', key: +val };
+      case 'donor':   return { kind: 'donor', key: +val };
+      case 'partner': return { kind: 'partner', key: +val };
+      case 'region':  return { kind: 'region', key: val };
+      case 'country': var pg = DB._idx.programmeByIso[val]; return pg ? { kind: 'programme', key: pg.id } : null;
+    }
+    return null;
+  }
+
+  /** A stand-alone FORECAST REPORT for one entity, opened in the detail modal - the
+   *  forecast twin of the results report (openEntitySummary). The tiles, trajectory
+   *  chart and advice cover the clicked ITEM; below them the PROJECTS under it are
+   *  forecast and sectioned one level down the chain (Plan→Impacts, Impact→Outcomes,
+   *  …) exactly like the results report. A project item breaks down into its KPIs.
+   *  The on-screen breakdown and the Export PDF are built from the SAME scope / ents
+   *  / groups (via fcPdfDoc, the shared forecast writer), so the two always tally. */
+  function openForecastReport(e){
+    if (!e) return;
+    var scope = e;   // the clicked item's own forecast drives tiles / chart / advice
+    var ref = fcEntityScopeRef(e.key);
+    var sc = ref ? entityScope(ref.kind, ref.key) : null;
+    var byRisk = function (a, b){ return (a.aR == null ? 2 : a.aR) - (b.aR == null ? 2 : b.aR); };
+    var ents = [], groups = null, entityLabel = null, breakLabel = 'Projects';
+
+    if (ref && ref.kind === 'project'){
+      // a project drills into its own KPIs (no chain grouping below a project)
+      entityLabel = 'KPI'; breakLabel = 'KPIs';
+      (sc.inds || []).forEach(function (r){
+        var ke = fcEntity('kpi:' + r.id, (r.code ? r.code + ' · ' : '') + r.name,
+          r.unit || '', r.sdg ? (PILLAR_COLORS[r.sdg] || '#94a3b8') : '#94a3b8', [r]);
+        fcCompute(ke); ents.push(ke);
+      });
+      ents.sort(byRisk);
+    } else if (sc){
+      // every other item breaks down into the PROJECTS under it, grouped one level
+      // down the chain via the same helper the results report uses
+      var indSet = {}; (sc.inds || []).forEach(function (r){ indSet[r.id] = 1; });
+      var entByPid = {};
+      (sc.projs || []).forEach(function (p){
+        var kpis = (p.kpis || []).filter(function (r){ return indSet[r.id]; });
+        var pe = fcEntity('project:' + p.id, (p.code ? p.code + ' · ' : '') + p.name,
+          (p.country ? p.country.name : (p.iso || '')) + (p.donor ? ' · ' + (p.donor.short_name || p.donor.name) : ''),
+          p.iso ? countryColor(p.iso) : '#94a3b8', kpis);
+        fcCompute(pe); ents.push(pe); entByPid[p.id] = pe;
+      });
+      var rawGroups = esumProjectGroups(ref.kind, ref.key, sc.projs || [], sc.inds || []);
+      if (rawGroups) groups = rawGroups.map(function (g){
+        var ge = g.projs.map(function (p){ return entByPid[p.id]; }).filter(Boolean);
+        ge.sort(byRisk);
+        return { code: g.code || '', name: g.name || g.title, title: g.title, color: g.color, ents: ge };
+      });
+      ents.sort(byRisk);
+    }
+
+    detailStack = []; curView = null; updateBackBtn();   // a leaf report - no drill history
+    curDetail = null;
+    var tabs = $('#mTabs'); if (tabs) tabs.style.display = 'none';
+    $('#mProjects').classList.add('hide'); $('#mResults').classList.add('hide');
+    $('#mBody').classList.remove('hide');
+    setModalKicker('FORECAST REPORT', sc ? typePillLabel(sc.badge) : '', scope.color);
+    $('#mTitle').textContent = scope.label;
+    $('#mSub').textContent = scope.sub || '';
+    $('#mImpact').textContent = '';
+
+    var body = $('#mBody'); body.innerHTML = '';
+    var head = el('div', 'fcr-head');
+    head.appendChild(el('div', 'fc-h', breakLabel + ' under ' + truncTxt(scope.label, 46) + ' · forecast ' + fcHorizonLabel()));
+    var ex = el('button', 'rc-export fcr-export');
+    ex.type = 'button';
+    ex.title = 'Export this forecast report to a PDF file';
+    ex.innerHTML = '<span class="ic">⤓</span>Export PDF';
+    ex.onclick = function (){
+      var savedD = S.fcDim;
+      try {
+        S.fcDim = 'projects';   // the breakdown table is per project (or per KPI) - match its columns
+        fcPdfDoc(scope, ents, null, {
+          groups: groups,
+          tag: 'Forecast Report  ·  ' + pdfDate(TODAY),
+          subjectType: sc ? typePillLabel(sc.badge) : '',
+          dimLabel: entityLabel ? breakLabel : null,
+          entityLabel: entityLabel
+        }).save(pdfFileName({ title: 'forecast-' + scope.label }));
+      } catch (err){ console.error(err); alert('Could not build the PDF: ' + (err && err.message || err)); }
+      finally { S.fcDim = savedD; }
+    };
+    head.appendChild(ex);
+    body.appendChild(head);
+    // A flex-gap column so the tiles, chart and table breathe apart, matching the
+    // Forecast tab's .fc-body (the bare modal body has no inter-child spacing).
+    var rbody = el('div', 'fc-rbody');
+    var strip = filterStripHTML();
+    if (strip) rbody.appendChild(elHTML('div', 'fc-strip', strip));
+    rbody.appendChild(fcTiles(scope, ents, breakLabel + ' on course'));
+    var mid = el('div', 'fc-mid');
+    mid.appendChild(fcChartCard(scope));
+    mid.appendChild(fcAdviceCard(scope, ents, false));
+    rbody.appendChild(mid);
+    rbody.appendChild(fcTableCard(ents, null, {
+      heading: breakLabel + ' under ' + truncTxt(scope.label, 40) + ' · forecast ' + fcHorizonLabel() + ' · riskiest first'
+        + (entityLabel ? '' : ' · click a row for its forecast'),
+      groups: groups,
+      entitySing: entityLabel || 'Project',
+      countLabel: entityLabel ? null : 'KPIs',
+      count: function (x){ return x.n; },
+      emptyMsg: 'No ' + breakLabel.toLowerCase() + ' under this item for the current filters.',
+      rowClick: entityLabel ? null : function (x){ openForecastReport(x); }
+    }));
+    body.appendChild(rbody);
+    body.scrollTop = 0;
+    $('#modal').classList.add('on');
+  }
+
+  /** The forecast breakdown table. Two callers:
+   *   - the Forecast tab (opts omitted): lists the current dimension's entities,
+   *     each row opening its forecast report.
+   *   - a forecast report (opts set): the PROJECTS (or KPIs) under one item,
+   *     sectioned by opts.groups one level down the chain. opts = { heading,
+   *     groups, entitySing, countLabel (null drops the column), count(e), emptyMsg,
+   *     rowClick(e) (null = not clickable) }. */
+  function fcTableCard(ents, sel, opts){
+    opts = opts || {};
     var card = el('div', 'fc-card fc-tablecard');
-    card.appendChild(el('div', 'fc-h', fcDimLabel() + ' · forecast ' + fcHorizonLabel() + ' · riskiest first · click a row to focus the chart and advice'));
-    if (!ents.length){ card.appendChild(el('div', 'empty', 'Nothing to forecast under the current filters.')); return card; }
-    var tbl = el('table', 'fc-tbl');
-    var thead = el('thead'), hr = el('tr');
-    var cntCol = S.fcDim === 'projects' ? 'KPIs' : 'Projects';
-    [[FC_SING[S.fcDim] || 'Entity',''],[cntCol,'num'],['Now','num'],['Trend',''],['Outlook',''],['Realistic','num'],['Projected status',''],['Pace','num'],['Target by','num']]
-      .forEach(function (c){ hr.appendChild(el('th', c[1] || null, c[0])); });
-    thead.appendChild(hr); tbl.appendChild(thead);
-    var tbody = el('tbody');
-    ents.forEach(function (e){
+    card.appendChild(el('div', 'fc-h', opts.heading != null ? opts.heading
+      : (fcDimLabel() + ' · forecast ' + fcHorizonLabel() + ' · riskiest first · click a row to open its forecast report')));
+    if (!ents.length){ card.appendChild(el('div', 'empty', opts.emptyMsg || 'Nothing to forecast under the current filters.')); return card; }
+    var entSing = opts.entitySing || FC_SING[S.fcDim] || 'Entity';
+    var cntCol = opts.hasOwnProperty('countLabel') ? opts.countLabel : (S.fcDim === 'projects' ? 'KPIs' : 'Projects');
+    var showCount = cntCol != null;
+    var countOf = opts.count || function (e){ return S.fcDim === 'projects' ? e.n : e.nProj; };
+    var rowClick = opts.hasOwnProperty('rowClick') ? opts.rowClick : function (e){ openForecastReport(e); };
+    // A fresh column header per table - grouped mode gives each group its own
+    // card, so the header (Trend, Outlook, …) is repeated inside every card.
+    function makeHead(){
+      var thead = el('thead'), hr = el('tr');
+      var head = [[entSing, '']];
+      if (showCount) head.push([cntCol, 'num']);
+      head.push(['Now','num'],['Trend',''],['Outlook',''],['Realistic','num'],['Forecast status',''],['Pace','num'],['Target by','num']);
+      head.forEach(function (c){ hr.appendChild(el('th', c[1] || null, c[0])); });
+      thead.appendChild(hr); return thead;
+    }
+    function drawRow(e, tbody){
       var st = STATUS[e.code] || STATUS.nodata;
       var tr = el('tr', sel && sel.key === e.key ? 'on' : null);
-      tr.onclick = function (){ S.fcSel = S.fcSel === e.key ? null : e.key; renderForecast(); };
+      if (rowClick){ tr.title = 'Open the forecast report for ' + e.label; tr.onclick = function (){ rowClick(e); }; }
+      else tr.classList.add('fc-noclick');
       var td = el('td', 'ent');
       var dt = el('span', 'dot'); dt.style.background = e.color || '#94a3b8'; td.appendChild(dt);
       var nm = el('span', 'nm', truncTxt(e.label, 52)); nm.title = e.label; td.appendChild(nm);
       if (e.sub) td.appendChild(el('span', 'sub', truncTxt(e.sub, 48)));
       tr.appendChild(td);
-      tr.appendChild(el('td', 'num', fmt(S.fcDim === 'projects' ? e.n : e.nProj)));
+      if (showCount) tr.appendChild(el('td', 'num', fmt(countOf(e))));
       tr.appendChild(el('td', 'num', fcPct(e.aNow)));
       var sp = el('td', 'spark'); sp.innerHTML = fcSparkSvg(e); tr.appendChild(sp);
       var ol = el('td', 'outlook'); ol.innerHTML = fcRangeBar(e); tr.appendChild(ol);
@@ -7352,9 +8554,30 @@
         if (e.mEnd != null && e.etaMi > e.mEnd) eta.title = 'At the current pace the target lands AFTER the plan ends (' + fcMiFull(e.mEnd) + ')'; }
       tr.appendChild(eta);
       tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    card.appendChild(tbl);
+    }
+    if (opts.groups){
+      // one rounded card per group: the hierarchy code + statement label sit
+      // OUTSIDE the card, the column header + rows INSIDE it (same language as
+      // the results report).
+      opts.groups.forEach(function (g){
+        var grp = el('div', 'esum-group fc-group');
+        var hd = el('div', 'esum-group-hd');
+        var bar = el('span', 'esum-grp-bar'); bar.style.background = g.color || '#94a3b8'; hd.appendChild(bar);
+        if (g.code) hd.appendChild(el('span', 'esum-grp-code', g.code));
+        hd.appendChild(el('span', 'esum-grp-t', g.name || g.title));
+        hd.appendChild(el('span', 'esum-grp-n', g.ents.length + ' project' + (g.ents.length === 1 ? '' : 's')));
+        grp.appendChild(hd);
+        var cardEl = el('div', 'esum-card');
+        var tbl = el('table', 'fc-tbl'); tbl.appendChild(makeHead());
+        var tbody = el('tbody'); g.ents.forEach(function (e){ drawRow(e, tbody); }); tbl.appendChild(tbody);
+        cardEl.appendChild(tbl); grp.appendChild(cardEl);
+        card.appendChild(grp);
+      });
+    } else {
+      var tbl = el('table', 'fc-tbl'); tbl.appendChild(makeHead());
+      var tbody = el('tbody'); ents.forEach(function (e){ drawRow(e, tbody); }); tbl.appendChild(tbody);
+      card.appendChild(tbl);
+    }
     return card;
   }
 
@@ -7431,10 +8654,13 @@
     ends.forEach(function (e){
       doc.text(fcPct(e.v), X(mH) + 4, e.y, { size: 7, bold: true, color: doc.rgb(FC_COL[e.k]) });
     });
-    // today marker
+    // "now" marker - the point projections start from. Labelled TODAY when the
+    // forecast runs live; when a monthly brief is anchored to a past report month
+    // (FC_ASOF_MI), it names that month so the origin can't be read as the wall clock.
     var tx = X(mNow);
+    var nowLbl = (FC_ASOF_MI != null && FC_ASOF_MI < fcMi(TODAY.getTime())) ? fcMiFull(mNow).toUpperCase() : 'TODAY';
     stroke([[tx, yB], [tx, yB + plotH]], '#94a3b8', 0.7, '2 2');
-    doc.text('TODAY', tx + 3, yB + plotH - 6, { size: 6, bold: true, color: MUT });
+    doc.text(nowLbl, tx + 3, yB + plotH - 6, { size: 6, bold: true, color: MUT });
     return yTop - h - 4;
   }
 
@@ -7447,7 +8673,8 @@
       scope = fcEntity('__all__', 'Whole portfolio', '', '#2563eb', filtered());
       fcCompute(scope);
     }
-    fcPdfDoc(scope, ents, sel).save(pdfFileName({ title: 'forecast-' + S.fcDim + (sel ? '-' + sel.label : '') }));
+    fcPdfDoc(scope, ents, sel, { subjectType: sel ? FC_SING[S.fcDim] : 'Portfolio' })
+      .save(pdfFileName({ title: 'forecast-' + S.fcDim + (sel ? '-' + sel.label : '') }));
   }
 
   /** The full Forecast panel as a pdfWriter doc - letterhead, plan stamp, tiles,
@@ -7496,13 +8723,21 @@
     }
     y -= 7;
 
-    // badge + title + context line
+    // report-kind badge (FORECAST) + subject-type pill (what it is about) + title
     var bw = doc.textW('FORECAST', 7.5, true) + 16;
     doc.roundRect(M, y - 12.5, bw, 16, 8, NAVY);
     doc.text('FORECAST', M + 8, y - 8, { size: 7.5, bold: true, color: [1, 1, 1] });
+    var tx = M + bw + 6;
+    var subjType = (opts.subjectType || (sel ? FC_SING[S.fcDim] : 'Portfolio') || '').toUpperCase();
+    if (subjType){                           // tinted pill telling Plan / Impact / Project …
+      var sbw = doc.textW(subjType, 7.5, true) + 14;
+      doc.roundRect(tx, y - 12.5, sbw, 16, 8, doc.rgb('#d8e3ec'));
+      doc.text(subjType, tx + 7, y - 8, { size: 7.5, bold: true, color: NAVY });
+      tx += sbw + 8;
+    }
     var tF = 16;                             // long entity names shrink to fit
-    while (tF > 10.5 && doc.textW(scope.label, tF, true) > AW - bw - 10) tF -= 0.5;
-    doc.text(scope.label, M + bw + 10, y - 9.5, { size: tF, bold: true, color: INK });
+    while (tF > 10.5 && doc.textW(scope.label, tF, true) > PW - M - tx) tF -= 0.5;
+    doc.text(scope.label, tx, y - 9.5, { size: tF, bold: true, color: INK });
     y -= 24;
     var ctx = opts.ctx || ((sel ? FC_SING[S.fcDim] + (scope.sub ? '  ·  ' + scope.sub : '')
                    : 'All KPIs under the current filters')
@@ -7559,24 +8794,36 @@
     y = fcChartPdf(doc, scope, M, AW, y, chH);
     y -= 14;
 
-    // advice panels - the on-screen cards, with their tone accent
+    // advice panels - the on-screen cards, below the chart. A 2-column masonry:
+    // each card keeps its natural height and drops into the shorter column, so a
+    // long paragraph simply runs taller (a "double-height" card) without leaving
+    // a gap. The rare monster spans the full width - but only while the columns
+    // are still level, so a full-width card never strands an empty half-column.
     var recs = fcRecs(scope, ents, !!sel);
     if (y < M + 90){ doc.addPage(); y = doc.PH - M; }
     doc.text('TO MEET THE TARGETS', M, y - 9, { size: 8.5, bold: true, color: SUB });
     y -= 17;
+    var acGap = 10, acW = (AW - acGap) / 2, colX = [M, M + acW + acGap], colY = [y, y];
     recs.forEach(function (r){
-      var lines = doc.wrap(r.b, AW - 30, 8.5, false);
-      var hR = 26 + lines.length * 11;
-      if (y - hR < M + 20){ doc.addPage(); y = doc.PH - M; }
-      doc.roundRect(M, y - hR, AW, hR, 5, doc.rgb('#f8fafc'));
-      doc.roundRect(M, y - hR, AW, hR, 5, doc.rgb('#e3e8f0'), 0.7);
-      doc.roundRect(M + 5, y - hR + 5, 2.5, hR - 10, 1.25, doc.rgb(fcToneColor(r.tone)));
-      doc.text(r.t, M + 16, y - 15, { size: 9.5, bold: true, color: INK });
-      var ly = y - 27.5;
-      lines.forEach(function (ln){ doc.text(ln, M + 16, ly, { size: 8.5, color: doc.rgb('#39424f') }); ly -= 11; });
-      y -= hR + 8;
+      var n = (r.t ? r.t.length : 0) + (r.b ? r.b.length : 0);
+      var full = n >= 330 && Math.abs(colY[0] - colY[1]) < 1;   // monster + level cols
+      var w = full ? AW : acW;
+      var tl = doc.wrap(r.t, w - 32, 9.5, true), bl = doc.wrap(r.b, w - 32, 8.5, false);
+      var h = 15 + (tl.length - 1) * 12 + 12.5 + (bl.length - 1) * 11 + 12;
+      var ci = full ? 0 : (colY[0] >= colY[1] ? 0 : 1);         // taller col = larger y
+      var top = full ? Math.min(colY[0], colY[1]) : colY[ci];
+      if (top - h < M + 20){ doc.addPage(); colY[0] = colY[1] = top = doc.PH - M; ci = 0; }
+      var cx = full ? M : colX[ci];
+      doc.roundRect(cx, top - h, w, h, 5, doc.rgb('#f8fafc'));
+      doc.roundRect(cx, top - h, w, h, 5, doc.rgb('#e3e8f0'), 0.7);
+      doc.roundRect(cx + 5, top - h + 5, 2.5, h - 10, 1.25, doc.rgb(fcToneColor(r.tone)));
+      var ly = top - 15;
+      tl.forEach(function (ln){ doc.text(ln, cx + 16, ly, { size: 9.5, bold: true, color: INK }); ly -= 12; });
+      ly -= 0.5;
+      bl.forEach(function (ln){ doc.text(ln, cx + 16, ly, { size: 8.5, color: doc.rgb('#39424f') }); ly -= 11; });
+      if (full){ colY[0] = colY[1] = top - h - 8; } else { colY[ci] = top - h - 8; }
     });
-    y -= 10;
+    y = Math.min(colY[0], colY[1]) - 10;
 
     // entity table - the same columns as on screen minus the sparkline (the
     // outlook bar becomes a worst-best range). The per-KPI drill-down (comm
@@ -7589,7 +8836,7 @@
       { t: opts.entityLabel || FC_SING[S.fcDim] || 'Entity' }, { t: showProj ? 'Projects' : 'KPIs', align: 'right' },
       { t: 'Now', align: 'right' },
       { t: 'Realistic', align: 'right' }, { t: 'Worst - best', align: 'right' },
-      { t: 'Status' }, { t: 'Pace', align: 'right' }, { t: 'Target by', align: 'right' }
+      { t: 'Forecast status' }, { t: 'Pace', align: 'right' }, { t: 'Target by', align: 'right' }
     ];
     if (perKpi) cols.splice(1, 1);
     function rowFor(e){
@@ -7678,7 +8925,7 @@
     var withData = IND.filter(function (r) { return r.ratio != null; });
     var onTrack  = withData.filter(function (r) { return r.status === 'green' || r.status === 'blue'; }).length;
     var atRisk   = withData.filter(function (r) { return r.status === 'amber'; }).length;
-    var offTrack = withData.filter(function (r) { return r.status === 'red' || r.status === 'maroon'; }).length;
+    var offTrack = withData.filter(function (r) { return r.status === 'red' || r.status === 'maroon' || r.status === 'black'; }).length;
     var budget   = PROJECTS.reduce(function (s, p) { return s + (+p.budget || 0); }, 0);
     var onPct    = withData.length ? Math.round(onTrack / withData.length * 100) : 0;
     var countries = {}; PROJECTS.forEach(function (p) { if (p.iso) countries[p.iso] = 1; });
@@ -7762,6 +9009,7 @@
   function renderAll() {
     if (S.tab === 'map') { renderBubbles(); renderList(); }
     else if (S.tab === 'forecast') { renderForecast(); renderList(); }
+    else if (S.tab === 'timeline') { renderTimeline(); renderList(); }
     else { renderInsights(); renderList(); }
     renderFacets();
     persist();
@@ -7775,17 +9023,19 @@
 
   function wire() {
     initFacetGroups();   // drag-to-reorder + collapse on the left filter groups
-    // ranges
+    // date range filter removed - the dashboard always shows all-time now
     var rc = $('#ranges');
-    RANGES.forEach(function (r) {
-      var b = el('button','range'+(r[0]===S.range?' on':''), r[1]); b.dataset.r = r[0];
-      b.onclick = function () { S.range = r[0]; S.from = S.to = null; $('#dFrom').value=''; $('#dTo').value='';
-        Array.prototype.forEach.call(rc.children,function(x){x.classList.toggle('on',x.dataset.r===r[0]);});
-        S.page = 0; renderAll(); };
-      rc.appendChild(b);
-    });
-    $('#dFrom').onchange = function (e){ S.from = e.target.value||null; clearRangeButtons(); S.page=0; renderAll(); };
-    $('#dTo').onchange = function (e){ S.to = e.target.value||null; clearRangeButtons(); S.page=0; renderAll(); };
+    if (rc) {
+      RANGES.forEach(function (r) {
+        var b = el('button','range'+(r[0]===S.range?' on':''), r[1]); b.dataset.r = r[0];
+        b.onclick = function () { S.range = r[0]; S.from = S.to = null; if($('#dFrom'))$('#dFrom').value=''; if($('#dTo'))$('#dTo').value='';
+          Array.prototype.forEach.call(rc.children,function(x){x.classList.toggle('on',x.dataset.r===r[0]);});
+          S.page = 0; renderAll(); };
+        rc.appendChild(b);
+      });
+    }
+    var dF = $('#dFrom'); if (dF) dF.onchange = function (e){ S.from = e.target.value||null; clearRangeButtons(); S.page=0; renderAll(); };
+    var dT = $('#dTo'); if (dT) dT.onchange = function (e){ S.to = e.target.value||null; clearRangeButtons(); S.page=0; renderAll(); };
 
     // count basis toggle - single cycling button: projects ↔ activities (drives facet counts + map bubbles)
     var cb = $('#countBasis');
@@ -7802,6 +9052,7 @@
       Array.prototype.forEach.call($('#tabs').children,function(x){x.classList.toggle('on',x===b);});
       $('#mapView').classList.toggle('hide', S.tab!=='map');
       $('#insightsView').classList.toggle('hide', S.tab!=='insights');
+      $('#timelineView').classList.toggle('hide', S.tab!=='timeline');
       $('#forecastView').classList.toggle('hide', S.tab!=='forecast');
       renderAll();
     });
@@ -7817,6 +9068,7 @@
     var qk = $('#qKpi'); if (qk) { var kpiBounced = debounce(function (){ renderKpiFacet(); persist(); }); qk.addEventListener('input', function (e){ S.qKpi = e.target.value; kpiBounced(); }); }
     var qu = $('#qUser'); if (qu) { var userBounced = debounce(function (){ renderUserFacet(); persist(); }); qu.addEventListener('input', function (e){ S.qUser = e.target.value; userBounced(); }); }
     var qd = $('#qDonor'); if (qd) { var donorBounced = debounce(function (){ renderDonorFacet(); persist(); }); qd.addEventListener('input', function (e){ S.qDonor = e.target.value; donorBounced(); }); }
+    var qpt = $('#qPartner'); if (qpt) { var partnerBounced = debounce(function (){ renderPartnerFacet(); persist(); }); qpt.addEventListener('input', function (e){ S.qPartner = e.target.value; partnerBounced(); }); }
     var qpr = $('#qProject'); if (qpr) { var projectBounced = debounce(function (){ renderProjectFacet(); persist(); }); qpr.addEventListener('input', function (e){ S.qProject = e.target.value; projectBounced(); }); }
 
     // pane mode - Projects ↔ KPIs (KPIs mode toggle removed; guard kept for safety)
@@ -7850,21 +9102,12 @@
     $('#pLast').onclick=function(){S.page=1e9;renderList();persist();};
 
     // clear filters
-    $('#clearFilters').onclick=function(){ S.selProg.clear(); S.selRegion.clear(); S.selNodes.clear(); S.selSdg.clear(); S.selKpi.clear(); S.selUser.clear(); S.selStatus.clear(); S.selType.clear(); S.selDonor.clear(); S.selProject.clear(); S.selBenType.clear(); S.selCountry=null; S.qList=''; $('#qList').value=''; S.qKpi=''; S.qUser=''; S.qDonor=''; S.qProject=''; if($('#qProject'))$('#qProject').value=''; S.page=0; renderAll(); };
+    $('#clearFilters').onclick=function(){ S.selProg.clear(); S.selRegion.clear(); S.selNodes.clear(); S.selSdg.clear(); S.selKpi.clear(); S.selUser.clear(); S.selStatus.clear(); S.selType.clear(); S.selDonor.clear(); S.selPartner.clear(); S.selProject.clear(); S.selBenType.clear(); S.selCountry=null; S.qList=''; $('#qList').value=''; S.qKpi=''; S.qUser=''; S.qDonor=''; S.qPartner=''; if($('#qPartner'))$('#qPartner').value=''; S.qProject=''; if($('#qProject'))$('#qProject').value=''; S.page=0; renderAll(); };
 
     // legend / map controls
     $('#colorMode').onchange=function(e){ S.colorMode=e.target.value; renderBubbles(); persist(); };
     $('#legMin').onclick=function(){ $('#legend').classList.toggle('min'); $('#legMin').textContent = $('#legend').classList.contains('min')?'+':'–'; persist(); };
-    // status basis toggle - single cycling button: progress ↔ performance
-    $('#mapmode').onclick = function (){
-      S.perfBasis = S.perfBasis === 'progress' ? 'performance' : 'progress';
-      syncBasisToggles();
-      applyBasis();          // rebind KPI + result status to the new basis
-      buildProjects();       // re-roll project status too - the map colours bubbles from projStat()
-      buildActivities();     // ACTS snapshot each KPI's status - re-snap or activity-basis counts keep the old basis
-      renderAll();           // bubbles, list, facets, ticker all follow the basis
-      persist();             // remember the chosen basis
-    };
+    // (status basis toggle removed - status is always performance; progress cannot tell status)
 
     // collapse panels
     $('#colLeft').onclick=function(){ toggleCol('no-left','#colLeft','‹','›'); };
@@ -7920,6 +9163,12 @@
 
     // Project modal + its tabs
     $('#prClose').onclick = closeProject;
+    var prCloseBtn = $('#prCloseBtn'); if (prCloseBtn) prCloseBtn.onclick = closeProject;
+    var prExport = $('#prExportPdf');
+    if (prExport) prExport.onclick = function (){
+      try { exportProjectPDF(curProject); }
+      catch (e){ console.error(e); alert('Could not build the PDF: ' + (e && e.message || e)); }
+    };
     $('#projectModal').addEventListener('click', function (e){ if (e.target === $('#projectModal')) closeProject(); });
     $('#prTabs').addEventListener('click', function (e){ var b = e.target.closest('button'); if (!b) return; setProjectTab(b.dataset.prtab); });
     // deep links: #project/<id> opens that project popup
@@ -7932,6 +9181,8 @@
     // Donor add/edit child popup (Control Panel)
     $('#donorEditClose').onclick = closeDonorEdit;
     $('#donorEditOverlay').addEventListener('click', function (e){ if (e.target === $('#donorEditOverlay')) closeDonorEdit(); });
+    $('#partnerEditClose').onclick = closePartnerEdit;
+    $('#partnerEditOverlay').addEventListener('click', function (e){ if (e.target === $('#partnerEditOverlay')) closePartnerEdit(); });
 
     // Beneficiary measure (Control Panel) + beneficiary entry (activity form) popups
     $('#benTypeClose').onclick = closeBenTypeEdit;
@@ -7985,6 +9236,7 @@
         if ($('#benEditOverlay').classList.contains('on')) { closeBenEdit(); return; }
         if ($('#benTypeOverlay').classList.contains('on')) { closeBenTypeEdit(); return; }
         if ($('#donorEditOverlay').classList.contains('on')) { closeDonorEdit(); return; }
+        if ($('#partnerEditOverlay').classList.contains('on')) { closePartnerEdit(); return; }
         if ($('#secEditOverlay').classList.contains('on')) { closeSecEdit(); return; }
         if ($('#kpiEditOverlay').classList.contains('on')) { closeKpiEdit(); return; }
         if ($('#userEditOverlay').classList.contains('on')) { closeUserEdit(); return; }
@@ -7998,7 +9250,7 @@
       }
     });
   }
-  function clearRangeButtons(){ S.range=''; Array.prototype.forEach.call($('#ranges').children,function(x){x.classList.remove('on');}); }
+  function clearRangeButtons(){ S.range=''; var rc=$('#ranges'); if(rc) Array.prototype.forEach.call(rc.children,function(x){x.classList.remove('on');}); }
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
   function setGrid(){
     var m=$('#main');
@@ -8049,7 +9301,6 @@
   // they show only the current value; clicking flips it. This keeps their labels in sync.
   function syncBasisToggles(){
     var c = $('#countBasis'); if (c) c.textContent = '⇄ ' + (S.countBasis === 'activities' ? 'Activities' : 'Projects');
-    var p = $('#mapmode');    if (p) p.textContent = '⇄ ' + (S.perfBasis === 'progress' ? 'Progress' : 'Performance');
   }
   function toggleTheme(){
     S.theme = S.theme==='light'?'dark':'light';
@@ -8064,7 +9315,7 @@
   //  UTILITIES
   // =========================================================================
   function toggle(set, v){ if(set.has(v))set.delete(v); else set.add(v); }
-  function hasFilters(){ return S.selProg.size||S.selRegion.size||S.selNodes.size||S.selSdg.size||S.selKpi.size||S.selUser.size||S.selStatus.size||S.selType.size||S.selDonor.size||S.selProject.size||S.selBenType.size||S.selCountry||S.qList; }
+  function hasFilters(){ return S.selProg.size||S.selRegion.size||S.selNodes.size||S.selSdg.size||S.selKpi.size||S.selUser.size||S.selStatus.size||S.selType.size||S.selDonor.size||S.selPartner.size||S.selProject.size||S.selBenType.size||S.selCountry||S.qList; }
   /** Every active filter, one entry per GROUP: { label, values:[...] }, in sidebar
    *  order. A results box is only ever a slice of the dashboard, so it says which
    *  slice - on screen and in the exported PDF, which otherwise leaves the room
@@ -8104,6 +9355,9 @@
     add('Pillar', names(S.selSdg, function (s){ return PILLAR_NAMES[s] || ('Pillar ' + s); }));
     add('Donors', names(S.selDonor, function (id){
       var d = DB._idx.donorById[id]; return d ? (d.short_name || d.name) : null;
+    }));
+    add('Partners', names(S.selPartner, function (id){
+      var d = DB._idx.partnerById[id]; return d ? (d.acronym || d.name) : null;
     }));
     add('Projects', names(S.selProject, function (id){
       var p = PROJECTSBYID[id]; return p ? (p.code || p.name) : null;
@@ -8184,9 +9438,9 @@
         selNodes: Array.from(S.selNodes), selSdg: Array.from(S.selSdg), selCountry: S.selCountry,
         selKpi: Array.from(S.selKpi), selUser: Array.from(S.selUser), kpiShown: S.kpiShown, userShown: S.userShown,
         selStatus: Array.from(S.selStatus), selType: Array.from(S.selType),
-        selDonor: Array.from(S.selDonor), selProject: Array.from(S.selProject), selBenType: Array.from(S.selBenType),
-        donorShown: S.donorShown, projectShown: S.projectShown, progShown: S.progShown,
-        qList: S.qList, qProg: S.qProg, qSdg: S.qSdg, qKpi: S.qKpi, qUser: S.qUser, qDonor: S.qDonor, qProject: S.qProject, sort: S.sort, sortDir: S.sortDir,
+        selDonor: Array.from(S.selDonor), selPartner: Array.from(S.selPartner), selProject: Array.from(S.selProject), selBenType: Array.from(S.selBenType),
+        donorShown: S.donorShown, partnerShown: S.partnerShown, projectShown: S.projectShown, progShown: S.progShown,
+        qList: S.qList, qProg: S.qProg, qSdg: S.qSdg, qKpi: S.qKpi, qUser: S.qUser, qDonor: S.qDonor, qPartner: S.qPartner, qProject: S.qProject, sort: S.sort, sortDir: S.sortDir,
         listMode: S.listMode, countBasis: S.countBasis, kpiSort: S.kpiSort, kpiSortDir: S.kpiSortDir, page: S.page,
         colorMode: S.colorMode, perfBasis: S.perfBasis, expandRegion: Array.from(S.expandRegion),
         expandSdg: Array.from(S.expandSdg), expandImpact: Array.from(S.expandImpact), expandOutcome: Array.from(S.expandOutcome),
@@ -8194,6 +9448,7 @@
         facetOrder: S.facetOrder, facetCollapsed: S.facetCollapsed,
         insX: S.insX, insTopX: S.insTopX, insY: S.insY, insTopY: S.insTopY, insMode: S.insMode,
         fcDim: S.fcDim, fcHorizon: S.fcHorizon,
+        tlDim: S.tlDim, tlActs: S.tlActs,
         leftW: S.leftW, rightW: S.rightW,
         noLeft: main.classList.contains('no-left'),
         noRight: main.classList.contains('no-right'),
@@ -8212,10 +9467,12 @@
     try {
       var p = JSON.parse(raw);
       if (p.theme) S.theme = p.theme;
-      if (p.tab) S.tab = p.tab;
+      // restore the last-viewed tab (Map is only the fresh-load default, when no
+      // preference has been saved yet)
+      if (['map','insights','timeline','forecast'].indexOf(p.tab) >= 0) S.tab = p.tab;
       if (p.plan != null) S.plan = p.plan;   // validated against real plans by resolvePlan()
-      if ('range' in p) S.range = p.range;
-      S.from = p.from || null; S.to = p.to || null;
+      // date range filter removed - always all-time; ignore any persisted range/from/to
+      S.range = 'all'; S.from = null; S.to = null;
       if (p.selProg) S.selProg = new Set(p.selProg);
       if (p.selRegion) S.selRegion = new Set(p.selRegion);
       if (p.selNodes) S.selNodes = new Set(p.selNodes);
@@ -8229,9 +9486,11 @@
       if (p.selStatus) S.selStatus = new Set(p.selStatus);
       if (p.selType) S.selType = new Set(p.selType);
       if (p.selDonor) S.selDonor = new Set(p.selDonor);
+      if (p.selPartner) S.selPartner = new Set(p.selPartner);
       if (p.selProject) S.selProject = new Set(p.selProject);
       if (p.selBenType) S.selBenType = new Set(p.selBenType);
       if (p.donorShown) S.donorShown = Math.max(10, p.donorShown);
+      if (p.partnerShown) S.partnerShown = Math.max(10, p.partnerShown);
       if (p.projectShown) S.projectShown = Math.max(10, p.projectShown);
       if (p.progShown && typeof p.progShown === 'object') S.progShown = p.progShown;
       if (p.sortDir) S.sortDir = p.sortDir;
@@ -8241,7 +9500,7 @@
       if (p.facetCollapsed && typeof p.facetCollapsed === 'object') S.facetCollapsed = p.facetCollapsed;
       S.selCountry = p.selCountry || null;
       S.qList = p.qList || ''; S.qProg = p.qProg || ''; S.qSdg = p.qSdg || '';
-      S.qKpi = p.qKpi || ''; S.qUser = p.qUser || ''; S.qDonor = p.qDonor || ''; S.qProject = p.qProject || '';
+      S.qKpi = p.qKpi || ''; S.qUser = p.qUser || ''; S.qDonor = p.qDonor || ''; S.qPartner = p.qPartner || ''; S.qProject = p.qProject || '';
       if (p.sort) S.sort = p.sort;
       if (['name','budget','progress','kpis'].indexOf(S.sort) < 0) { S.sort = 'name'; S.sortDir = 'asc'; }   // migrate old (report) sort keys
       S.listMode = 'projects';   // KPIs pane mode removed - always show projects
@@ -8252,16 +9511,18 @@
       S.page = p.page || 0;
       if (p.colorMode) S.colorMode = p.colorMode;
       // map now colours locations by status or region only - migrate old modes
-      if (['status','region','impact','donor','budget'].indexOf(S.colorMode) < 0) S.colorMode = 'status';
-      if (p.perfBasis === 'progress' || p.perfBasis === 'performance') S.perfBasis = p.perfBasis;
+      if (['status','region','impact','donor','partner','budget'].indexOf(S.colorMode) < 0) S.colorMode = 'status';
+      S.perfBasis = 'performance';   // status is always performance; ignore any persisted 'progress'
       if (p.userShown && typeof p.userShown === 'object') S.userShown = p.userShown;
       if (p.insX) S.insX = p.insX; if (p.insTopX) S.insTopX = p.insTopX;
       if (p.insY) S.insY = p.insY; if (p.insTopY) S.insTopY = p.insTopY;
       if (DIM_LIST.indexOf(S.insX) < 0) S.insX = 'sdg';       // migrate removed dims (e.g. 'level')
       if (DIM_LIST.indexOf(S.insY) < 0) S.insY = 'region';
       if (p.insMode) S.insMode = p.insMode;
-      if (['plans','impacts','outcomes','outputs','projects','regions','countries'].indexOf(p.fcDim) >= 0) S.fcDim = p.fcDim;
+      if (['plans','impacts','outcomes','outputs','projects','donors','partners','regions','countries'].indexOf(p.fcDim) >= 0) S.fcDim = p.fcDim;
       if (['plan','6m','12m','24m'].indexOf(p.fcHorizon) >= 0) S.fcHorizon = p.fcHorizon;
+      if (['plans','impacts','outcomes','outputs','projects','donors','partners','regions','countries'].indexOf(p.tlDim) >= 0) S.tlDim = p.tlDim;
+      if (typeof p.tlActs === 'boolean') S.tlActs = p.tlActs;
       if (p.leftW) S.leftW = p.leftW; if (p.rightW) S.rightW = p.rightW;
       if (p.expandRegion) S.expandRegion = new Set(p.expandRegion);
       S._noLeft = !!p.noLeft; S._noRight = !!p.noRight; S._legendMin = !!p.legendMin;
@@ -8277,13 +9538,15 @@
     syncBasisToggles();   // set the two single-button toggle labels to the restored basis
     $('#mapView').classList.toggle('hide', S.tab !== 'map');
     $('#insightsView').classList.toggle('hide', S.tab !== 'insights');
+    $('#timelineView').classList.toggle('hide', S.tab !== 'timeline');
     $('#forecastView').classList.toggle('hide', S.tab !== 'forecast');
     // custom dates + searches
-    if (S.from) $('#dFrom').value = S.from;
-    if (S.to) $('#dTo').value = S.to;
+    if (S.from && $('#dFrom')) $('#dFrom').value = S.from;
+    if (S.to && $('#dTo')) $('#dTo').value = S.to;
     $('#qList').value = S.qList; $('#qProg').value = S.qProg; $('#qSdg').value = S.qSdg;
     if ($('#qKpi')) $('#qKpi').value = S.qKpi; if ($('#qUser')) $('#qUser').value = S.qUser;
     if ($('#qDonor')) $('#qDonor').value = S.qDonor;
+    if ($('#qPartner')) $('#qPartner').value = S.qPartner;
     if ($('#qProject')) $('#qProject').value = S.qProject;
     // pane mode search placeholder (KPIs pane mode removed)
     $('#qList').placeholder = S.listMode === 'kpis' ? 'Search primary KPIs…' : 'Search projects, donors, countries…';
@@ -8866,6 +10129,22 @@
     if (!rows.length){ doc.text('No rows.', x + pad, y - 11, { size: dF, color: doc.rgb('#8792a3') }); return y - 16; }
     var zebra = false;   // alternate-row tint replaces the old per-row hairlines
     rows.forEach(function (row){
+      // section band: a { group } marker row - a full-width heading (coloured
+      // tick + title + project count) introducing a chain-level group of rows.
+      if (row && row.group){
+        var gH = 20;
+        if (y - gH < doc.margin){ doc.addPage(); y = doc.PH - doc.margin; header(); zebra = false; }
+        y -= 6;
+        var gc = doc.rgb(row.group.color || '#94a3b8');
+        doc.rect(x, y - 11, 2.5, 12, gc);
+        doc.text(String(row.group.title || ''), x + 8, y - 9, { size: 9, bold: true, color: doc.rgb('#1a2230') });
+        if (row.group.count != null){
+          var gcn = row.group.count + ' project' + (row.group.count === 1 ? '' : 's');
+          doc.text(gcn, x + availW - doc.textW(gcn, 7.5, false), y - 9, { size: 7.5, color: doc.rgb('#8792a3') });
+        }
+        y -= 15; zebra = false;
+        return;
+      }
       var cellLines = [], cellFit = [], maxLines = 1;
       for (var i = 0; i < n; i++){
         var cell = row[i] || { t: '' };
@@ -8986,7 +10265,7 @@
     doc.footer = orgBrand() + '  ·  ' + (p.title || 'Results');
 
     // letterhead: the slim brand band shared with the comm monthly reports
-    var rt = 'Results Export  ·  ' + pdfDate(TODAY);
+    var rt = 'Results Report  ·  ' + pdfDate(TODAY);
     pdfBrandHead(doc, M, PW - M - doc.textW(rt, 8.5, false) - 14);
     doc.text(rt, PW - M - doc.textW(rt, 8.5, false), doc.PH - 26, { size: 8.5, color: doc.rgb('#d7e3f0') });
     y = doc.PH - 63;
@@ -9058,7 +10337,18 @@
       doc.text(sectionHead(p.section), M, y - 9, { size: 8.5, bold: true, color: SUB });
       y -= 15;
     }
-    y = pdfTable(doc, p.columns || [], p.rows || [], M, AW, y, { grid: !!p.grid });
+    // Grouped project tables (Plan→Impacts, …) render as ONE table with a
+    // full-width band before each group, so every group shares identical columns
+    // and pagination. A band is a { group } marker row pdfTable knows to draw.
+    var tblRows = p.rows || [];
+    if (p.sections && p.sections.length){
+      tblRows = [];
+      p.sections.forEach(function (s){
+        tblRows.push({ group: { title: s.title, color: s.color, count: s.rows.length } });
+        s.rows.forEach(function (r){ tblRows.push(r); });
+      });
+    }
+    y = pdfTable(doc, p.columns || [], tblRows, M, AW, y, { grid: !!p.grid });
     if (p.note){ y -= 8; doc.text(p.note, M, y - 8, { size: 8, italic: true, color: MUT }); }
 
     // optional second table (e.g. the beneficiaries heat-map) - always gridded
@@ -9070,6 +10360,332 @@
     }
 
     doc.save(pdfFileName(p));
+  }
+
+  // =========================================================================
+  //  PROJECT DOSSIER PDF - the whole picture of one project, exported from the
+  //  project modal footer. Three chapters, each on its own page opener with the
+  //  shared brand letterhead: Overview (identity + snapshot), Results so far
+  //  (the achieved picture, KPI by KPI + the activity log) and Forecast (where
+  //  the trajectory lands by end of plan). Built on the same zero-dependency
+  //  pdfWriter / pdfTable primitives as the results and forecast exports, so the
+  //  type, colour and table language all match the rest of the suite.
+  // =========================================================================
+  function exportProjectPDF(pr){
+    if (!pr || pr.id == null){ alert('Save the project details first, then export.'); return; }
+    var P = PROJECTSBYID[pr.id];
+    if (!P){ alert('This project is not in the active plan - open it in its own plan to export.'); return; }
+
+    var doc = pdfWriter(), PW = doc.PW, PH = doc.PH, M = doc.margin, AW = PW - 2 * M;
+    var INK = doc.rgb('#1a2230'), MUT = doc.rgb('#8792a3'), SUB = doc.rgb('#5b6675'),
+        NAVY = doc.rgb('#0c447c'), GOLD = doc.rgb('#FCC30B'), RULE = doc.rgb('#e3e7ee'),
+        SOFT = doc.rgb('#f7f9fc'), CARD = doc.rgb('#e3e8f0');
+    var co = P.country, don = P.donor, pt = P.partner;
+    var st = P.statAll || {}, code = st.code || 'nodata', S0 = STATUS[code] || STATUS.nodata;
+    doc.footer = orgBrand() + '  ·  ' + (P.name || 'Project') + (pr.code ? '  ·  ' + pr.code : '');
+
+    // ---- shared page-opener / section chrome -------------------------------
+    // Each main part opens a new page with the brand letterhead and an uppercase
+    // title over a gold rule.
+    function chapter(title, sub){
+      doc.addPage();
+      var rt = 'Project Dossier  ·  ' + pdfDate(TODAY);
+      pdfBrandHead(doc, M, PW - M - doc.textW(rt, 8.5, false) - 14);
+      doc.text(rt, PW - M - doc.textW(rt, 8.5, false), PH - 26, { size: 8.5, color: doc.rgb('#d7e3f0') });
+      var t = String(title).toUpperCase(), y = PH - 92;
+      var tf = 16; while (tf > 11 && doc.textW(t, tf, true) > AW) tf -= 0.5;
+      doc.text(t, M, y, { size: tf, bold: true, color: INK });
+      y -= 9;
+      doc.roundRect(M, y - 3, 36, 3, 1.5, GOLD);   // gold root-line accent, as on the letterhead
+      y -= 13;
+      if (sub){ doc.text(sub, M, y - 2, { size: 9.5, color: SUB }); y -= 15; }
+      return y - 8;
+    }
+    function section(y, label){
+      y = (y < M + 74) ? (doc.addPage(), PH - M) : y - 8;
+      doc.text(String(label || '').toUpperCase(), M, y - 9, { size: 8.5, bold: true, color: NAVY });
+      doc.hline(M, PW - M, y - 15, RULE, 0.8);
+      return y - 25;
+    }
+    // A fresh page WITHIN the current part (no letterhead band) headed by an
+    // uppercase title over a gold rule, with an optional wrapped subtitle - used
+    // for the activity log, which the caller wants on its own page.
+    function subPage(title, sub){
+      doc.addPage();
+      var y = PH - M, t = String(title).toUpperCase();
+      var tf = 13; while (tf > 11 && doc.textW(t, tf, true) > AW) tf -= 0.5;
+      doc.text(t, M, y - 12, { size: tf, bold: true, color: INK });
+      y -= 15;
+      doc.roundRect(M, y - 3, 34, 3, 1.5, GOLD);
+      y -= 11;
+      if (sub){ doc.wrap(sub, AW, 9.5, false).forEach(function (ln){ doc.text(ln, M, y - 2, { size: 9.5, color: SUB }); y -= 13; }); }
+      return y - 8;
+    }
+
+    // ---- stat cards (bordered rounded panels, label / value / status chip) --
+    function statCards(y, stats){
+      var nS = stats.length, gap = 10, cardW = (AW - gap * (nS - 1)) / nS, cardH = 52;
+      for (var i = 0; i < nS; i++){
+        var sx = M + i * (cardW + gap), s = stats[i];
+        doc.roundRect(sx, y - cardH, cardW, cardH, 6, SOFT);
+        doc.roundRect(sx, y - cardH, cardW, cardH, 6, CARD, 0.8);
+        doc.text((s.label || '').toUpperCase(), sx + 9, y - 15, { size: 6.5, bold: true, color: MUT });
+        var vF = 15; while (vF > 9 && doc.textW(s.value || '', vF, true) > cardW - 18) vF -= 0.5;
+        doc.text(s.value || '', sx + 9, y - 33, { size: vF, bold: true, color: INK });
+        if (s.sub){
+          if (s.color){
+            var chW = Math.min(doc.textW(s.sub, 6.5, true) + 12, cardW - 18);
+            doc.roundRect(sx + 9, y - 48, chW, 12, 6, doc.rgb(s.color));
+            doc.text(s.sub, sx + 15, y - 44.5, { size: 6.5, bold: true, color: [1, 1, 1] });
+          } else doc.text(s.sub, sx + 9, y - 44.5, { size: 7.5, color: MUT });
+        }
+      }
+      return y - cardH - 18;
+    }
+
+    // ---- two-column fact grid (label over value) ---------------------------
+    function factGrid(y, facts){
+      var gap = 16, colW = (AW - gap) / 2, rowH = 33;
+      for (var i = 0; i < facts.length; i += 2){
+        if (y - rowH < M + 14){ doc.addPage(); y = PH - M; }
+        for (var c = 0; c < 2; c++){
+          var fct = facts[i + c]; if (!fct) continue;
+          var fx = M + c * (colW + gap);
+          doc.text(String(fct[0]).toUpperCase(), fx, y - 10, { size: 6.5, bold: true, color: MUT });
+          var vv = String(fct[1] == null || fct[1] === '' ? '-' : fct[1]), vf = 10.5;
+          while (vf > 8 && doc.textW(vv, vf, false) > colW) vf -= 0.25;
+          doc.text(doc.wrap(vv, colW, vf, false)[0], fx, y - 23, { size: vf, color: INK });
+        }
+        y -= rowH;
+      }
+      return y;
+    }
+
+    // KPI groups: primaries by impact pillar, then any secondaries as one group -
+    // the same "group by the level below" language the on-screen project lists use.
+    function kpiGroups(){
+      var groups = [], byS = {};
+      P.primary.forEach(function (r){ var s = r.sdg || 0; (byS[s] = byS[s] || []).push(r); });
+      Object.keys(byS).sort(function (a, b){ return (+a || 99) - (+b || 99); }).forEach(function (s){
+        groups.push({ title: (+s) ? (pillarLabel(+s) + ' · ' + (PILLAR_NAMES[+s] || '')) : 'Unaligned',
+                      color: (+s) ? PILLAR_COLORS[+s] : '#94a3b8', rows: byS[s] });
+      });
+      if (P.secondary.length) groups.push({ title: 'Secondary KPIs', color: '#27500a', rows: P.secondary.slice() });
+      return groups;
+    }
+    function groupedRows(groups, cellsFor){
+      var rows = [];
+      groups.forEach(function (g){
+        rows.push({ group: { title: g.title, color: g.color, count: null } });   // count null → no "N projects" label
+        g.rows.forEach(function (r){ rows.push(cellsFor(r)); });
+      });
+      return rows;
+    }
+    function kdot(r){ return r.sdg ? PILLAR_COLORS[r.sdg] : (r.secondary ? '#27500a' : '#94a3b8'); }
+    function unitSuf(r){ return r.unit === '%' ? '%' : ''; }
+
+    // =====================================================================
+    //  CHAPTER 1 · OVERVIEW
+    // =====================================================================
+    var y = chapter(P.name || 'Project',
+      [pr.code, co ? co.name : (pr.country_iso3 || ''), don ? don.name : ''].filter(Boolean).join('  ·  '));
+
+    // headline status badge + performance
+    var badge = S0.label.toUpperCase(), bw = doc.textW(badge, 7.5, true) + 16;
+    doc.roundRect(M, y - 13, bw, 16, 8, doc.rgb(S0.c));
+    doc.text(badge, M + 8, y - 8.5, { size: 7.5, bold: true, color: [1, 1, 1] });
+    doc.text(st.ratio != null ? 'Overall performance ' + Math.round(st.ratio * 100) + '%' : 'Not yet measured',
+      M + bw + 10, y - 8.5, { size: 9, color: MUT });
+    y -= 28;
+
+    // snapshot cards
+    y = statCards(y, [
+      { label: 'Performance', value: st.ratio != null ? Math.round(st.ratio * 100) + '%' : '-', sub: S0.label, color: S0.c },
+      { label: 'Progress', value: st.frac != null ? Math.round(st.frac * 100) + '%' : '-', sub: 'achieved of target' },
+      { label: 'KPIs', value: fmt(P.kpis.length), sub: fmt(P.primary.length) + ' primary · ' + fmt(P.secondary.length) + ' secondary' },
+      { label: 'Activities', value: fmt(P.activityN || 0), sub: 'reports logged' }
+    ]);
+
+    // identity fact grid
+    y = section(y, 'Project profile');
+    y = factGrid(y, [
+      ['Project code', pr.code],
+      ['Country', co ? co.name : pr.country_iso3],
+      ['Donor', don ? don.name : ''],
+      ['Delivery', P.implementation === 'partner' ? 'Through an implementing partner' : 'Directly by the organisation'],
+      ['Implementing partner', pt ? (pt.name + (pt.acronym ? ' (' + pt.acronym + ')' : '')) : (P.implementation === 'partner' ? 'Not set' : '-')],
+      ['Lead', userName(projectLeadId(pr))],
+      ['Budget (USD)', pr.budget_usd != null ? '$' + fmt(pr.budget_usd) : ''],
+      ['Timeframe', (pr.start_date || '?') + '   to   ' + (pr.end_date || '?')]
+    ]);
+
+    // description paragraph
+    if (pr.description && pr.description.trim()){
+      y = section(y, 'Description');
+      var dl = doc.wrap(pr.description.trim(), AW, 9.5, false);
+      for (var di = 0; di < dl.length; di++){
+        if (y - 13 < M + 14){ doc.addPage(); y = PH - M; }
+        doc.text(dl[di], M, y - 9, { size: 9.5, color: SUB }); y -= 13;
+      }
+    }
+
+    // =====================================================================
+    //  CHAPTER 2 · RESULTS SO FAR
+    // =====================================================================
+    y = chapter('Results so far', 'Achievement to date, KPI by KPI, with the underlying activity log.');
+    var resCols = [
+      { t: 'Code', w: 66 }, { t: 'KPI', w: 196 },
+      { t: 'Baseline', w: 60, align: 'right' }, { t: 'Latest', w: 56, align: 'right' },
+      { t: 'Target', w: 60, align: 'right' }, { t: 'Progress', w: 58, align: 'right' },
+      { t: 'Status', w: 92 }
+    ];
+    y = section(y, 'Key performance indicators');
+    if (!P.kpis.length){
+      doc.text('No KPIs are attached to this project yet.', M, y - 9, { size: 9, italic: true, color: MUT }); y -= 16;
+    } else {
+      y = pdfTable(doc, resCols, groupedRows(kpiGroups(), function (r){
+        var suf = unitSuf(r), s = STATUS[r.status] || STATUS.nodata;
+        return [
+          { t: r.raw.code || '-' },
+          { t: r.name, dot: kdot(r) },
+          { t: fmtNum(r.raw.baseline_value) + suf, align: 'right' },
+          { t: r.value != null ? fmtNum(r.value) + suf : '-', align: 'right' },
+          { t: fmtNum(r.raw.target_value) + suf, align: 'right' },
+          { t: r.progress != null ? Math.round(r.progress * 100) + '%' : '-', align: 'right', color: s.c },
+          { t: s.label, color: s.c }
+        ];
+      }), M, AW, y);
+      y -= 6;
+      doc.text('Progress is achievement of target; Status is the RAG performance rating (pace against the KPI’s own timeframe).',
+        M, y - 8, { size: 7.5, italic: true, color: MUT }); y -= 14;
+    }
+
+    // Activity log - on its own page within this part. The full detail behind the
+    // numbers (activity, KPI, location, value, date, reporter) with the beneficiary
+    // reach heat-map beneath it, reusing the app's own beneficiary export spec so
+    // the dossier matches the on-screen tables column for column.
+    var acts = (DB._idx.measByProject[pr.id] || []).slice()
+      .sort(function (a, b){ return (a.date < b.date) ? 1 : -1; });
+    y = subPage('Activity log', acts.length
+      ? ('All ' + fmt(acts.length) + ' activity reports logged against this project - what was done, where, how much and by whom, with the beneficiary reach behind each report.')
+      : 'The activity reports logged against this project.');
+
+    y = section(y, 'Activities' + (acts.length ? ' · ' + fmt(acts.length) : ''));
+    if (!acts.length){
+      doc.text('No activities have been logged against this project yet.', M, y - 9, { size: 9, italic: true, color: MUT });
+    } else {
+      y = pdfTable(doc, [
+        { t: '#', align: 'center', w: 26 }, { t: 'Activity', w: 150 }, { t: 'KPI', w: 88, align: 'right' },
+        { t: 'Location', w: 92 }, { t: 'Value', w: 56, align: 'right' }, { t: 'Date', w: 62, align: 'center' },
+        { t: 'Reported by', w: 92 }
+      ], acts.map(function (m, i){
+        var ind = INDBYID[m.indicator_id], u = (ind && ind.unit === '%') ? '%' : '';
+        return [
+          { t: String(i + 1) },
+          { t: m.narrative || '-', dot: ind ? kdot(ind) : '#94a3b8' },
+          { t: ind ? (ind.raw.code || ind.name) : '-', align: 'right' },
+          { t: m.place_name || '-' },
+          { t: fmtNum(m.value) + u, align: 'right' },
+          { t: m.date ? shortDate(m.date) : '-', align: 'center' },
+          { t: m.reported_by_id != null ? userName(m.reported_by_id) : '-' }
+        ];
+      }), M, AW, y);
+
+      // beneficiary reach heat-map for the same activities (the app's own spec)
+      var ben = beneficiaryHeatmap(acts);
+      y = section(y, ben.table ? ben.table.section.replace(' - ', ' · ') : 'Beneficiaries');
+      if (!ben.table){
+        doc.text('No beneficiaries recorded against these activities.', M, y - 9, { size: 9, italic: true, color: MUT });
+      } else {
+        y = pdfTable(doc, ben.table.columns, ben.table.rows, M, AW, y, { grid: true });
+        y -= 6;
+        doc.text('Reach by beneficiary type per activity. Darker cells = more beneficiaries; totals are hollow.',
+          M, y - 8, { size: 7.5, italic: true, color: MUT });
+      }
+    }
+
+    // =====================================================================
+    //  CHAPTER 3 · FORECAST
+    // =====================================================================
+    // One forecast entity over the project's whole KPI set, projected to the
+    // latest KPI target month (end of plan). NOW is the achieved actual; the
+    // realistic / best / worst columns extend the recent pace forward - the same
+    // engine, and the same numbers, as the Forecast panel.
+    var ent = fcEntity('project:' + pr.id, P.name, '', S0.c, P.kpis);
+    var mNow = fcNowMi(), mH = mNow + 1;
+    ent.fcs.forEach(function (f){ if (f.mEnd > mH) mH = f.mEnd; });
+    var aNow = null, aR = null, aW = null, aB = null, exp = null, fcode = 'nodata', conf = '-';
+    if (ent.fcs.length){
+      var sN = 0; ent.fcs.forEach(function (f){ sN += f.a0; }); aNow = sN / ent.fcs.length;
+      aR = fcMean(ent, 'mid', mH); aW = fcMean(ent, 'lo', mH); aB = fcMean(ent, 'hi', mH);
+      var ex = 0, reps = 0;
+      ent.fcs.forEach(function (f){
+        ex += Math.max(0.02, Math.min(1, (Math.min(mH, f.mEnd) - f.m0) / (f.mEnd - f.m0)));
+        reps += f.reps;
+      });
+      exp = ex / ent.fcs.length; fcode = ratioToCode(aR / exp);
+      var mr = reps / ent.fcs.length; conf = mr >= 6 ? 'High' : mr >= 3 ? 'Medium' : 'Low';
+    }
+    var FS = STATUS[fcode] || STATUS.nodata;
+    y = chapter('Forecast', 'Where the current trajectory lands by ' + fcMiFull(mH) + ' (end of plan).');
+
+    if (!ent.fcs.length){
+      doc.text('This project has no measurable KPIs to forecast yet.', M, y - 9, { size: 9.5, italic: true, color: MUT });
+      doc.save(projFileName(P, pr));
+      return;
+    }
+
+    // projected badge + confidence
+    var fbadge = ('Projected ' + FS.label).toUpperCase(), fbw = doc.textW(fbadge, 7.5, true) + 16;
+    doc.roundRect(M, y - 13, fbw, 16, 8, doc.rgb(FS.c));
+    doc.text(fbadge, M + 8, y - 8.5, { size: 7.5, bold: true, color: [1, 1, 1] });
+    doc.text('Confidence: ' + conf + '  ·  ' + ent.fcs.length + ' KPI' + (ent.fcs.length === 1 ? '' : 's') + ' modelled',
+      M + fbw + 10, y - 8.5, { size: 9, color: MUT });
+    y -= 28;
+
+    // scenario cards
+    y = statCards(y, [
+      { label: 'Now (actual)', value: Math.round(aNow * 100) + '%', sub: 'achieved today' },
+      { label: 'Worst case', value: Math.round(aW * 100) + '%', sub: 'cautious pace', color: (STATUS[ratioToCode(aW / exp)] || STATUS.nodata).c },
+      { label: 'Realistic', value: Math.round(aR * 100) + '%', sub: FS.label, color: FS.c },
+      { label: 'Best case', value: Math.round(aB * 100) + '%', sub: 'strong pace', color: (STATUS[ratioToCode(aB / exp)] || STATUS.nodata).c }
+    ]);
+
+    y = section(y, 'Projected outcome by KPI');
+    y = pdfTable(doc, [
+      { t: 'Code', w: 66 }, { t: 'KPI', w: 210 }, { t: 'Now', w: 52, align: 'right' },
+      { t: 'Projected', w: 66, align: 'right' }, { t: 'Outlook', w: 100 }
+    ], groupedRows(kpiGroups(), function (r){
+      var f = kpiForecast(r);
+      if (!f){
+        return [ { t: r.raw.code || '-' }, { t: r.name, dot: kdot(r) },
+                 { t: '-', align: 'right' }, { t: '-', align: 'right' },
+                 { t: 'Not measurable', color: '#94a3b8' } ];
+      }
+      var proj = fcAt(f, 'mid', mH);
+      var exf = Math.max(0.02, Math.min(1, (Math.min(mH, f.mEnd) - f.m0) / (f.mEnd - f.m0)));
+      var s = STATUS[ratioToCode(proj / exf)] || STATUS.nodata;
+      return [
+        { t: r.raw.code || '-' }, { t: r.name, dot: kdot(r) },
+        { t: Math.round(f.a0 * 100) + '%', align: 'right' },
+        { t: Math.round(proj * 100) + '%', align: 'right', color: s.c },
+        { t: f.unreported ? s.label + ' (no reports)' : s.label, color: s.c }
+      ];
+    }), M, AW, y);
+    y -= 6;
+    doc.text('Projection extends each KPI’s recent pace to its target date; Outlook is the resulting performance rating.',
+      M, y - 8, { size: 7.5, italic: true, color: MUT });
+
+    doc.save(projFileName(P, pr));
+  }
+
+  // File name for a project dossier: <org>-<project>-YYYY-MM-DD.pdf
+  function projFileName(P, pr){
+    var base = ((pr.code ? pr.code + '-' : '') + (P.name || 'project')).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    var brand = (orgActive() ? (orgShort() || 'grassroots') : 'grassroots')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'grassroots';
+    return brand + '-' + (base || 'project') + '-' + TODAY.toISOString().slice(0, 10) + '.pdf';
   }
 
 })();

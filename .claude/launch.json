@@ -120,6 +120,42 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8827"],
       "port": 8827
+    },
+    {
+      "name": "promon-partners",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8829"],
+      "port": 8829
+    },
+    {
+      "name": "promon-avgcap",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8831"],
+      "port": 8831
+    },
+    {
+      "name": "promon-timeline",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8833"],
+      "port": 8833
+    },
+    {
+      "name": "promon-filterzero",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8835"],
+      "port": 8835
+    },
+    {
+      "name": "promon-fcresults",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8837"],
+      "port": 8837
+    },
+    {
+      "name": "promon-groupcards",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8839"],
+      "port": 8839
     }
   ]
 }

@@ -4,7 +4,7 @@
  * ========================================================================== */
 :root{
   --bg:#f0f0f2; --bg-soft:#ebeced; --bg-sunk:#e0e3e6;
-  --panel:#f0f0f2; --border:#d5d9e0; --border-soft:#e0e3e6;
+  --panel:#f0f0f2; --card:#f5f6f8; --border:#d5d9e0; --border-soft:#e0e3e6;
   --ink:#000000; --ink-2:#1a2233; --muted:#3d4a61;
   --primary:#2563eb; --primary-ink:#ffffff; --primary-soft:#e0e4ef;
   --kpi-pri:#0c447c; --kpi-pri-bg:#d8e3ec; --kpi-sec:#27500a; --kpi-sec-bg:#dce4d1;   /* soft Primary(blue)/Secondary(green) KPI badges: tinted bg + colour text */
@@ -22,7 +22,7 @@
 }
 [data-theme="dark"]{
   --bg:#0b1220; --bg-soft:#0e1626; --bg-sunk:#0c1424;
-  --panel:#101a2c; --border:#1f2c43; --border-soft:#182338;
+  --panel:#101a2c; --card:#0f1a2e; --border:#1f2c43; --border-soft:#182338;
   --ink:#e6ecf8; --ink-2:#c2cee2; --muted:#94a4c1;
   --primary:#3b82f6; --primary-ink:#ffffff; --primary-soft:#14203a;
   --kpi-pri:#b5d4f4; --kpi-pri-bg:#0c447c; --kpi-sec:#c0dd97; --kpi-sec-bg:#27500a;   /* soft Primary(blue)/Secondary(green) KPI badges: tinted bg + colour text */
@@ -84,23 +84,20 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .hbtn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
 .hbtn.primary:hover{filter:brightness(1.05)}
 
-/* ---- sub / filter bar ----------------------------------------------------- */
-.subbar{
-  height:var(--sub);flex:0 0 var(--sub);display:flex;align-items:center;gap:3px;
-  padding:0 11px;background:var(--panel);border-bottom:1px solid var(--border);z-index:30;
-}
-.subbar .cal{color:var(--muted);display:flex;align-items:center;margin-right:3px;font-size:12px}
-.range{border:0;background:transparent;color:var(--ink-2);padding:4px 8px;border-radius:5px;font-size:10.5px}
-.range:hover{background:var(--bg-sunk)}
-.range.on{background:var(--primary);color:#fff}
-.subbar .lbl{color:var(--muted);margin-left:6px;font-size:10px}
-.subbar input[type=date]{border:1px solid var(--border);background:var(--panel);color:var(--ink);
-  border-radius:5px;padding:3px 6px;font-family:inherit;font-size:10px;color-scheme:light}
-[data-theme="dark"] .subbar input[type=date]{color-scheme:dark}
-.subbar .arrow{color:var(--muted);padding:0 1px}
-.metric{margin-left:auto;display:flex;align-items:baseline;gap:6px}
-.metric b{font-size:15px;font-weight:var(--w-title);letter-spacing:-.02em}
-.metric span{color:var(--muted);letter-spacing:.1em;font-size:8.5px}
+/* ---- portfolio metric (in-view count) ------------------------------------- */
+.metric{display:flex;align-items:baseline;gap:5px}
+.metric b{font-size:13px;font-weight:var(--w-title);letter-spacing:-.02em}
+.metric span{color:var(--muted);letter-spacing:.1em;font-size:8px}
+/* footer placement: pinned to the far-right end of the bottom bar */
+.foot-metric{margin-left:auto;align-items:center;padding-left:11px;border-left:1px solid var(--border)}
+/* the count basis toggle sits where the metric label used to - narrow, label-sized,
+   but clickable: one control both shows and switches Projects <-> Activities */
+.foot-toggle{display:inline-flex;align-items:center;justify-content:center;gap:3px;
+  width:84px;flex:0 0 auto;border:1px solid var(--border);
+  background:var(--bg-sunk);color:var(--muted);border-radius:5px;padding:2px 6px;
+  font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
+  transition:border-color .12s,color .12s}
+.foot-toggle:hover{border-color:var(--primary);color:var(--primary)}
 
 /* ---- main grid ------------------------------------------------------------ */
 .main{flex:1;display:grid;grid-template-columns:20% 1fr 20%;min-height:0;position:relative}
@@ -119,12 +116,6 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .side.right{border-left:1px solid var(--border)}
 /* both side panes: always normal weight - no bold for categories, groups, or cards */
 .side.left, .side.left *, .side.right, .side.right *{font-weight:400 !important}
-.side-head{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 9px;border-bottom:1px solid var(--border)}
-.side-head .head-toggle{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:4px;
-  border:1px solid var(--border);background:var(--bg-sunk);color:var(--ink);border-radius:var(--radius);
-  padding:4px 6px;font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  transition:border-color .12s,color .12s}
-.side-head .head-toggle:hover{border-color:var(--primary);color:var(--primary)}
 .side-scroll{overflow:auto;padding:9px 9px 13px}
 .sec-h{font-size:9px;font-weight:var(--w-title);letter-spacing:.1em;color:var(--muted);margin:3px 2px 6px;text-transform:uppercase}
 /* draggable / collapsible filter groups */
@@ -166,10 +157,8 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .facet .bar{flex:0 0 52px;height:6px;border-radius:3px;background:var(--bg-sunk);overflow:hidden}
 .facet .bar>i{display:block;height:100%;border-radius:3px}
 .divider{height:1px;background:var(--border);margin:10px 0}
-/* category (region / pillar) headers: drop the mini-bar + tighten so full names fit on one line */
-.facet.cat .bar{display:none}
+/* category (region / pillar) headers: tighten so full names still fit on one line beside the bar */
 .facet.cat .nm{letter-spacing:-.01em}
-.facet.cat .ct{margin-left:2px}
 /* nested indentation: each level shifts right, with a guide line */
 .subrow{margin-left:9px;padding-left:9px;border-left:1px solid var(--border)}
 .subrow .facet{padding:2px 4px}
@@ -353,6 +342,15 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .modal-overlay.on .modal{transform:none}
 .modal-head{display:flex;align-items:flex-start;gap:12px;padding:14px 17px;border-bottom:1px solid var(--border);position:sticky;top:0}
 .modal-head .mt{flex:1;min-width:0}
+/* report-type eyebrow: RESULTS REPORT (blue) vs FORECAST REPORT (navy) - tells the
+   two modal screens apart at a glance */
+.modal-head .mt .mkicker{display:flex;align-items:center;gap:7px;font-size:8.5px;letter-spacing:.09em;
+  text-transform:uppercase;font-weight:var(--w-strong);color:var(--primary);margin-bottom:3px}
+.modal-head .mt .mkicker:empty{display:none}
+.modal-head .mt .mkicker.fc{color:#0c447c}
+/* subject pill: what the report is ABOUT - Impact / Project / Country … */
+.modal-head .mt .mkicker .mk-type{display:inline-block;border-radius:999px;padding:1px 8px;
+  background:var(--muted);color:#fff;font-size:8px;letter-spacing:.05em;font-weight:var(--w-strong)}
 .modal-head .mt h2{margin:0;font-size:13px;font-weight:var(--w-title);line-height:1.32;color:var(--ink)}
 .modal-head .mt .msub{color:var(--muted);font-size:10px;margin-top:3px}
 .modal-head .mt .msub-impact{color:var(--muted);font-size:9.5px;margin-top:2px;line-height:1.35;opacity:.85}
@@ -363,6 +361,13 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
   border-radius:6px;font-size:18px;line-height:1;flex:0 0 auto;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .modal-head .mback:hover{color:var(--primary);border-color:var(--primary)}
 .modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:15px 17px 19px}
+/* persistent modal action bar: pinned below the scrolling body, so Close / Export /
+   Save stay reachable on every tab regardless of how long the form scrolls */
+.modal-foot{display:flex;align-items:center;gap:8px;padding:11px 17px;border-top:1px solid var(--border);
+  background:var(--panel);border-radius:0 0 10px 10px;flex:0 0 auto}
+.modal-foot .ufmsg{margin-right:auto;color:var(--red);font-size:10px}
+.modal-foot .ufmsg.ok{color:var(--green)}
+@media (max-width:640px){ .modal-foot{border-radius:0} }
 
 /* ---- About modal ---------------------------------------------------------- */
 .modal.about{width:560px;height:auto;max-height:88vh}
@@ -410,6 +415,14 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .chain .rc-export:hover{border-color:var(--primary);color:var(--primary)}
 .chain .rc-export:disabled{opacity:.55;cursor:default}
 .chain .rc-export .ic{font-size:12px;line-height:1}
+/* forecast report header: dimension/horizon line on the left, Export PDF on the right */
+.fcr-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.fcr-head .fc-h{margin:0;flex:1 1 auto;min-width:0}
+.fcr-export{margin-left:auto;flex:0 0 auto;border:1px solid var(--border);background:var(--panel);
+  color:var(--ink-2);padding:5px 11px;border-radius:var(--radius);font-size:10px;font-weight:var(--w-strong);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer}
+.fcr-export:hover{border-color:var(--primary);color:var(--primary)}
+.fcr-export .ic{font-size:12px;line-height:1}
 .mgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:14px}
 .stat{background:var(--bg-soft);border:1px solid var(--border);border-radius:7px;padding:8px 10px}
 .stat .sl{color:var(--muted);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase}
@@ -451,6 +464,32 @@ button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400
 .esum-tbl.esum-static tbody tr{cursor:default}
 .esum-tbl .esum-nm{color:var(--ink)}
 .esum-tbl .esum-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+/* Chain-level groups: a result table sectioned one level down the chain (Plan→
+   Impacts, Impact→Outcomes, Outcome→Outputs, …). Each group is its own rounded
+   card - the hierarchy code + statement label sit OUTSIDE the card, the column
+   header + rows INSIDE it. Shared by the results report and the forecast report. */
+.esum-group{margin:0 0 14px}
+.esum-group:last-child{margin-bottom:0}
+.esum-group-hd{display:flex;align-items:center;gap:8px;padding:0 3px 7px;min-width:0}
+.esum-grp-bar{display:inline-block;width:3px;height:13px;border-radius:2px;flex:none}
+.esum-grp-code{color:var(--ink);font-weight:var(--w-title);letter-spacing:.01em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+.esum-grp-t{color:var(--ink-2);font-weight:var(--w-strong);letter-spacing:.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.esum-grp-n{margin-left:auto;color:var(--muted);font-weight:var(--w-strong);
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+/* the card: rounded + clipped; the column header is tinted so it reads as a
+   header sitting inside the card, and rows drop their own outer border. */
+.esum-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  background:var(--card);box-shadow:var(--shadow)}
+.esum-card table{margin:0}
+.esum-card thead th{background:var(--bg-soft);border-bottom:1px solid var(--border)}
+.esum-card tbody tr:last-child td{border-bottom:none}
+.esum-card th:first-child,.esum-card td:first-child{padding-left:11px}
+.esum-card th:last-child,.esum-card td:last-child{padding-right:11px}
+/* the forecast report nests these group cards inside its outer card - keep the
+   inner cards flush and let the label breathe below the card heading. */
+.fc-tablecard .esum-group:first-of-type{margin-top:2px}
 /* Both location-box tables (activities + beneficiaries) share ONE grid: light 1px
    gridlines and fixed layout. Fixed layout makes the declared column widths exact –
    auto layout treats width as a hint and lets columns grow to fill the table. */
@@ -704,9 +743,9 @@ body:not(.status-admin) #btnControl{display:none}
 body:not(.status-admin) #btnResults{display:none}
 body.status-viewer #btnNewActivity{display:none}
 
-/* ---- subbar clear-filters button ----------------------------------------- */
+/* ---- footer clear-filters button ----------------------------------------- */
 .clearbtn{border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:5px;
-  padding:4px 9px;font-size:10px;margin-right:6px;opacity:.55;transition:opacity .12s,border-color .12s,color .12s}
+  padding:5px 10px;font-size:10.5px;opacity:.55;transition:opacity .12s,border-color .12s,color .12s}
 .clearbtn.on{opacity:1;border-color:var(--red);color:var(--red)}
 .clearbtn.on:hover{background:var(--red);color:#fff}
 
@@ -746,6 +785,9 @@ body.status-viewer #btnNewActivity{display:none}
   text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--border)}
 .utbl td{padding:7px 8px;border-bottom:1px solid var(--border-soft);vertical-align:middle}
 .umono{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--ink-2)}
+.umuted{font-size:10.5px;color:var(--ink-2);margin-top:2px;max-width:280px}
+.utbl td a{color:var(--accent,#0C85C7);text-decoration:none}
+.utbl td a:hover{text-decoration:underline}
 .udot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:-1px}
 .cp-users .ustat{font-size:9px;font-weight:var(--w-strong);border-radius:999px;padding:2px 8px}
 .cp-users .ustat.on{background:rgba(22,163,74,.14);color:#16a34a}
@@ -1046,6 +1088,10 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-export:hover{border-color:var(--primary);color:var(--primary)}
 .fc-export .ic{font-size:12px;line-height:1}
 .fc-body{display:flex;flex-direction:column;gap:10px;padding:10px 12px 16px}
+/* Forecast REPORT modal body: same flex-gap spacing as the tab's .fc-body, but
+   no extra padding (the modal body already supplies it) so the tiles, chart and
+   table never stick to each other. */
+.fc-rbody{display:flex;flex-direction:column;gap:12px}
 .fc-strip .fstrip{margin:0}
 /* exec tiles */
 .fc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:9px}
@@ -1055,11 +1101,11 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
   font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fc-tile .ts{margin-top:5px;color:var(--muted);font-size:9.5px;min-height:15px;line-height:1.35}
 .fc-tile .ts .chip{display:inline-block;color:#fff;border-radius:999px;padding:1px 8px;font-size:9px;font-weight:var(--w-strong)}
-/* chart + advice row */
-.fc-mid{display:flex;gap:10px;align-items:flex-start}
+/* chart on top (full width), advice cards below */
+.fc-mid{display:flex;flex-direction:column;gap:10px}
 .fc-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:10px 12px;min-width:0}
 .fc-h{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-title);margin-bottom:8px}
-.fc-chartcard{flex:1;min-width:0}
+.fc-chartcard{min-width:0}
 .fc-chart-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .fc-chart-head .fc-h{margin-bottom:0;min-width:0}
 .fc-chart svg{width:100%;height:auto;max-height:440px;display:block}
@@ -1076,10 +1122,20 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-tlab{fill:var(--green);font-size:8.5px;letter-spacing:.08em}
 .fc-today{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
 .fc-tdlab{fill:var(--muted);font-size:8px;letter-spacing:.08em}
-/* advice panel */
-.fc-advice{flex:0 0 300px;max-width:340px;display:flex;flex-direction:column}
-.fc-recs{display:flex;flex-direction:column;gap:7px;overflow-y:auto;max-height:340px}
-.fc-rec{border:1px solid var(--border);border-left-width:3px;border-radius:6px;padding:7px 9px;background:var(--bg-soft)}
+/* advice panel - full-width band below the chart, cards in a horizontal grid */
+.fc-advice{display:flex;flex-direction:column}
+/* a plain 3-column table: one card per cell, each card stretched to fill its
+   cell, rows sized to their tallest card. Only a genuinely oversized card (rare)
+   claims a second column; dense flow then backfills so no cell is left empty. */
+.fc-recs{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-flow:row dense;gap:8px}
+.fc-rec{border:1px solid var(--border);border-left-width:3px;border-radius:6px;padding:7px 9px;
+  background:var(--bg-soft);overflow:hidden}
+.fc-rec.fc-wide{grid-column:span 2}
+/* narrow screens can't carry three readable columns - stack to one */
+@media (max-width:640px){
+  .fc-recs{grid-template-columns:1fr}
+  .fc-rec.fc-wide{grid-column:auto}
+}
 .fc-rec.good{border-left-color:var(--green)}
 .fc-rec.warn{border-left-color:var(--amber)}
 .fc-rec.risk{border-left-color:var(--red)}
@@ -1094,6 +1150,17 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-tbl tbody tr{cursor:pointer}
 .fc-tbl tbody tr:hover{background:var(--bg-soft)}
 .fc-tbl tbody tr.on{background:var(--primary-soft)}
+/* non-clickable rows (e.g. a project item's KPI breakdown) */
+.fc-tbl tbody tr.fc-noclick{cursor:default}
+.fc-tbl tbody tr.fc-noclick:hover{background:transparent}
+/* section header row: the breakdown grouped one level down the chain */
+.fc-tbl tbody tr.fc-grp{cursor:default}
+.fc-tbl tbody tr.fc-grp:hover{background:transparent}
+.fc-tbl tbody tr.fc-grp td{padding:11px 7px 5px;border-bottom:1px solid var(--border);
+  background:var(--bg-soft);white-space:nowrap}
+.fc-tbl .fc-grp-bar{display:inline-block;width:3px;height:11px;border-radius:2px;margin-right:8px;vertical-align:-1px}
+.fc-tbl .fc-grp-t{color:var(--ink);font-weight:var(--w-title)}
+.fc-tbl .fc-grp-n{color:var(--muted);font-weight:var(--w-strong);margin-left:8px;font-variant-numeric:tabular-nums}
 .fc-tbl th.num,.fc-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .fc-tbl td.ent{max-width:0;width:32%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fc-tbl td.ent .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:middle}
@@ -1110,7 +1177,100 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 .fc-range .tgt{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--green)}
 .fc-range .dotr{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:var(--primary);
   border:1.5px solid var(--panel);transform:translate(-50%,-50%);box-shadow:var(--shadow)}
-@media (max-width:1100px){ .fc-mid{flex-direction:column} .fc-advice{flex:1;max-width:none} .fc-recs{max-height:none} }
+
+/* ============================================================================
+ *  TIMELINE - portfolio delivery Gantt
+ * ========================================================================== */
+.timeline{--tl-label-w:250px;overflow:hidden;background:var(--bg-sunk);display:flex;flex-direction:column}
+/* control bar - mirrors the forecast/insights control rows */
+.tl-ctrl{display:flex;align-items:center;gap:10px;min-height:36px;padding:5px 12px;
+  border-bottom:1px solid var(--border);flex-wrap:wrap;flex:0 0 auto}
+.tl-seg{display:flex;background:var(--bg-sunk);border:1px solid var(--border);border-radius:6px;padding:2px}
+.tl-seg button{border:0;background:transparent;padding:4px 11px;border-radius:4px;color:var(--ink-2);font-size:10.5px}
+.tl-seg button.on{background:var(--primary);color:#fff}
+.tl-toggle{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);font-size:10.5px;cursor:pointer;margin-left:auto}
+.tl-toggle input{accent-color:var(--primary);width:13px;height:13px}
+/* scroll body: sticky year axis + rows */
+.tl-wrap{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;position:relative}
+.tl-empty{padding:26px 16px;color:var(--muted);font-size:11px}
+/* header */
+.tl-head{position:sticky;top:0;z-index:6;display:grid;grid-template-columns:var(--tl-label-w) 1fr;
+  align-items:stretch;background:var(--bg-sunk);border-bottom:1px solid var(--border);height:38px;padding:0 10px}
+.tl-head-label{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 12px;
+  border-right:1px solid var(--border)}
+.tl-head-title{font-weight:var(--w-title);font-size:11px;color:var(--ink)}
+.tl-head-sub{font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tl-axis{position:relative}
+.tl-year{position:absolute;top:0;bottom:0;border-left:1px solid var(--border)}
+.tl-year .yl{position:absolute;top:4px;left:7px;font-size:10px;font-weight:var(--w-strong);
+  color:var(--ink-2);font-variant-numeric:tabular-nums}
+/* quarter labels: centred on each quarter, positioned to match the body gridlines */
+.tl-q{position:absolute;bottom:3px;transform:translateX(-50%);font-size:7.5px;letter-spacing:.04em;
+  color:var(--muted);opacity:.8;white-space:nowrap}
+/* groups as rounded cards (a neat box per group, spaced apart) */
+.tl-groups{padding:8px 10px 4px}
+.tl-gcard{background:var(--panel);border-radius:6px;box-shadow:0 0 0 1px var(--border),var(--shadow-lg);
+  margin-bottom:9px;overflow:hidden}
+.tl-ghead{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-soft);
+  border-bottom:1px solid var(--border-soft)}
+.tl-ghead .gdot{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.tl-ghead .gnm{font-size:10.5px;font-weight:var(--w-title);color:var(--ink);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.tl-ghead .gsub{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  flex:1;min-width:0}
+.tl-ghead .gct{margin-left:auto;font-size:9px;color:var(--muted);background:var(--bg-sunk);border-radius:999px;
+  padding:1px 8px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+/* card body holds the rows and a gridline + today overlay aligned to the track */
+.tl-gbody{position:relative}
+.tl-grid{position:absolute;top:0;bottom:0;left:var(--tl-label-w);right:0;pointer-events:none;z-index:0}
+.tl-grid .gl{position:absolute;top:0;bottom:0;width:0;border-left:1px solid var(--border)}
+.tl-grid .gl.q{border-left-style:dotted;opacity:.5}
+/* TODAY marker sits in its own overlay ABOVE the bars (never hidden behind one) */
+.tl-today-ov{position:absolute;inset:0 0 0 var(--tl-label-w);pointer-events:none;z-index:4}
+.tl-today{position:absolute;top:0;bottom:0;width:0;border-left:1.5px dashed var(--primary);opacity:.9}
+.tl-today .tdlab{position:absolute;top:3px;left:3px;font-size:7.5px;font-weight:var(--w-strong);
+  letter-spacing:.08em;color:var(--primary);white-space:nowrap;background:var(--panel);
+  padding:1px 4px;border-radius:3px;box-shadow:0 0 0 1px var(--border)}
+/* project row */
+.tl-row{position:relative;z-index:1;display:grid;grid-template-columns:var(--tl-label-w) 1fr;
+  align-items:center;min-height:30px}
+.tl-row + .tl-row{border-top:1px solid var(--border-soft)}
+.tl-row:hover{background:var(--bg-soft)}
+.tl-label{display:flex;align-items:center;gap:8px;padding:4px 12px;min-width:0;cursor:pointer;
+  border-right:1px solid var(--border)}
+.tl-label .ldot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.tl-label .ltx{min-width:0}
+.tl-label .lnm{font-size:10.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-label .lsub{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-label:hover .lnm{color:var(--primary)}
+.tl-track{position:relative;height:100%;min-height:30px}
+/* bar: soft status-tinted rail, solid achievement fill, % label */
+.tl-bar{position:absolute;top:50%;transform:translateY(-50%);height:15px;border-radius:5px;
+  background:color-mix(in srgb,var(--bc) 22%,var(--panel));border:1px solid color-mix(in srgb,var(--bc) 55%,transparent);
+  min-width:3px;cursor:pointer;overflow:hidden;box-shadow:var(--shadow)}
+.tl-bar:hover{filter:brightness(1.04);box-shadow:var(--shadow-lg)}
+.tl-bar.est{border-style:dashed;opacity:.9}
+.tl-bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--bc);opacity:.9;border-radius:5px 0 0 5px}
+.tl-bar .blab{position:absolute;right:5px;top:0;bottom:0;display:flex;align-items:center;
+  font-size:8.5px;font-weight:var(--w-strong);color:var(--ink);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 3px var(--panel),0 0 3px var(--panel)}
+/* activity tick */
+.tl-act{position:absolute;top:50%;transform:translate(-50%,-50%);width:3px;height:3px;border-radius:50%;
+  background:var(--ink-2);opacity:.55;z-index:2;pointer-events:none;
+  box-shadow:0 0 0 1.5px color-mix(in srgb,var(--panel) 80%,transparent)}
+.tl-note{position:relative;z-index:1;padding:8px 12px;color:var(--muted);font-size:9.5px;
+  border-top:1px solid var(--border-soft)}
+/* legend */
+.tl-legend{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:6px 16px;padding:7px 12px;
+  border-top:1px solid var(--border);overflow:auto;max-height:60px}
+.tl-legend .li{display:inline-flex;align-items:center;gap:6px;font-size:9.5px;color:var(--ink-2)}
+.tl-legend .li.mut{color:var(--muted)}
+.tl-legend .sq{width:11px;height:9px;border-radius:2px;flex:0 0 auto}
+.tl-legend .actmk{width:5px;height:5px;border-radius:50%;background:var(--ink-2);opacity:.7;flex:0 0 auto;
+  box-shadow:0 0 0 1.5px var(--bg-soft)}
+.tl-legend .todaymk{width:0;height:11px;border-left:1.5px dashed var(--primary);flex:0 0 auto}
+.tl-legend .estmk{width:14px;height:9px;border-radius:2px;border:1px dashed var(--muted);flex:0 0 auto}
+@media (max-width:640px){ .timeline{--tl-label-w:150px} .tl-label .lsub{display:none} .tl-qs{display:none} }
 
 /* ============================================================================
  *  RESPONSIVE - tablets and phones
@@ -1141,7 +1301,6 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
   /* bars wrap onto extra rows instead of overflowing off-screen
      (flex-basis:auto releases the fixed --hdr/--sub heights) */
   .header{flex-wrap:wrap;flex-basis:auto;height:auto;min-height:var(--hdr);padding:6px 10px;row-gap:6px}
-  .subbar{flex-wrap:wrap;flex-basis:auto;height:auto;min-height:var(--sub);padding:5px 10px;row-gap:4px}
   .botbar{flex-wrap:wrap}
   .planchip{max-width:200px}
 }
@@ -1152,10 +1311,6 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
   .wm.sdg{font-size:14px}
   .planchip{max-width:150px}
   .userchip .un{display:none}
-  .subbar .lbl{display:none}
-  /* period presets: one horizontally-scrollable row instead of wrapping */
-  #ranges{display:flex;flex:1 1 100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  #ranges .range{flex:0 0 auto;white-space:nowrap}
   .legend{width:170px}
   .legend #legendRows{max-height:26vh}
   /* modals + child popups go fullscreen */
@@ -1182,7 +1337,7 @@ tr.uedit td{background:var(--bg-soft);padding:10px}
 
 /* touch devices: larger tap targets for the most-used controls */
 @media (pointer:coarse){
-  .seg button,.range{padding:8px 12px}
+  .seg button{padding:8px 12px}
   .hbtn{padding:8px 12px}
   .modal-tabs button{padding:8px 13px}
   .map-controls button{width:34px;height:34px}

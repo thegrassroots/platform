@@ -7,7 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <link rel="stylesheet" href="assets/fonts.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="styles.css?v=gr07">
+<link rel="stylesheet" href="styles.css?v=gr30">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 </head>
 <body>
@@ -32,6 +32,7 @@
     <div class="seg" id="tabs">
       <button data-tab="map" class="on">Map</button>
       <button data-tab="insights">Insights</button>
+      <button data-tab="timeline">Timeline</button>
       <button data-tab="forecast">Forecast</button>
     </div>
     <div class="spacer"></div>
@@ -53,27 +54,11 @@
     </div>
   </header>
 
-  <!-- ================= SUB / FILTER BAR ================= -->
-  <div class="subbar">
-    <button class="clearbtn" id="clearFilters" title="Clear all filters">✕ Clear filters</button>
-    <span class="cal" title="Activity period">▤</span>
-    <div id="ranges"></div>
-    <span class="lbl">Custom:</span>
-    <input type="date" id="dFrom">
-    <span class="arrow">→</span>
-    <input type="date" id="dTo">
-    <div class="metric"><b id="metricN">0</b><span id="metricLabel">PROJECTS</span></div>
-  </div>
-
   <!-- ================= MAIN ================= -->
   <div class="main" id="main">
 
     <!-- left sidebar : facets -->
     <aside class="side left" id="sideLeft">
-      <div class="side-head">
-        <button class="head-toggle" id="countBasis" title="Counting by - click to switch between Projects and Activities">⇄ Projects</button>
-        <button class="head-toggle" id="mapmode" title="Status by - click to switch between Progress and Performance">⇄ Performance</button>
-      </div>
       <div class="side-scroll" id="facetGroups">
         <div class="fgroup" data-group="prog">
           <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">PROGRAMME PORTFOLIO</span><span class="fg-caret" aria-hidden="true"></span></div>
@@ -96,6 +81,14 @@
           <div class="fg-body">
             <div class="search"><input id="qDonor" placeholder="Search donors…"></div>
             <div id="facetDonor"></div>
+          </div>
+        </div>
+
+        <div class="fgroup" data-group="partner">
+          <div class="fg-head" title="Drag to reorder · click to collapse"><span class="fg-grip" aria-hidden="true">⠿</span><span class="fg-title">PARTNERS</span><span class="fg-caret" aria-hidden="true"></span></div>
+          <div class="fg-body">
+            <div class="search"><input id="qPartner" placeholder="Search partners…"></div>
+            <div id="facetPartner"></div>
           </div>
         </div>
 
@@ -157,6 +150,7 @@
             <option value="region">Region</option>
             <option value="impact">Impact</option>
             <option value="donor">Donor</option>
+            <option value="partner">Partner</option>
             <option value="budget">Budget</option>
           </select>
           <div class="note">● size = activities logged</div>
@@ -169,6 +163,8 @@
     </section>
 
     <section class="insights hide" id="insightsView"></section>
+
+    <section class="timeline hide" id="timelineView"></section>
 
     <section class="forecast hide" id="forecastView"></section>
 
@@ -202,10 +198,12 @@
 
   <!-- ================= BOTTOM BAR ================= -->
   <div class="botbar">
+    <button class="clearbtn" id="clearFilters" title="Clear all filters">✕ Clear filters</button>
     <button class="hbtn" id="btnTheme">☀ Light</button>
     <button class="hbtn" id="btnControl">⚙ Global Items</button>
     <button class="hbtn" id="btnResults">◔ Results Management</button>
     <button class="hbtn" id="btnComms">✉ Communication</button>
+    <div class="metric foot-metric" id="portMetric" title="Count in the current view"><b id="metricN">0</b><button class="foot-toggle" id="countBasis" title="Counting by - click to switch between Projects and Activities">⇄ Projects</button></div>
   </div>
 
   <!-- ================= DETAIL MODAL ================= -->
@@ -214,6 +212,7 @@
       <div class="modal-head">
         <button class="mback" id="mBack" title="Back" style="display:none">‹</button>
         <div class="mt">
+          <div class="mkicker" id="mKicker"></div>
           <h2 id="mTitle">–</h2>
           <div class="msub" id="mSub"></div>
           <div class="msub-impact" id="mImpact"></div>
@@ -243,6 +242,7 @@
       </div>
       <div class="modal-tabs" id="cpTabs">
         <button data-cptab="donors" class="on">Donors</button>
+        <button data-cptab="partners">Partners</button>
         <button data-cptab="beneficiaries">Beneficiaries</button>
         <button data-cptab="regions">Regions</button>
         <button data-cptab="countries">Countries</button>
@@ -305,6 +305,12 @@
         <button data-prtab="activities">Activities</button>
       </div>
       <div class="modal-body" id="prBody"></div>
+      <div class="modal-foot" id="prFoot">
+        <span class="ufmsg" id="prMsg"></span>
+        <button class="hbtn" id="prExportPdf" type="button" title="Download this project as a PDF dossier">⭳ Export PDF</button>
+        <button class="hbtn" id="prCloseBtn" type="button">Close</button>
+        <button class="hbtn primary" id="prSaveBtn" type="button">Save changes</button>
+      </div>
     </div>
   </div>
 
@@ -316,6 +322,17 @@
         <button class="mx" id="donorEditClose" title="Close (Esc)">×</button>
       </div>
       <div class="child-body" id="donorEditBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHILD POPUP: Partner add/edit (Control Panel) ===== -->
+  <div class="child-overlay" id="partnerEditOverlay">
+    <div class="child-modal" role="dialog" aria-modal="true">
+      <div class="child-head">
+        <h3 id="partnerEditTitle">Partner</h3>
+        <button class="mx" id="partnerEditClose" title="Close (Esc)">×</button>
+      </div>
+      <div class="child-body" id="partnerEditBody"></div>
     </div>
   </div>
 
@@ -417,7 +434,7 @@
           total and trend above them is derived, never retyped.
         </p>
 
-        <div class="about-foot">A Results-Based Monitoring &amp; Evaluation platform · v<span id="appVersion">0.0.1</span><br>
+        <div class="about-foot">A Results-Based Monitoring &amp; Evaluation platform · v<span id="appVersion">0.0.2</span><br>
           Get in touch: <a class="about-mail" href="mailto:grassrootstrack@outlook.com">grassrootstrack@outlook.com</a>
         </div>
         </div>
@@ -487,8 +504,8 @@
 </div>
 
 <script src="data/world.js"></script>
-<script src="js/seed.js?v=gr11"></script>
-<script src="js/db.js?v=gr07"></script>
-<script src="js/app.js?v=gr23"></script>
+<script src="js/seed.js?v=gr12"></script>
+<script src="js/db.js?v=gr08"></script>
+<script src="js/app.js?v=gr65"></script>
 </body>
 </html>
