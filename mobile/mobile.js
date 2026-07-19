@@ -49,7 +49,7 @@
   };
 
   /* ----------------------------------------------------------------- app state */
-  var S = { plan: null, user: null, view: 'home', proj: { q: '', region: '', status: '', page: 1 }, act: { n: 60 } };
+  var S = { plan: null, user: null, view: 'home', proj: { q: '', region: '', status: '', page: 1 }, act: { q: '', region: '', status: '', n: 60 } };
   var IDX;                    // DB._idx
   var TODAY;                  // derived "now"
   var INDS = [], INDBYID = {}, PROJECTS = [], PROJBYID = {}, ACTS = [], ACTBYID = {};
@@ -347,6 +347,10 @@
     $$('[data-proj]', scope).forEach(function (n) { n.addEventListener('click', function () { openProject(+n.getAttribute('data-proj')); }); });
     $$('[data-kpi]', scope).forEach(function (n) { n.addEventListener('click', function () { openKpi(+n.getAttribute('data-kpi')); }); });
     $$('[data-act]', scope).forEach(function (n) { n.addEventListener('click', function () { openActivity(+n.getAttribute('data-act')); }); });
+    $$('[data-impact]', scope).forEach(function (n) { n.addEventListener('click', function () { openImpact(+n.getAttribute('data-impact')); }); });
+    $$('[data-region]', scope).forEach(function (n) { n.addEventListener('click', function () { openRegion(n.getAttribute('data-region')); }); });
+    $$('[data-nav]', scope).forEach(function (n) { n.addEventListener('click', function () { navTo(n.getAttribute('data-nav')); }); });
+    $$('[data-plansheet]', scope).forEach(function (n) { n.addEventListener('click', openPlanSheet); });
   }
 
   function render() {
@@ -371,21 +375,21 @@
     var onTrack = (d.blue || 0) + (d.green || 0);
 
     var tiles = [
-      { k: 'Projects', v: fmtInt(STAT.projects), sub: STAT.countries + ' countries' },
-      { k: 'Activities', v: compact(STAT.activities), sub: 'reports logged' },
-      { k: 'KPIs tracked', v: fmtInt(STAT.kpis), sub: 'indicators' },
-      { k: 'People reached', v: compact(STAT.people), sub: 'beneficiaries' }
+      { k: 'Projects', v: fmtInt(STAT.projects), sub: STAT.countries + ' countries', nav: 'projects' },
+      { k: 'Activities', v: compact(STAT.activities), sub: 'reports logged', nav: 'activity' },
+      { k: 'KPIs tracked', v: fmtInt(STAT.kpis), sub: 'indicators', nav: 'insights' },
+      { k: 'People reached', v: compact(STAT.people), sub: 'beneficiaries', nav: 'insights' }
     ].map(function (t) {
-      return '<div class="tile"><div class="tile-v">' + t.v + '</div><div class="tile-k">' + esc(t.k) + '</div><div class="tile-s">' + esc(t.sub) + '</div></div>';
+      return '<div class="tile tap" data-nav="' + t.nav + '"><div class="tile-v">' + t.v + '</div><div class="tile-k">' + esc(t.k) + '</div><div class="tile-s">' + esc(t.sub) + '</div></div>';
     }).join('');
 
     var pillars = PILLARS.map(function (im) {
-      return '<div class="row impact">'
+      return '<div class="row impact tap" data-impact="' + im.sdg + '">'
         + '<span class="imp-swatch" style="background:' + im.color + '"></span>'
         + '<div class="row-main"><div class="row-t">' + esc(im.name) + '</div>'
         + '<div class="row-s">' + im.n + ' KPIs</div>'
         + progressLine(im.progress, im.status) + '</div>'
-        + '<div class="row-end">' + pill(im.status) + '</div></div>';
+        + '<div class="row-end">' + pill(im.status) + '<span class="row-chev">›</span></div></div>';
     }).join('') || '<div class="empty">No impacts in this plan yet.</div>';
 
     var legend = STATUS_ORDER.filter(function (k) { return d[k]; }).map(function (k) {
@@ -393,13 +397,13 @@
     }).join('');
 
     return ''
-      + '<div class="hero">'
+      + '<div class="hero tap" data-plansheet>'
       +   '<div class="hero-greet">' + esc(greet) + ', ' + esc(name) + '.</div>'
-      +   '<div class="hero-plan">' + esc(p ? p.name : '—') + '</div>'
+      +   '<div class="hero-plan">' + esc(p ? p.name : '—') + '<span class="hero-chev">›</span></div>'
       +   '<div class="hero-win">' + (p ? (fmtDate(p.start_date) + ' → ' + fmtDate(p.end_date)) : '') + '</div>'
       + '</div>'
       + '<div class="tiles">' + tiles + '</div>'
-      + '<div class="card perf">'
+      + '<div class="card perf tap" data-nav="insights">'
       +   '<div class="perf-ring">' + donut(d)
       +     '<div class="perf-center"><b style="color:' + statusColor(STAT.meanCode) + '">' + pct(STAT.meanRatio) + '</b><span>performance</span></div>'
       +   '</div>'
@@ -510,22 +514,54 @@
       + '<div class="arow-end"><span class="arow-ago">' + ago(a.dateMs) + '</span>' + dot(a.ind.status) + '</div>'
       + '</div>';
   }
+  function filteredActs() {
+    var q = S.act.q.trim().toLowerCase();
+    return ACTS.filter(function (a) {
+      if (S.act.region && a.region !== S.act.region) return false;
+      if (S.act.status && a.ind.status !== S.act.status) return false;
+      if (q) {
+        var hay = (a.ind.name + ' ' + (a.reporter ? a.reporter.name : '') + ' ' + (a.m.place_name || '') + ' ' + (a.proj ? a.proj.name : '')).toLowerCase();
+        if (hay.indexOf(q) < 0) return false;
+      }
+      return true;
+    });
+  }
+  function activityFilters() {
+    var regions = {}; ACTS.forEach(function (a) { if (a.region) regions[a.region] = 1; });
+    var ropts = ['<option value="">All regions</option>'].concat(Object.keys(regions).sort().map(function (r) {
+      return '<option value="' + esc(r) + '"' + (S.act.region === r ? ' selected' : '') + '>' + esc(r) + '</option>';
+    })).join('');
+    var sopts = ['<option value="">All statuses</option>'].concat(STATUS_ORDER.map(function (k) {
+      return '<option value="' + k + '"' + (S.act.status === k ? ' selected' : '') + '>' + statusLabel(k) + '</option>';
+    })).join('');
+    return '<div class="filters">'
+      + '<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>'
+      + '<input id="aq" placeholder="Search KPI, reporter, place, project…" value="' + esc(S.act.q) + '"></div>'
+      + '<div class="selrow"><select id="aRegion">' + ropts + '</select><select id="aStatus">' + sopts + '</select></div>'
+      + '</div>';
+  }
   function viewActivity() {
-    var slice = ACTS.slice(0, S.act.n);
-    var more = ACTS.length > S.act.n;
+    var list = filteredActs();
+    var slice = list.slice(0, S.act.n);
+    var more = list.length > S.act.n;
+    var filtered = !!(S.act.q || S.act.region || S.act.status);
     // group by day
     var out = '', lastKey = '';
     slice.forEach(function (a) {
-      var d = new Date(a.dateMs);
       var key = a.m.date ? a.m.date.slice(0, 10) : '';
       if (key !== lastKey) { out += '<div class="daydiv">' + fmtDate(a.m.date) + '</div>'; lastKey = key; }
       out += actRow(a);
     });
-    return '<div class="count">' + compact(ACTS.length) + ' activities logged</div>'
-      + '<div class="card list flush">' + (out || '<div class="empty">No activity yet.</div>') + '</div>'
-      + (more ? '<button class="btn ghost block" id="moreAct">Load more</button>' : '<div class="foot">— end of feed —</div>');
+    return activityFilters()
+      + '<div class="count">' + fmtInt(list.length) + ' activit' + (list.length === 1 ? 'y' : 'ies') + (filtered ? ' · filtered' : ' logged') + '</div>'
+      + '<div class="card list flush">' + (out || '<div class="empty">No activities match your filters.</div>') + '</div>'
+      + (more ? '<button class="btn ghost block" id="moreAct">Load more</button>' : (slice.length ? '<div class="foot">— end of feed —</div>' : ''));
   }
   function wireActivity() {
+    var q = $('#aq');
+    if (q) q.addEventListener('input', debounce(function () { S.act.q = q.value; S.act.n = 60; softRerender(viewActivity, wireActivity, true); }, 180));
+    var rg = $('#aRegion'); if (rg) rg.addEventListener('change', function () { S.act.region = rg.value; S.act.n = 60; softRerender(viewActivity, wireActivity); });
+    var st = $('#aStatus'); if (st) st.addEventListener('change', function () { S.act.status = st.value; S.act.n = 60; softRerender(viewActivity, wireActivity); });
     var b = $('#moreAct'); if (b) b.addEventListener('click', function () { S.act.n += 60; softRerender(viewActivity, wireActivity); });
   }
 
@@ -548,24 +584,24 @@
     var byRegion = groupAgg(function (r) { return r.region; });
     var rrows = Object.keys(byRegion).sort(function (a, b) { return avg(byRegion[b].ratios) - avg(byRegion[a].ratios); }).map(function (k) {
       var a = byRegion[k], ratio = avg(a.ratios);
-      return '<div class="row"><span class="imp-swatch" style="background:' + (REGION_COLOR[k] || '#888') + '"></span>'
+      return '<div class="row tap" data-region="' + esc(k) + '"><span class="imp-swatch" style="background:' + (REGION_COLOR[k] || '#888') + '"></span>'
         + '<div class="row-main"><div class="row-t">' + esc(k) + '</div><div class="row-s">' + a.ratios.length + ' KPIs · performance mix</div>' + stackBar(a.dist) + '</div>'
-        + '<div class="row-end">' + pill(ratioToCode(ratio)) + '</div></div>';
+        + '<div class="row-end">' + pill(ratioToCode(ratio)) + '<span class="row-chev">›</span></div></div>';
     }).join('');
     // by impact — performance breakdown (status distribution), not a progress bar
     var irows = PILLARS.map(function (im) {
-      return '<div class="row"><span class="imp-swatch" style="background:' + im.color + '"></span>'
+      return '<div class="row tap" data-impact="' + im.sdg + '"><span class="imp-swatch" style="background:' + im.color + '"></span>'
         + '<div class="row-main"><div class="row-t">' + esc(im.name) + '</div><div class="row-s">' + im.n + ' KPIs · performance mix</div>' + stackBar(im.dist) + '</div>'
-        + '<div class="row-end">' + pill(im.status) + '</div></div>';
+        + '<div class="row-end">' + pill(im.status) + '<span class="row-chev">›</span></div></div>';
     }).join('');
     // top & bottom projects, ranked by performance; bar shows their PROGRESS
     var ranked = PROJECTS.filter(function (p) { return p.ratio != null; });
     var top = ranked.slice().sort(function (a, b) { return b.ratio - a.ratio; }).slice(0, 5);
     var bottom = ranked.slice().sort(function (a, b) { return a.ratio - b.ratio; }).slice(0, 5);
     function prow(p) {
-      return '<div class="row" data-proj="' + p.id + '"><div class="row-main"><div class="row-t">' + esc(stripCountry(p.name, p.country)) + '</div>'
+      return '<div class="row tap" data-proj="' + p.id + '"><div class="row-main"><div class="row-t">' + esc(stripCountry(p.name, p.country)) + '</div>'
         + '<div class="row-s">' + esc(p.country ? p.country.name : '') + '</div>' + progressLine(p.progress, p.status) + '</div>'
-        + '<div class="row-end">' + pill(p.status) + '</div></div>';
+        + '<div class="row-end">' + pill(p.status) + '<span class="row-chev">›</span></div></div>';
     }
     var legend = STATUS_ORDER.filter(function (k) { return d[k]; }).map(function (k) {
       return '<span class="lg"><i style="background:' + statusColor(k) + '"></i>' + statusLabel(k) + ' <b>' + d[k] + '</b></span>';
@@ -759,6 +795,88 @@
       + '<div class="about-foot">Results-Based Monitoring &amp; Evaluation · v<span id="verNum3"></span><br>grassrootstrack@outlook.com</div>';
     openSheet('About', body);
     setVer();
+  }
+
+  /* ---------------------------------------------------- drill-down sheets */
+  function statLegend(dist) {
+    return STATUS_ORDER.filter(function (k) { return dist[k]; }).map(function (k) {
+      return '<span class="lg"><i style="background:' + statusColor(k) + '"></i>' + statusLabel(k) + ' <b>' + dist[k] + '</b></span>';
+    }).join('');
+  }
+  // Outcomes under one impact (grouped by statement across programmes), each with
+  // its rolled-up performance + status distribution — the results one level down.
+  function outcomesUnder(sdg) {
+    var g = {};
+    INDS.forEach(function (r) {
+      if (r.ratio == null || !r.result) return;
+      var chain = resultChain(r.result);
+      var imp = chain.filter(function (n) { return n.level === 'impact'; })[0];
+      if (!imp || imp.sdg !== sdg) return;
+      var oc = chain.filter(function (n) { return n.level === 'outcome'; })[0];
+      var key = oc ? oc.statement : '(direct)';
+      var a = g[key] = g[key] || { stmt: key, ratios: [], progs: [], dist: {} };
+      a.ratios.push(r.ratio); a.progs.push(r.progress || 0); a.dist[r.status] = (a.dist[r.status] || 0) + 1;
+    });
+    return Object.keys(g).map(function (k) {
+      var a = g[k], ratio = avg(a.ratios);
+      return { stmt: a.stmt, ratio: ratio, status: ratioToCode(ratio), progress: avg(a.progs), dist: a.dist, n: a.ratios.length };
+    }).sort(function (x, y) { return y.n - x.n; });
+  }
+  function openImpact(sdg) {
+    var im = PILLARS.filter(function (p) { return p.sdg === sdg; })[0]; if (!im) return;
+    var projCount = PROJECTS.filter(function (p) {
+      return p.inds.some(function (i) { if (!i.result) return false; var imp = resultChain(i.result).filter(function (n) { return n.level === 'impact'; })[0]; return imp && imp.sdg === sdg; });
+    }).length;
+    var outcomes = outcomesUnder(sdg);
+    var orows = outcomes.map(function (o) {
+      return '<div class="row"><div class="row-main"><div class="row-t">' + esc(o.stmt) + '</div>'
+        + '<div class="row-s">' + o.n + ' KPIs · performance mix</div>' + stackBar(o.dist) + '</div>'
+        + '<div class="row-end">' + pill(o.status) + '</div></div>';
+    }).join('') || '<div class="empty">No outcomes recorded.</div>';
+    var body = '<div class="sheet-hero">'
+      + '<div class="sheet-hero-top"><span class="imp-swatch big" style="background:' + im.color + '"></span>' + pill(im.status) + '</div>'
+      + '<div class="sheet-hero-t">' + esc(im.name) + '</div>'
+      + (im.statement ? '<p class="sheet-desc">' + esc(im.statement) + '</p>' : '')
+      + '</div>'
+      + '<div class="minitiles">'
+      +   '<div class="mt"><b style="color:' + statusColor(im.status) + '">' + pct(im.ratio) + '</b><span>Performance now</span></div>'
+      +   '<div class="mt"><b>' + pct(im.progress) + '</b><span>Progress</span></div>'
+      +   '<div class="mt"><b>' + fmtInt(im.n) + '</b><span>KPIs</span></div>'
+      +   '<div class="mt"><b>' + fmtInt(projCount) + '</b><span>Projects</span></div>'
+      + '</div>'
+      + '<div class="card padrow">' + stackBar(im.dist) + '<div class="legend" style="margin-top:10px">' + statLegend(im.dist) + '</div></div>'
+      + '<div class="sec-h">Outcomes <span>' + outcomes.length + '</span></div>'
+      + '<div class="card list">' + orows + '</div>';
+    openSheet('Impact', body);
+  }
+  function openRegion(name) {
+    var rinds = INDS.filter(function (r) { return r.region === name && r.ratio != null; });
+    var ratios = rinds.map(function (r) { return r.ratio; });
+    var progs = rinds.map(function (r) { return r.progress || 0; });
+    var dist = {}; rinds.forEach(function (r) { dist[r.status] = (dist[r.status] || 0) + 1; });
+    var rprojects = PROJECTS.filter(function (p) { return p.region === name; }).sort(function (a, b) { return (b.ratio || 0) - (a.ratio || 0); });
+    var countries = {}; rprojects.forEach(function (p) { if (p.iso) countries[p.iso] = 1; });
+    var ratio = avg(ratios);
+    var prows = rprojects.map(function (p) {
+      return '<div class="row tap" data-proj="' + p.id + '"><div class="row-main"><div class="row-t">' + esc(stripCountry(p.name, p.country)) + '</div>'
+        + '<div class="row-s">' + esc(p.country ? p.country.name : '') + '</div>' + progressLine(p.progress, p.status) + '</div>'
+        + '<div class="row-end">' + pill(p.status) + '<span class="row-chev">›</span></div></div>';
+    }).join('') || '<div class="empty">No projects in this region.</div>';
+    var body = '<div class="sheet-hero">'
+      + '<div class="sheet-hero-top"><span class="imp-swatch big" style="background:' + (REGION_COLOR[name] || '#888') + '"></span>' + pill(ratioToCode(ratio)) + '</div>'
+      + '<div class="sheet-hero-t">' + esc(name) + '</div>'
+      + '</div>'
+      + '<div class="minitiles">'
+      +   '<div class="mt"><b style="color:' + statusColor(ratioToCode(ratio)) + '">' + pct(ratio) + '</b><span>Performance now</span></div>'
+      +   '<div class="mt"><b>' + pct(avg(progs)) + '</b><span>Progress</span></div>'
+      +   '<div class="mt"><b>' + fmtInt(rprojects.length) + '</b><span>Projects</span></div>'
+      +   '<div class="mt"><b>' + fmtInt(Object.keys(countries).length) + '</b><span>Countries</span></div>'
+      + '</div>'
+      + '<div class="card padrow">' + stackBar(dist) + '<div class="legend" style="margin-top:10px">' + statLegend(dist) + '</div></div>'
+      + '<div class="sec-h">Projects <span>' + rprojects.length + '</span></div>'
+      + '<div class="card list">' + prows + '</div>';
+    openSheet('Region', body);
+    bindTaps($('#sheetBody'));
   }
 
   /* ======================================================= DATA ENTRY ===== */

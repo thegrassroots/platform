@@ -206,6 +206,16 @@ a { color: var(--brand); }
 .row-t { font-size: 14px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .row-s { font-size: 11.5px; color: var(--ink-3); margin: 2px 0 6px; }
 .row-end { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 3px; flex: none; }
+.row-chev { color: var(--ink-3); font-size: 17px; line-height: 1; margin-top: 1px; }
+
+/* tappable affordance */
+.tap { cursor: pointer; }
+.tile.tap { transition: transform .08s; }
+.tile.tap:active, .perf.tap:active, .hero.tap:active { transform: scale(.985); }
+.row.tap { transition: background .1s; }
+.row.tap:active { background: var(--card-2); }
+.hero-chev { font-weight: 700; opacity: .8; margin-left: 6px; }
+.imp-swatch.big { width: 22px; height: 22px; border-radius: 7px; align-self: center; }
 .row-pct { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .impact .imp-swatch, .row .imp-swatch { width: 6px; align-self: stretch; border-radius: 6px; flex: none; }
 

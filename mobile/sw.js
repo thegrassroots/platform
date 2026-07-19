@@ -2,15 +2,15 @@
  * Offline-first app shell + shared data layer. Bump CACHE to ship an update. */
 'use strict';
 
-var CACHE = 'grassroots-mobile-v3';
+var CACHE = 'grassroots-mobile-v4';
 
 // Everything the app needs to boot offline. Paths are relative to the SW scope
 // (/platform/mobile/), so ../ reaches the shared platform assets.
 var PRECACHE = [
   './',
   './index.html',
-  './mobile.css?v=3',
-  './mobile.js?v=3',
+  './mobile.css?v=4',
+  './mobile.js?v=4',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
