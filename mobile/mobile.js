@@ -52,7 +52,7 @@
   var S = { plan: null, user: null, view: 'home', proj: { q: '', region: '', status: '', page: 1 }, act: { n: 60 } };
   var IDX;                    // DB._idx
   var TODAY;                  // derived "now"
-  var INDS = [], INDBYID = {}, PROJECTS = [], PROJBYID = {}, ACTS = [];
+  var INDS = [], INDBYID = {}, PROJECTS = [], PROJBYID = {}, ACTS = [], ACTBYID = {};
   var PILLARS = [];           // active-plan impacts w/ rollups
   var STAT = {};              // portfolio aggregates
 
@@ -201,6 +201,7 @@
       });
     });
     ACTS.sort(function (a, b) { return b.dateMs - a.dateMs; });
+    ACTBYID = {}; ACTS.forEach(function (a) { ACTBYID[a.id] = a; });
 
     // 4) impacts (pillars) roll-up for the active plan
     buildPillars();
@@ -341,6 +342,13 @@
   /* ============================================================= VIEWS ===== */
   var VIEW_TITLE = { home: 'Home', projects: 'Projects', activity: 'Activity', insights: 'Insights', profile: 'Profile' };
 
+  // Bind tap-throughs on any element carrying a data-* target id.
+  function bindTaps(scope) {
+    $$('[data-proj]', scope).forEach(function (n) { n.addEventListener('click', function () { openProject(+n.getAttribute('data-proj')); }); });
+    $$('[data-kpi]', scope).forEach(function (n) { n.addEventListener('click', function () { openKpi(+n.getAttribute('data-kpi')); }); });
+    $$('[data-act]', scope).forEach(function (n) { n.addEventListener('click', function () { openActivity(+n.getAttribute('data-act')); }); });
+  }
+
   function render() {
     $('#abTitle').textContent = VIEW_TITLE[S.view] || '';
     var scr = $('#screen'); scr.scrollTop = 0;
@@ -349,9 +357,8 @@
     else if (S.view === 'activity') { scr.innerHTML = viewActivity(); wireActivity(); }
     else if (S.view === 'insights') scr.innerHTML = viewInsights();
     else if (S.view === 'profile') { scr.innerHTML = viewProfile(); wireProfile(); }
-    // tap-through on any element carrying data-proj
-    $$('[data-proj]', scr).forEach(function (n) { n.addEventListener('click', function () { openProject(+n.getAttribute('data-proj')); }); });
-    $$('[data-kpi]', scr).forEach(function (n) { n.addEventListener('click', function () { openKpi(+n.getAttribute('data-kpi')); }); });
+    bindTaps(scr);
+    updateFab();
   }
 
   /* --------------------------------------------------------------- HOME */
@@ -483,8 +490,7 @@
     var active = keepFocus && document.activeElement && document.activeElement.id;
     var selStart = keepFocus && document.activeElement ? document.activeElement.selectionStart : null;
     scr.innerHTML = viewFn(); if (wireFn) wireFn();
-    $$('[data-proj]', scr).forEach(function (n) { n.addEventListener('click', function () { openProject(+n.getAttribute('data-proj')); }); });
-    $$('[data-kpi]', scr).forEach(function (n) { n.addEventListener('click', function () { openKpi(+n.getAttribute('data-kpi')); }); });
+    bindTaps(scr);
     scr.scrollTop = top;
     if (active) { var e = document.getElementById(active); if (e) { e.focus(); if (selStart != null && e.setSelectionRange) try { e.setSelectionRange(selStart, selStart); } catch (x) {} } }
   }
@@ -495,7 +501,7 @@
     var place = m.place_name ? esc(m.place_name) : (a.proj && a.proj.country ? esc(a.proj.country.name) : '');
     var rep = a.reporter ? esc(a.reporter.name) : 'Field team';
     var val = a.ind.unit === 'percent' ? (Math.round(m.value * 10) / 10 + '%') : compact(m.value);
-    return '<div class="arow" data-kpi="' + a.ind.id + '">'
+    return '<div class="arow" data-act="' + a.id + '">'
       + '<span class="abadge" style="background:' + statusColor(a.ind.status) + '22;color:' + statusColor(a.ind.status) + '">' + esc(val) + '</span>'
       + '<div class="arow-main">'
       +   '<div class="arow-t">' + esc(a.ind.name) + '</div>'
@@ -663,13 +669,16 @@
     if (p.desc) head += '<p class="sheet-desc">' + esc(p.desc) + '</p>';
     if (p.partner) head += '<div class="sheet-line"><span class="setk">Implementing partner</span><span class="setv">' + esc(p.partner.name) + '</span></div>';
     head += '<div class="sheet-line"><span class="setk">Timeframe</span><span class="setv">' + fmtDate(p.start) + ' → ' + fmtDate(p.end) + '</span></div>';
+    head += '<div class="ef-actions"><button class="btn" id="prEdit">Edit project</button><button class="btn primary" id="prLog">Log activity</button></div>';
 
     var body = head
       + '<div class="sec-h">Primary KPIs <span>' + primary.length + '</span></div>'
       + '<div class="card list flush">' + (primary.map(krow).join('') || '<div class="empty">None.</div>') + '</div>'
       + (secondary.length ? '<div class="sec-h">Secondary KPIs <span>' + secondary.length + '</span></div><div class="card list flush">' + secondary.map(krow).join('') + '</div>' : '');
     openSheet('Project', body);
-    $$('[data-kpi]', $('#sheetBody')).forEach(function (n) { n.addEventListener('click', function () { openKpi(+n.getAttribute('data-kpi')); }); });
+    bindTaps($('#sheetBody'));
+    $('#prEdit').onclick = function () { openProjectForm(p.id); };
+    $('#prLog').onclick = function () { openActivityForm(p.id); };
   }
 
   function openKpi(id) {
@@ -752,6 +761,262 @@
     setVer();
   }
 
+  /* ======================================================= DATA ENTRY ===== */
+  // Create / edit projects, log activities (measurements) and record
+  // beneficiaries — all persisted through the shared DB layer with id-based
+  // fields (never plain text), so the mobile app writes exactly what the desktop
+  // reads. Every write is followed by enrich() to re-derive status live.
+
+  function isoToday() { return new Date(TODAY).toISOString().slice(0, 10); }
+  function benTypes() { return (DB.tables.beneficiary_type || []).slice().sort(function (a, b) { return (a.seq == null ? a.id : a.seq) - (b.seq == null ? b.id : b.seq); }); }
+  function optsFrom(items, valFn, labFn, sel) {
+    return items.map(function (it) { var v = valFn(it); return '<option value="' + esc(v) + '"' + (String(v) === String(sel) ? ' selected' : '') + '>' + esc(labFn(it)) + '</option>'; }).join('');
+  }
+  function activityValLabel(ind) {
+    if (!ind) return 'Value';
+    if (ind.unit === 'count') return 'Amount this activity';
+    if (ind.unit === 'percent') return 'New value (%)';
+    return 'New value';
+  }
+  function formFoot(msgId, cancelId, saveId, saveLabel) {
+    return '<div class="ef-msg" id="' + msgId + '"></div>'
+      + '<div class="ef-foot">'
+      + '<button type="button" class="btn" id="' + cancelId + '">Cancel</button>'
+      + '<button type="submit" class="btn primary" id="' + saveId + '">' + esc(saveLabel) + '</button></div>';
+  }
+  function benRowHtml(typeId, value) {
+    return '<div class="benrow"><select class="ben-type"><option value="">Measure…</option>'
+      + optsFrom(benTypes(), function (t) { return t.id; }, function (t) { return t.name; }, typeId) + '</select>'
+      + '<input class="ben-val" type="number" step="any" inputmode="numeric" placeholder="0" value="' + (value == null ? '' : esc(value)) + '">'
+      + '<button type="button" class="ben-x" aria-label="Remove">✕</button></div>';
+  }
+  function wireBenHost(host) {
+    $$('.ben-x', host).forEach(function (b) { b.onclick = function () { var r = b.closest('.benrow'); if (r) r.remove(); }; });
+  }
+  function collectBens(scope, mid) {
+    var rows = [];
+    $$('.benrow', scope).forEach(function (r) {
+      var t = r.querySelector('.ben-type').value, v = r.querySelector('.ben-val').value;
+      if (!t) return;
+      rows.push({ measurement_id: mid, type_id: +t, value: (v === '' || isNaN(+v)) ? null : +v });
+    });
+    return rows;
+  }
+  function kpiOptsFor(pid, sel) {
+    var p = PROJBYID[pid]; if (!p) return '';
+    return p.inds.map(function (i) { return '<option value="' + i.id + '"' + (String(i.id) === String(sel) ? ' selected' : '') + '>' + esc((i.code ? i.code + ' · ' : '') + i.name) + '</option>'; }).join('');
+  }
+  function kpiFieldHtml(pid, sel) {
+    var p = PROJBYID[pid];
+    if (!p || !p.inds.length) return '<label class="ef"><span>KPI</span><div class="ef-note warn">This project has no KPIs yet — add them on the desktop, or pick another project.</div></label>';
+    return '<label class="ef"><span>KPI *</span><select id="afKpi">' + kpiOptsFor(pid, sel) + '</select></label>';
+  }
+
+  function toast(msg) {
+    var t = $('#toast'); if (!t) return;
+    t.textContent = msg; t.hidden = false;
+    requestAnimationFrame(function () { t.classList.add('show'); });
+    clearTimeout(t.__tm); t.__tm = setTimeout(function () { t.classList.remove('show'); setTimeout(function () { t.hidden = true; }, 300); }, 2200);
+  }
+  function updateFab() {
+    var fab = $('#fab'); if (!fab) return;
+    fab.hidden = !(S.user && ['home', 'projects', 'activity'].indexOf(S.view) >= 0);
+  }
+
+  // ---- add menu (FAB) -------------------------------------------------------
+  function openAddMenu() {
+    var body = '<div class="addmenu">'
+      + '<button class="addopt" id="addAct"><span class="addic" style="--ac:#0c85c7"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg></span><span class="addtx"><b>Log activity</b><small>Report progress against a project KPI</small></span></button>'
+      + '<button class="addopt" id="addProj"><span class="addic" style="--ac:#33c2b4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg></span><span class="addtx"><b>New project</b><small>Add a project to this plan</small></span></button>'
+      + '</div>';
+    openSheet('Add', body);
+    $('#addAct').onclick = function () { openActivityForm(); };
+    $('#addProj').onclick = function () { openProjectForm(); };
+  }
+
+  // ---- log / edit activity --------------------------------------------------
+  function openActivityForm(prefillPid, editMid) {
+    var projects = PROJECTS.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+    var edit = editMid != null ? ACTBYID[editMid] : null;
+    if (edit && edit.proj) prefillPid = edit.proj.id;
+    if (!projects.length) { openSheet('Log activity', '<div class="empty">No projects yet — create a project first.</div>'); return; }
+    var pid = (prefillPid && PROJBYID[prefillPid]) ? prefillPid : projects[0].id;
+    var m = edit ? edit.m : null, selKpi = edit ? edit.ind.id : null;
+    var body = '<form id="eform" class="eform">'
+      + '<label class="ef"><span>Project *</span><select id="afProj"' + (edit ? ' disabled' : '') + '>'
+      +   optsFrom(projects, function (p) { return p.id; }, function (p) { return stripCountry(p.name, p.country) + ' · ' + (p.country ? p.country.name : p.iso); }, pid) + '</select></label>'
+      + '<div id="afKpiWrap">' + kpiFieldHtml(pid, selKpi) + '</div>'
+      + '<label class="ef"><span>Activity / what was done *</span><input id="afTitle" type="text" placeholder="e.g. District data-governance workshop" value="' + (m ? esc(m.narrative || '') : '') + '"></label>'
+      + '<div class="ef2">'
+      +   '<label class="ef"><span id="afValLbl">Value *</span><input id="afValue" type="number" step="any" inputmode="decimal" placeholder="0" value="' + (m ? esc(m.value) : '') + '"></label>'
+      +   '<label class="ef"><span>Date</span><input id="afDate" type="date" value="' + (m && m.date ? m.date.slice(0, 10) : isoToday()) + '"></label>'
+      + '</div>'
+      + '<label class="ef"><span>Location (optional)</span><input id="afPlace" type="text" placeholder="City or village" value="' + (m && m.place_name ? esc(m.place_name) : '') + '"></label>'
+      + '<div class="ef-sec"><span>Beneficiaries reached</span><button type="button" class="ef-add" id="afAddBen">+ Add measure</button></div>'
+      + '<div id="afBens" class="bens"></div>'
+      + formFoot('afMsg', 'afCancel', 'afSave', edit ? 'Save changes' : 'Log activity')
+      + '</form>';
+    openSheet(edit ? 'Edit activity' : 'Log activity', body);
+    var host = $('#afBens');
+    if (edit) (edit.benes || []).filter(function (b) { return b.type_id != null; }).forEach(function (b) { host.insertAdjacentHTML('beforeend', benRowHtml(b.type_id, b.value)); });
+    wireBenHost(host);
+    $('#afAddBen').onclick = function () { host.insertAdjacentHTML('beforeend', benRowHtml(null, '')); wireBenHost(host); };
+    function syncVal() { var k = $('#afKpi'); var i = k ? INDBYID[+k.value] : null; $('#afValLbl').textContent = activityValLabel(i) + ' *'; if (k) k.onchange = syncVal; }
+    var projSel = $('#afProj');
+    if (projSel && !edit) projSel.onchange = function () { $('#afKpiWrap').innerHTML = kpiFieldHtml(+projSel.value, null); syncVal(); };
+    syncVal();
+    $('#afCancel').onclick = function () { closeSheet(); };
+    $('#eform').onsubmit = function (e) { e.preventDefault(); saveActivity(edit); };
+  }
+  function saveActivity(edit) {
+    var msg = $('#afMsg');
+    var kpiEl = $('#afKpi'); if (!kpiEl) { msg.textContent = 'This project has no KPIs to report against.'; return; }
+    var ind = INDBYID[+kpiEl.value]; if (!ind) { msg.textContent = 'Select a KPI.'; return; }
+    var pid = edit ? (edit.proj ? edit.proj.id : null) : +$('#afProj').value;
+    var title = ($('#afTitle').value || '').trim(); if (!title) { msg.textContent = 'Describe what was done.'; $('#afTitle').focus(); return; }
+    var valRaw = $('#afValue').value; if (valRaw === '' || isNaN(+valRaw)) { msg.textContent = 'Enter a numeric value.'; $('#afValue').focus(); return; }
+    var date = $('#afDate').value || isoToday();
+    var place = ($('#afPlace').value || '').trim();
+    msg.textContent = 'Saving…';
+    var meas = edit ? edit.m : {};
+    meas.indicator_id = ind.id; meas.project_id = pid; meas.date = date; meas.value = +valRaw;
+    meas.narrative = title; meas.place_name = place || null;
+    if (!edit) { meas.reported_by_id = S.user ? S.user.id : null; meas.place_lat = null; meas.place_lng = null; }
+    var save = edit ? DB.persist('measurement', [meas]) : DB.insert('measurement', [meas]);
+    Promise.resolve(save).then(function () {
+      var mid = meas.id;
+      var existing = (DB._idx.benByMeasurement[mid] || []).map(function (b) { return b.id; });
+      var rows = collectBens($('#eform'), mid);
+      var jobs = [];
+      if (existing.length) jobs.push(DB.remove('beneficiary', existing));
+      if (rows.length) jobs.push(DB.insert('beneficiary', rows));
+      return Promise.all(jobs);
+    }).then(function () {
+      enrich(); closeSheet(); toast(edit ? 'Activity updated' : 'Activity logged');
+      if (S.view === 'activity') render(); else navTo('activity');
+    }).catch(function () { msg.textContent = 'Could not save — please try again.'; });
+  }
+
+  // ---- create / edit project ------------------------------------------------
+  function openProjectForm(editPid) {
+    var p = editPid != null && PROJBYID[editPid] ? PROJBYID[editPid].raw : null;
+    var byName = function (a, b) { return a.name < b.name ? -1 : 1; };
+    var countries = (DB.tables.country || []).slice().sort(byName);
+    var donors = (DB.tables.donor || []).slice().sort(byName);
+    var partners = (DB.tables.partner || []).slice().sort(byName);
+    var impl = p ? (p.implementation || 'direct') : 'direct';
+    var body = '<form id="pform" class="eform">'
+      + '<label class="ef"><span>Project name *</span><input id="pfName" type="text" placeholder="e.g. Girls’ Education" value="' + (p ? esc(p.name) : '') + '"></label>'
+      + '<label class="ef"><span>Country *</span><select id="pfCountry"><option value="">Select…</option>' + optsFrom(countries, function (c) { return c.iso3; }, function (c) { return c.name; }, p ? p.country_iso3 : '') + '</select></label>'
+      + '<label class="ef"><span>Donor</span><select id="pfDonor"><option value="">— None —</option>' + optsFrom(donors, function (d) { return d.id; }, function (d) { return d.name; }, p ? p.donor_id : '') + '</select></label>'
+      + '<label class="ef"><span>Delivery</span><select id="pfImpl"><option value="direct"' + (impl === 'direct' ? ' selected' : '') + '>Direct</option><option value="partner"' + (impl === 'partner' ? ' selected' : '') + '>Through a partner</option></select></label>'
+      + '<label class="ef" id="pfPartnerWrap"' + (impl === 'partner' ? '' : ' style="display:none"') + '><span>Implementing partner</span><select id="pfPartner"><option value="">Select…</option>' + optsFrom(partners, function (pt) { return pt.id; }, function (pt) { return pt.name; }, p ? p.partner_id : '') + '</select></label>'
+      + '<label class="ef"><span>Budget (USD)</span><input id="pfBudget" type="number" step="any" inputmode="numeric" placeholder="0" value="' + (p && p.budget_usd != null ? esc(p.budget_usd) : '') + '"></label>'
+      + '<div class="ef2">'
+      +   '<label class="ef"><span>Start</span><input id="pfStart" type="date" value="' + (p && p.start_date ? p.start_date.slice(0, 10) : '') + '"></label>'
+      +   '<label class="ef"><span>End</span><input id="pfEnd" type="date" value="' + (p && p.end_date ? p.end_date.slice(0, 10) : '') + '"></label>'
+      + '</div>'
+      + '<label class="ef"><span>Description</span><textarea id="pfDesc" rows="3" placeholder="What this project does…">' + (p ? esc(p.description || '') : '') + '</textarea></label>'
+      + formFoot('pfMsg', 'pfCancel', 'pfSave', p ? 'Save changes' : 'Create project')
+      + '</form>';
+    openSheet(p ? 'Edit project' : 'New project', body);
+    var implSel = $('#pfImpl'); implSel.onchange = function () { $('#pfPartnerWrap').style.display = implSel.value === 'partner' ? '' : 'none'; };
+    $('#pfCancel').onclick = function () { closeSheet(); };
+    $('#pform').onsubmit = function (e) { e.preventDefault(); saveProject(p); };
+  }
+  function saveProject(existing) {
+    var msg = $('#pfMsg');
+    var name = ($('#pfName').value || '').trim(); if (!name) { msg.textContent = 'Project name is required.'; $('#pfName').focus(); return; }
+    var iso = $('#pfCountry').value; if (!iso) { msg.textContent = 'Select a country.'; $('#pfCountry').focus(); return; }
+    var co = IDX.countryByIso[iso];
+    var impl = $('#pfImpl').value === 'partner' ? 'partner' : 'direct';
+    var partnerId = impl === 'partner' && $('#pfPartner').value ? +$('#pfPartner').value : null;
+    var budgetRaw = ($('#pfBudget').value || '').replace(/,/g, '');
+    var fields = {
+      name: name, country_iso3: iso, region: co ? co.region : null,
+      donor_id: $('#pfDonor').value ? +$('#pfDonor').value : null,
+      partner_id: partnerId, implementation: impl,
+      budget_usd: (budgetRaw === '' || isNaN(+budgetRaw)) ? null : +budgetRaw,
+      start_date: $('#pfStart').value || null, end_date: $('#pfEnd').value || null,
+      description: ($('#pfDesc').value || '').trim()
+    };
+    msg.textContent = 'Saving…';
+    if (existing) {
+      Object.keys(fields).forEach(function (k) { existing[k] = fields[k]; });
+      Promise.resolve(DB.persist('project', [existing])).then(function () { afterProjectSave(existing.id, true); });
+    } else {
+      fields.code = 'PRJ-' + iso + '-' + String((IDX.projectByCountry[iso] || []).length + 1).padStart(2, '0');
+      fields.plan_id = S.plan; fields.lead_id = S.user ? S.user.id : null;
+      Promise.resolve(DB.insert('project', [fields])).then(function (rows) { afterProjectSave(rows[0].id, false); });
+    }
+  }
+  function afterProjectSave(pid, edited) {
+    enrich(); toast(edited ? 'Project updated' : 'Project created');
+    navTo('projects');         // re-render the underlying list (leaves the sheet open)
+    openProject(pid);          // swap the open sheet to the saved project's detail
+  }
+
+  // ---- activity (measurement) detail + beneficiary editor -------------------
+  function openActivity(mid) {
+    var a = ACTBYID[mid]; if (!a) return;
+    var m = a.m, ind = a.ind;
+    var val = ind.unit === 'percent' ? (Math.round(m.value * 10) / 10 + '%') : compact(m.value);
+    var bens = (a.benes || []).filter(function (b) { return b.type_id != null; });
+    var benHtml = bens.length ? bens.map(function (b) {
+      var t = IDX.benTypeById[b.type_id];
+      return '<div class="mrow"><div class="mrow-l"><b>' + fmtInt(b.value) + '</b></div><div class="mrow-r">' + esc(t ? t.name : '—') + '</div></div>';
+    }).join('') : '<div class="empty">No beneficiaries recorded.</div>';
+    var body = '<div class="sheet-hero">'
+      + '<div class="sheet-hero-top">' + pill(ind.status) + '<span class="muted">' + esc(ind.code || '') + '</span></div>'
+      + '<div class="sheet-hero-t">' + esc(m.narrative || ind.name) + '</div>'
+      + '<div class="chainrow"><button class="chip linkchip" data-kpi="' + ind.id + '">' + esc(ind.name) + ' ›</button></div>'
+      + '</div>'
+      + '<div class="minitiles">'
+      +   '<div class="mt"><b>' + esc(val) + '</b><span>Reported</span></div>'
+      +   '<div class="mt"><b class="mt-sm">' + fmtDate(m.date) + '</b><span>Date</span></div>'
+      +   '<div class="mt"><b class="mt-sm">' + esc(a.reporter ? a.reporter.name.split(' ')[0] : '—') + '</b><span>Reporter</span></div>'
+      +   '<div class="mt"><b class="mt-sm">' + esc(m.place_name || (a.proj && a.proj.country ? a.proj.country.name : '—')) + '</b><span>Place</span></div>'
+      + '</div>'
+      + (a.proj ? '<div class="sheet-line"><span class="setk">Project</span><button class="setv linkv" data-proj="' + a.proj.id + '">' + esc(stripCountry(a.proj.name, a.proj.country)) + ' ›</button></div>' : '')
+      + '<div class="sec-h">Beneficiaries reached <span>' + bens.length + '</span></div>'
+      + '<div class="card list flush">' + benHtml + '</div>'
+      + '<div class="ef-actions"><button class="btn" id="acEditBen">Edit beneficiaries</button><button class="btn primary" id="acEdit">Edit activity</button></div>';
+    openSheet('Activity', body);
+    bindTaps($('#sheetBody'));
+    $('#acEdit').onclick = function () { openActivityForm(null, mid); };
+    $('#acEditBen').onclick = function () { openBenForm(mid); };
+  }
+  function openBenForm(mid) {
+    var a = ACTBYID[mid]; if (!a) return;
+    var body = '<form id="bform" class="eform">'
+      + '<div class="ef-hint">How many of each beneficiary type did this activity reach?</div>'
+      + '<div id="bfBens" class="bens"></div>'
+      + '<button type="button" class="ef-add wide" id="bfAdd">+ Add measure</button>'
+      + formFoot('bfMsg', 'bfCancel', 'bfSave', 'Save beneficiaries')
+      + '</form>';
+    openSheet('Beneficiaries', body);
+    var host = $('#bfBens');
+    (a.benes || []).filter(function (b) { return b.type_id != null; }).forEach(function (b) { host.insertAdjacentHTML('beforeend', benRowHtml(b.type_id, b.value)); });
+    if (!host.children.length) host.insertAdjacentHTML('beforeend', benRowHtml(null, ''));
+    wireBenHost(host);
+    $('#bfAdd').onclick = function () { host.insertAdjacentHTML('beforeend', benRowHtml(null, '')); wireBenHost(host); };
+    $('#bfCancel').onclick = function () { openActivity(mid); };
+    $('#bform').onsubmit = function (e) {
+      e.preventDefault();
+      var existing = (DB._idx.benByMeasurement[mid] || []).map(function (b) { return b.id; });
+      var rows = collectBens($('#bform'), mid);
+      $('#bfMsg').textContent = 'Saving…';
+      var jobs = [];
+      if (existing.length) jobs.push(DB.remove('beneficiary', existing));
+      if (rows.length) jobs.push(DB.insert('beneficiary', rows));
+      Promise.all(jobs).then(function () {
+        enrich(); toast('Beneficiaries saved');
+        if (S.view === 'activity') { var scr = $('#screen'); scr.innerHTML = viewActivity(); wireActivity(); bindTaps(scr); }
+        openActivity(mid);
+      });
+    };
+  }
+
   /* ============================================================ auth ===== */
   var SESSION_KEY = 'gr_mobile_session';
   function signIn(username, password) {
@@ -825,6 +1090,7 @@
     $('#abPlan').addEventListener('click', openPlanSheet);
     $('#abUser').addEventListener('click', function () { navTo('profile'); });
     $('#abBrand').addEventListener('click', openAbout);
+    $('#fab').addEventListener('click', openAddMenu);
     $('#sheetX').addEventListener('click', closeSheet);
     $('#scrim').addEventListener('click', closeSheet);
     $('#loginForm').addEventListener('submit', function (e) {
