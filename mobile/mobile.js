@@ -226,14 +226,15 @@
       if (!m.name && r.pillar_name) m.name = r.pillar_name;
       if (!m.color && r.pillar_color) m.color = r.pillar_color;
     });
-    var acc = {};    // sdg -> {ratios, progs}
+    var acc = {};    // sdg -> {ratios, progs, dist}
     INDS.forEach(function (r) {
       if (r.ratio == null || !r.result) return;
       var top = resultChain(r.result).filter(function (n) { return n.level === 'impact'; })[0];
       var sdg = top ? top.sdg : r.sdg;
       if (sdg == null) return;
-      var a = acc[sdg] = acc[sdg] || { ratios: [], progs: [] };
+      var a = acc[sdg] = acc[sdg] || { ratios: [], progs: [], dist: {} };
       a.ratios.push(r.ratio); a.progs.push(r.progress || 0);
+      a.dist[r.status] = (a.dist[r.status] || 0) + 1;
     });
     PILLARS = Object.keys(meta).map(function (sdg) {
       var m = meta[sdg], a = acc[sdg];
@@ -242,7 +243,8 @@
         id: +sdg, sdg: +sdg, name: m.name || ('Impact ' + sdg),
         statement: m.statement, color: m.color || '#5399EA',
         ratio: ratio, status: ratioToCode(ratio),
-        progress: a ? avg(a.progs) : null, n: a ? a.ratios.length : 0
+        progress: a ? avg(a.progs) : null, n: a ? a.ratios.length : 0,
+        dist: a ? a.dist : {}
       };
     }).sort(function (a, b) { return (a.sdg || 0) - (b.sdg || 0); });
   }
@@ -295,12 +297,23 @@
   }
 
   /* ---------------------------------------------------- small UI builders */
+  // PROGRESS vs PERFORMANCE, kept visually distinct so readers never confuse them:
+  //   • Progress    = cumulative achievement toward the target → a filling BAR.
+  //   • Performance = on-pace status right now (a single point in time) → a
+  //     categorical PILL / DOT. Performance is NEVER drawn as a bar, because a
+  //     bar reads as "how full / how far along", which performance is not.
+  // The bar's LENGTH is progress; its COLOUR carries the performance RAG (the
+  // authoritative status), so one element shows achievement and pace at a glance.
   function pill(code) { return '<span class="pill" style="--pc:' + statusColor(code) + '">' + esc(statusLabel(code)) + '</span>'; }
   function dot(code) { return '<span class="sdot" style="background:' + statusColor(code) + '"></span>'; }
-  function bar(ratio) {
-    var code = ratioToCode(ratio);
-    var w = ratio == null ? 0 : Math.max(0, Math.min(1, ratio)) * 100;
-    return '<div class="pbar"><span style="width:' + w.toFixed(1) + '%;background:' + statusColor(code) + '"></span></div>';
+  function bar(frac, code) {
+    var w = frac == null ? 0 : Math.max(0, Math.min(1, frac)) * 100;
+    return '<div class="pbar"><span style="width:' + w.toFixed(1) + '%;background:' + statusColor(code || ratioToCode(frac)) + '"></span></div>';
+  }
+  // An explicitly-labelled progress bar (achievement toward target), coloured by
+  // the performance status. Use this anywhere a bar appears in a row.
+  function progressLine(frac, code) {
+    return '<div class="prow"><span class="prow-l">Progress</span>' + bar(frac, code) + '<span class="prow-v">' + pct(frac) + '</span></div>';
   }
   // stacked distribution bar from a {code:count} map
   function stackBar(dist) {
@@ -363,9 +376,9 @@
       return '<div class="row impact">'
         + '<span class="imp-swatch" style="background:' + im.color + '"></span>'
         + '<div class="row-main"><div class="row-t">' + esc(im.name) + '</div>'
-        + '<div class="row-s">' + im.n + ' KPIs · Progress ' + pct(im.progress) + '</div>'
-        + bar(im.ratio) + '</div>'
-        + '<div class="row-end">' + dot(im.status) + '<span class="row-pct">' + pct(im.ratio) + '</span></div></div>';
+        + '<div class="row-s">' + im.n + ' KPIs</div>'
+        + progressLine(im.progress, im.status) + '</div>'
+        + '<div class="row-end">' + pill(im.status) + '</div></div>';
     }).join('') || '<div class="empty">No impacts in this plan yet.</div>';
 
     var legend = STATUS_ORDER.filter(function (k) { return d[k]; }).map(function (k) {
@@ -434,7 +447,7 @@
       +   (p.donor ? '<span class="dchip" style="--dc:' + (p.donor.color || '#888') + '">' + esc(p.donor.short_name || p.donor.name) + '</span>' : '')
       +   '<span class="muted">' + p.kpiCount + ' KPIs · ' + p.actCount + ' activities</span>'
       + '</div>'
-      + '<div class="pcard-bar">' + bar(p.ratio) + '<span class="pcard-pct">' + pct(p.ratio) + '</span></div>'
+      + progressLine(p.progress, p.status)
       + '</div>';
   }
   function stripCountry(name, co) {
@@ -530,23 +543,23 @@
     var rrows = Object.keys(byRegion).sort(function (a, b) { return avg(byRegion[b].ratios) - avg(byRegion[a].ratios); }).map(function (k) {
       var a = byRegion[k], ratio = avg(a.ratios);
       return '<div class="row"><span class="imp-swatch" style="background:' + (REGION_COLOR[k] || '#888') + '"></span>'
-        + '<div class="row-main"><div class="row-t">' + esc(k) + '</div><div class="row-s">' + a.ratios.length + ' KPIs</div>' + stackBar(a.dist) + '</div>'
-        + '<div class="row-end">' + dot(ratioToCode(ratio)) + '<span class="row-pct">' + pct(ratio) + '</span></div></div>';
+        + '<div class="row-main"><div class="row-t">' + esc(k) + '</div><div class="row-s">' + a.ratios.length + ' KPIs · performance mix</div>' + stackBar(a.dist) + '</div>'
+        + '<div class="row-end">' + pill(ratioToCode(ratio)) + '</div></div>';
     }).join('');
-    // by impact
+    // by impact — performance breakdown (status distribution), not a progress bar
     var irows = PILLARS.map(function (im) {
       return '<div class="row"><span class="imp-swatch" style="background:' + im.color + '"></span>'
-        + '<div class="row-main"><div class="row-t">' + esc(im.name) + '</div><div class="row-s">' + im.n + ' KPIs</div>' + bar(im.ratio) + '</div>'
-        + '<div class="row-end">' + dot(im.status) + '<span class="row-pct">' + pct(im.ratio) + '</span></div></div>';
+        + '<div class="row-main"><div class="row-t">' + esc(im.name) + '</div><div class="row-s">' + im.n + ' KPIs · performance mix</div>' + stackBar(im.dist) + '</div>'
+        + '<div class="row-end">' + pill(im.status) + '</div></div>';
     }).join('');
-    // top & bottom projects
+    // top & bottom projects, ranked by performance; bar shows their PROGRESS
     var ranked = PROJECTS.filter(function (p) { return p.ratio != null; });
     var top = ranked.slice().sort(function (a, b) { return b.ratio - a.ratio; }).slice(0, 5);
     var bottom = ranked.slice().sort(function (a, b) { return a.ratio - b.ratio; }).slice(0, 5);
     function prow(p) {
       return '<div class="row" data-proj="' + p.id + '"><div class="row-main"><div class="row-t">' + esc(stripCountry(p.name, p.country)) + '</div>'
-        + '<div class="row-s">' + esc(p.country ? p.country.name : '') + '</div>' + bar(p.ratio) + '</div>'
-        + '<div class="row-end">' + dot(p.status) + '<span class="row-pct">' + pct(p.ratio) + '</span></div></div>';
+        + '<div class="row-s">' + esc(p.country ? p.country.name : '') + '</div>' + progressLine(p.progress, p.status) + '</div>'
+        + '<div class="row-end">' + pill(p.status) + '</div></div>';
     }
     var legend = STATUS_ORDER.filter(function (k) { return d[k]; }).map(function (k) {
       return '<span class="lg"><i style="background:' + statusColor(k) + '"></i>' + statusLabel(k) + ' <b>' + d[k] + '</b></span>';
@@ -631,8 +644,8 @@
       return '<div class="krow" data-kpi="' + i.id + '">'
         + '<div class="krow-main"><div class="krow-t">' + esc(i.name) + '</div>'
         + '<div class="krow-s">' + esc(i.code || '') + ' · ' + (i.value == null ? 'no report' : compact(i.value) + ' / ' + compact(i.target)) + '</div>'
-        + bar(i.ratio) + '</div>'
-        + '<div class="row-end">' + dot(i.status) + '<span class="row-pct">' + pct(i.ratio) + '</span></div></div>';
+        + progressLine(i.progress, i.status) + '</div>'
+        + '<div class="row-end">' + pill(i.status) + '</div></div>';
     }
     var head = '<div class="sheet-hero">'
       + '<div class="sheet-hero-top">' + pill(p.status) + '<span class="muted">' + esc(p.code || '') + '</span></div>'
@@ -642,7 +655,7 @@
       +   (p.donor ? '<span class="dchip" style="--dc:' + (p.donor.color || '#888') + '">' + esc(p.donor.name) + '</span>' : '')
       + '</div></div>'
       + '<div class="minitiles">'
-      +   '<div class="mt"><b>' + pct(p.ratio) + '</b><span>Performance</span></div>'
+      +   '<div class="mt"><b style="color:' + statusColor(p.status) + '">' + pct(p.ratio) + '</b><span>Performance now</span></div>'
       +   '<div class="mt"><b>' + pct(p.progress) + '</b><span>Progress</span></div>'
       +   '<div class="mt"><b>' + money(p.budget) + '</b><span>Budget</span></div>'
       +   '<div class="mt"><b>' + p.actCount + '</b><span>Activities</span></div>'
@@ -681,8 +694,9 @@
       +   '<div class="mt"><b>' + (i.value == null ? '–' : compact(i.value)) + '</b><span>Current</span></div>'
       +   '<div class="mt"><b>' + compact(i.target) + '</b><span>Target</span></div>'
       +   '<div class="mt"><b>' + compact(i.baseline) + '</b><span>Baseline</span></div>'
-      +   '<div class="mt"><b style="color:' + statusColor(i.status) + '">' + pct(i.ratio) + '</b><span>Performance</span></div>'
+      +   '<div class="mt"><b style="color:' + statusColor(i.status) + '">' + pct(i.ratio) + '</b><span>Performance now</span></div>'
       + '</div>'
+      + '<div class="card padrow">' + progressLine(i.progress, i.status) + '</div>'
       + spark
       + '<div class="sec-h">Measurements <span>' + (i.series || []).length + '</span></div>'
       + '<div class="card list flush">' + meas + '</div>';

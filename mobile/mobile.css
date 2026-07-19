@@ -205,7 +205,7 @@ a { color: var(--brand); }
 .row-main { flex: 1; min-width: 0; }
 .row-t { font-size: 14px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .row-s { font-size: 11.5px; color: var(--ink-3); margin: 2px 0 6px; }
-.row-end { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
+.row-end { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 3px; flex: none; }
 .row-pct { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .impact .imp-swatch, .row .imp-swatch { width: 6px; align-self: stretch; border-radius: 6px; flex: none; }
 
@@ -215,6 +215,14 @@ a { color: var(--brand); }
 .sdot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 .pbar { height: 6px; border-radius: 6px; background: var(--bg-2); overflow: hidden; }
 .pbar span { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
+/* labelled PROGRESS bar — the word "Progress" makes explicit that the fill is
+   achievement toward target, never the point-in-time performance status. */
+.prow { display: flex; align-items: center; gap: 8px; }
+.prow-l { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); flex: none; }
+.prow .pbar { flex: 1; }
+.prow-v { font-size: 11.5px; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; flex: none; min-width: 30px; text-align: right; }
+.padrow { padding: 13px 15px; }
+.padrow .prow-l { color: var(--ink-2); }
 .stack { height: 8px; border-radius: 6px; overflow: hidden; display: flex; background: var(--bg-2); }
 .stack span { height: 100%; }
 
