@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0c85c7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Grassroots">
+<meta name="description" content="The Grassroots — results-based monitoring, in your pocket.">
+<title>The Grassroots</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="mobile.css?v=1">
+</head>
+<body>
+
+<!-- ===== SPLASH / BOOT ===== -->
+<div class="boot" id="boot">
+  <div class="boot-mark">
+    <svg viewBox="0 0 512 512" aria-hidden="true">
+      <circle cx="256" cy="256" r="178" fill="none" stroke="currentColor" stroke-width="36"/>
+      <circle cx="382" cy="130" r="58" fill="currentColor"/>
+      <circle cx="256" cy="256" r="34" fill="currentColor" opacity=".5"/>
+    </svg>
+  </div>
+  <div class="boot-wm sdg" aria-label="The Grassroots">
+    <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp">&nbsp;</span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+  </div>
+  <div class="boot-bar"><span></span></div>
+  <div class="boot-msg" id="bootMsg">Preparing your portfolio…</div>
+</div>
+
+<!-- ===== LOGIN ===== -->
+<div class="login" id="login" hidden>
+  <div class="login-inner">
+    <div class="login-mark">
+      <svg viewBox="0 0 512 512" aria-hidden="true">
+        <circle cx="256" cy="256" r="178" fill="none" stroke="currentColor" stroke-width="36"/>
+        <circle cx="382" cy="130" r="58" fill="currentColor"/>
+        <circle cx="256" cy="256" r="34" fill="currentColor" opacity=".5"/>
+      </svg>
+    </div>
+    <div class="login-wm sdg" aria-label="The Grassroots">
+      <span style="color:#E5243B">T</span><span style="color:#DDA63A">H</span><span style="color:#4C9F38">E</span><span class="sp">&nbsp;</span><span style="color:#C5192D">G</span><span style="color:#FF3A21">R</span><span style="color:#26BDE2">A</span><span style="color:#FCC30B">S</span><span style="color:#A21942">S</span><span style="color:#FD6925">R</span><span style="color:#DD1367">O</span><span style="color:#FD9D24">O</span><span style="color:#BF8B2E">T</span><span style="color:#3F7E44">S</span>
+    </div>
+    <p class="login-tag">Keeps track of what changes on the ground.</p>
+    <form id="loginForm" autocomplete="on">
+      <label class="fld"><span>Username</span><input id="lgUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="demo"></label>
+      <label class="fld"><span>Password</span><input id="lgPass" type="password" autocomplete="current-password" placeholder="demo"></label>
+      <div class="login-msg" id="lgMsg"></div>
+      <button class="btn primary block" type="submit">Sign in</button>
+    </form>
+    <div class="login-hint">Demo — each user's password is their username.<br>Owner: <b>demo</b> / <b>demo</b>.</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div class="app" id="app" hidden>
+
+  <header class="appbar" id="appbar">
+    <button class="ab-brand" id="abBrand" aria-label="About">
+      <svg viewBox="0 0 512 512" aria-hidden="true">
+        <circle cx="256" cy="256" r="178" fill="none" stroke="#0C85C7" stroke-width="40"/>
+        <circle cx="382" cy="130" r="58" fill="#0C85C7"/>
+        <circle cx="256" cy="256" r="34" fill="#0C85C7" opacity=".55"/>
+      </svg>
+    </button>
+    <div class="ab-title">
+      <div class="ab-t" id="abTitle">Home</div>
+      <button class="ab-plan" id="abPlan" aria-label="Switch development plan">
+        <span id="abPlanName">—</span>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div>
+    <button class="ab-user" id="abUser" aria-label="Account"><span id="abAvatar">?</span></button>
+  </header>
+
+  <main class="screen" id="screen"><!-- views render here --></main>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab on" data-view="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="tab" data-view="projects">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>
+      <span>Projects</span>
+    </button>
+    <button class="tab" data-view="activity">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
+      <span>Activity</span>
+    </button>
+    <button class="tab" data-view="insights">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Insights</span>
+    </button>
+    <button class="tab" data-view="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      <span>Profile</span>
+    </button>
+  </nav>
+
+  <!-- sheet: generic bottom sheet for plan switch / project detail / etc -->
+  <div class="sheet-scrim" id="scrim" hidden></div>
+  <section class="sheet" id="sheet" hidden aria-modal="true" role="dialog">
+    <div class="sheet-grab"></div>
+    <div class="sheet-head"><div class="sheet-title" id="sheetTitle"></div><button class="sheet-x" id="sheetX" aria-label="Close">✕</button></div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </section>
+</div>
+
+<script src="../js/seed.js?v=gr12"></script>
+<script src="../js/db.js?v=gr08"></script>
+<script src="mobile.js?v=1"></script>
+</body>
+</html>
