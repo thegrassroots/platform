@@ -1,0 +1,1423 @@
+/* =============================================================================
+ * RBM / M&E Monitor - compact, professional visual system.
+ * Typography: regular weight throughout; bold reserved for titles only.
+ * ========================================================================== */
+:root{
+  --bg:#f0f0f2; --bg-soft:#ebeced; --bg-sunk:#e0e3e6;
+  --panel:#f0f0f2; --card:#f5f6f8; --border:#d5d9e0; --border-soft:#e0e3e6;
+  --ink:#000000; --ink-2:#1a2233; --muted:#3d4a61;
+  --primary:#2563eb; --primary-ink:#ffffff; --primary-soft:#e0e4ef;
+  --kpi-pri:#0c447c; --kpi-pri-bg:#d8e3ec; --kpi-sec:#27500a; --kpi-sec-bg:#dce4d1;   /* soft Primary(blue)/Secondary(green) KPI badges: tinted bg + colour text */
+  --ocean:#a0c6d1; --land:#e4e1db; --land-line:#cac5ba;
+  --chip:#eef1f5; --chip-ink:#1a2233;
+  --green:#15954f; --amber:#e08a1e; --red:#e0453f; --grey:#3d4a61;
+  --shadow:0 1px 2px rgba(20,30,50,.05);
+  --shadow-lg:0 6px 20px rgba(20,30,50,.10);
+  --shadow-xl:0 18px 50px rgba(20,30,50,.28);
+  --radius:6px; --radius-sm:5px;
+  --hdr:46px; --sub:32px; --tick:30px;
+  --sans:'Inter','Segoe UI Variable Text','Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  --w-title:650;   /* titles */
+  --w-strong:550;  /* small emphasis on colour */
+}
+[data-theme="dark"]{
+  --bg:#0b1220; --bg-soft:#0e1626; --bg-sunk:#0c1424;
+  --panel:#101a2c; --card:#0f1a2e; --border:#1f2c43; --border-soft:#182338;
+  --ink:#e6ecf8; --ink-2:#c2cee2; --muted:#94a4c1;
+  --primary:#3b82f6; --primary-ink:#ffffff; --primary-soft:#14203a;
+  --kpi-pri:#b5d4f4; --kpi-pri-bg:#0c447c; --kpi-sec:#c0dd97; --kpi-sec-bg:#27500a;   /* soft Primary(blue)/Secondary(green) KPI badges: tinted bg + colour text */
+  --ocean:#0f2036; --land:#18271f; --land-line:#26382b;
+  --chip:#15233b; --chip-ink:#bccbe4;
+  --shadow:0 1px 2px rgba(0,0,0,.5); --shadow-lg:0 10px 26px rgba(0,0,0,.55);
+  --shadow-xl:0 20px 55px rgba(0,0,0,.65);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--sans);color:var(--ink);background:var(--bg-soft);
+  font-size:11px;line-height:1.32;font-weight:400;overflow:hidden;-webkit-font-smoothing:antialiased;
+  letter-spacing:-.005em;
+}
+/* one universal typeface everywhere; tabular figures only on numeric readouts
+   (aligns digits, does not alter letterforms) */
+.metric b,.kpi .v,.facet .ct,.card .dt,.pager .pg,.tag,.hbars .hb .n,.legend .lrow .v,.legend .cnt,.tbl td,.tbl th{
+  font-variant-numeric:tabular-nums;
+}
+button{font-family:inherit;cursor:pointer;letter-spacing:inherit;font-weight:400}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+::-webkit-scrollbar-track{background:transparent}
+
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ---- header --------------------------------------------------------------- */
+.header{
+  height:var(--hdr);flex:0 0 var(--hdr);display:flex;align-items:center;
+  gap:11px;padding:0 13px;background:var(--panel);border-bottom:1px solid var(--border);z-index:40;
+}
+.brand{display:flex;align-items:center;gap:8px;min-width:0}
+.brand-ic{width:25px;height:25px;flex:0 0 auto;display:block}
+.brand-tx{display:flex;flex-direction:column;gap:3px;min-width:0}
+.brand[role="button"]{cursor:pointer}
+.brand[role="button"]:hover .wm.sdg{filter:brightness(1.08) saturate(1.1)}
+.brand[role="button"]:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:4px}
+.brand .wm{font-weight:var(--w-title);letter-spacing:.02em;font-size:11.5px;white-space:nowrap}
+.brand .wm b{color:var(--primary);font-weight:var(--w-title)}
+.wm.sdg{font-size:17px;font-weight:800;letter-spacing:.03em;line-height:1;white-space:nowrap}
+.wm.sdg .sp{display:inline-block;width:.3em}
+.header .wm.sdg span{color:#1CABE2 !important} /* brand blue */
+.brand .rain{height:3px;width:100%;border-radius:2px;
+  background:linear-gradient(90deg,#E5243B,#DDA63A,#4C9F38,#26BDE2,#FCC30B,#FD6925,#0A97D9,#00689D,#19486A);}
+.snap{display:flex;align-items:center;gap:6px;background:var(--bg-sunk);border:1px solid var(--border);
+  border-radius:999px;padding:4px 9px;color:var(--ink-2);font-size:10px}
+.snap .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px rgba(21,149,79,.18)}
+.seg{display:flex;background:var(--bg-sunk);border:1px solid var(--border);border-radius:var(--radius);padding:2px}
+.seg button{border:0;background:transparent;padding:5px 12px;border-radius:4px;color:var(--ink-2);font-size:10.5px}
+.seg button.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.spacer{flex:1}
+.hbtn{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);
+  padding:5px 10px;border-radius:var(--radius);font-size:10.5px;display:inline-flex;align-items:center;gap:6px}
+.hbtn:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.hbtn:disabled{opacity:.45;cursor:not-allowed}
+.hbtn.ghost{color:var(--muted)}
+.hbtn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.hbtn.primary:hover{filter:brightness(1.05)}
+
+/* ---- portfolio metric (in-view count) ------------------------------------- */
+.metric{display:flex;align-items:baseline;gap:5px}
+.metric b{font-size:13px;font-weight:var(--w-title);letter-spacing:-.02em}
+.metric span{color:var(--muted);letter-spacing:.1em;font-size:8px}
+/* footer placement: pinned to the far-right end of the bottom bar */
+.foot-metric{margin-left:auto;align-items:center;padding-left:11px;border-left:1px solid var(--border)}
+/* the count basis toggle sits where the metric label used to - narrow, label-sized,
+   but clickable: one control both shows and switches Projects <-> Activities */
+.foot-toggle{display:inline-flex;align-items:center;justify-content:center;gap:3px;
+  width:84px;flex:0 0 auto;border:1px solid var(--border);
+  background:var(--bg-sunk);color:var(--muted);border-radius:5px;padding:2px 6px;
+  font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
+  transition:border-color .12s,color .12s}
+.foot-toggle:hover{border-color:var(--primary);color:var(--primary)}
+
+/* ---- main grid ------------------------------------------------------------ */
+.main{flex:1;display:grid;grid-template-columns:20% 1fr 20%;min-height:0;position:relative}
+.main.no-left{grid-template-columns:0 1fr 20%}
+.main.no-right{grid-template-columns:20% 1fr 0}
+.main.no-left.no-right{grid-template-columns:0 1fr 0}
+
+/* ---- sidebars ------------------------------------------------------------- */
+.side{background:var(--panel);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.resizer{position:absolute;top:0;bottom:0;width:6px;cursor:col-resize;z-index:16}
+.resizer.l{right:0}.resizer.r{left:0}
+.resizer::after{content:"";position:absolute;top:0;bottom:0;width:2px;background:transparent;transition:background .12s}
+.resizer.l::after{right:0}.resizer.r::after{left:0}
+.resizer:hover::after,.resizer.drag::after{background:var(--primary)}
+.side.left{border-right:1px solid var(--border)}
+.side.right{border-left:1px solid var(--border)}
+/* both side panes: always normal weight - no bold for categories, groups, or cards */
+.side.left, .side.left *, .side.right, .side.right *{font-weight:400 !important}
+.side-scroll{overflow:auto;padding:9px 9px 13px}
+.sec-h{font-size:9px;font-weight:var(--w-title);letter-spacing:.1em;color:var(--muted);margin:3px 2px 6px;text-transform:uppercase}
+/* draggable / collapsible filter groups */
+.fgroup{margin-bottom:4px}
+.fgroup+.fgroup{border-top:1px solid var(--border);padding-top:9px;margin-top:9px}
+.fg-head{display:flex;align-items:center;gap:5px;margin:3px 2px 6px;cursor:grab;user-select:none;border-radius:5px}
+.fg-head:hover{background:var(--bg-soft)}
+.fg-head:hover .fg-title,.fg-head:hover .fg-caret{color:var(--ink-2)}
+.fg-head.dragover-target{box-shadow:inset 0 2px 0 var(--primary)}
+.fg-grip{flex:0 0 auto;font-size:10px;line-height:1;color:var(--muted);opacity:.55;letter-spacing:-.15em;padding-right:1px}
+.fg-title{flex:1;min-width:0;font-size:9px;letter-spacing:.1em;color:var(--ink);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fg-caret{flex:0 0 auto;width:16px;height:16px;display:flex;align-items:center;justify-content:center;
+  font-size:14px;line-height:1;color:var(--ink-2);border:1px solid var(--border);border-radius:4px;background:var(--bg-soft)}
+.fg-caret::before{content:"\2212"}                 /* − : expanded, click to collapse */
+.fgroup.collapsed .fg-caret::before{content:"+"}   /* + : collapsed, click to expand */
+.fg-head:hover .fg-caret{color:var(--ink);border-color:var(--primary);background:var(--panel)}
+.fgroup.collapsed .fg-body{display:none}
+.fgroup.dragging{opacity:.4}
+.side-scroll.dragging-active .fg-body{pointer-events:none}
+.search{position:relative;margin-bottom:9px}
+.search input{width:100%;border:1px solid var(--border);background:var(--bg-soft);color:var(--ink);
+  border-radius:var(--radius);padding:6px 26px 6px 9px;font-family:inherit;font-size:10.5px}
+.search input:focus{outline:none;border-color:var(--primary);background:var(--panel)}
+.search .go{position:absolute;right:5px;top:4px;border:0;background:transparent;color:var(--muted);padding:4px}
+
+/* facet rows */
+.facet{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:5px;position:relative;cursor:pointer;user-select:none}
+.facet:hover{background:var(--bg-soft)}
+.facet.sel{background:var(--primary-soft)}
+.facet .exp,.facet .exp-sp{flex:0 0 15px;width:15px;height:15px;padding:0}
+.facet .exp{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:12px;display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer}
+.facet .exp:hover{background:var(--bg-sunk);color:var(--ink-2)}
+.facet input[type=checkbox]{accent-color:var(--primary);width:12px;height:12px;margin:0;pointer-events:auto;cursor:pointer;flex:0 0 auto}
+.facet input[type=checkbox]:hover{outline:2px solid var(--primary-soft);outline-offset:1px}
+.facet .sq{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+.facet .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);font-size:10.5px}
+.facet.cat .nm{font-weight:var(--w-strong);color:var(--ink)}
+.facet .ct{color:var(--ink-2);font-size:10px}
+.facet .bar{flex:0 0 52px;height:6px;border-radius:3px;background:var(--bg-sunk);overflow:hidden}
+.facet .bar>i{display:block;height:100%;border-radius:3px}
+.divider{height:1px;background:var(--border);margin:10px 0}
+/* category (region / pillar) headers: tighten so full names still fit on one line beside the bar */
+.facet.cat .nm{letter-spacing:-.01em}
+/* nested indentation: each level shifts right, with a guide line */
+.subrow{margin-left:9px;padding-left:9px;border-left:1px solid var(--border)}
+.subrow .facet{padding:2px 4px}
+
+/* ---- map ------------------------------------------------------------------ */
+.mapwrap{position:relative;overflow:hidden;background:var(--ocean)}
+/* MapLibre vector basemap (behind). Deliberately no z-index: that would open a
+   stacking context and trap the attribution links underneath #map (z-index 1),
+   leaving them visible but unclickable. Painted before #map by DOM order. */
+#basemap{position:absolute;inset:0}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;z-index:1;background:transparent}
+#map.drag{cursor:grabbing}
+/* MapLibre chrome hidden - the app has its own pan/zoom controls. The attribution
+   is the exception: the basemap is OpenStreetMap-derived and ODbL requires the
+   credit to stay visible, so it is kept (compact, bottom-right) rather than removed. */
+.maplibregl-ctrl-logo{display:none!important}
+.maplibregl-control-container .maplibregl-ctrl-top-left,
+.maplibregl-control-container .maplibregl-ctrl-top-right,
+.maplibregl-control-container .maplibregl-ctrl-bottom-left{display:none!important}
+.maplibregl-ctrl-bottom-right{z-index:2}
+.maplibregl-ctrl-attrib{font-size:10px;background:rgba(255,255,255,.72);border-radius:3px 0 0 0}
+.maplibregl-ctrl-attrib a{color:var(--ink-2)}
+[data-theme="dark"] .maplibregl-ctrl-attrib{background:rgba(20,24,31,.72)}
+[data-theme="dark"] .maplibregl-ctrl-attrib-button{filter:invert(1)}
+.map-controls{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:5px;z-index:10}
+.map-controls button{width:28px;height:28px;border-radius:var(--radius);border:1px solid var(--border);
+  background:var(--panel);color:var(--ink-2);font-size:14px;box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:center}
+.map-controls button:hover{color:var(--primary);border-color:var(--primary)}
+.map-controls button svg{display:block}
+/* Flat/Globe toggle lit while the globe projection is active. */
+.map-controls button.on{color:var(--primary);border-color:var(--primary);background:var(--primary-soft)}
+/* Rotation control: hidden on the flat map (nothing to spin), and carrying both
+   glyphs - pause while the globe turns, play once it has come to rest. */
+.map-controls button.hide{display:none}
+#zSpin .ic-play{display:none}
+#zSpin.paused .ic-pause{display:none}
+#zSpin.paused .ic-play{display:block}
+.collapse{position:absolute;top:50%;transform:translateY(-50%);z-index:12;width:21px;height:36px;
+  border:1px solid var(--border);background:var(--panel);color:var(--ink-2);box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:center;border-radius:5px;font-size:11px}
+/* anchored just inside the centre pane; --paneL/--paneR track the live
+   sidebar widths (set by setGrid() in app.js; 20% matches the CSS default) */
+.collapse.l{left:calc(var(--paneL, 20%) + 8px)}.collapse.r{right:calc(var(--paneR, 20%) + 8px)}
+.collapse:hover{color:var(--primary)}
+
+.legend{position:absolute;left:11px;bottom:11px;z-index:10;background:var(--panel);
+  border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);width:210px;overflow:hidden}
+.legend .lh{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-weight:var(--w-title);letter-spacing:.05em;font-size:9px}
+.legend .lh span{font-size:11px;color:#666666}
+.legend .lh button{border:0;background:var(--bg-sunk);color:var(--ink-2);width:18px;height:18px;border-radius:4px}
+.legend .lb{padding:1px 10px 10px}
+.legend select{width:100%;border:1px solid var(--border);background:var(--bg-soft);color:var(--ink);
+  border-radius:5px;padding:5px 7px;font-family:inherit;font-size:10px;margin-bottom:7px}
+.legend .note{color:var(--muted);font-size:9px;margin:1px 0}
+.legend .cnt{margin:6px 0 4px;font-size:10px;color:var(--ink-2)}
+.legend #legendRows{max-height:44vh;overflow-y:auto}
+.legend .lrow{display:flex;align-items:center;gap:7px;padding:2px 0;font-size:10px}
+.legend .lrow .sq{width:9px;height:9px;border-radius:50%}
+.legend .lrow .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
+.legend .lrow .v{color:var(--ink-2)}
+.legend.min .lb{display:none}
+
+.bub{cursor:pointer}
+.bub.cluster{cursor:pointer}
+#bubbles{filter:drop-shadow(0 1.6px 1.6px rgba(0,0,0,.45))}   /* soft shadow cast below each bubble */
+/* ---- globe mode -----------------------------------------------------------
+   In globe mode MapLibre owns the camera (spin / zoom / rotate), so the SVG
+   overlay must let pointer events fall through to the canvas underneath - only
+   the marker spheres stay hittable. The overlay's viewBox becomes 1:1 screen px
+   and each marker is positioned by mlMap.project(), so it tracks the sphere. */
+#map.globe{pointer-events:none;cursor:default}
+#map.globe .bub{pointer-events:auto;cursor:pointer}
+/* the flat drop-shadow is sized in world units; globe markers cast their own
+   ground shadow ellipse instead, so drop the filter to keep them crisp */
+#map.globe #bubbles{filter:none}
+.bubshadow{pointer-events:none}
+.bubstem{pointer-events:none;stroke-linecap:round}
+.bubgloss{pointer-events:none}
+.bubcount{fill:#fff;font-weight:700;text-anchor:middle;pointer-events:none;
+  font-family:var(--sans);paint-order:stroke;letter-spacing:-.02em}
+.country{stroke:var(--land-line);stroke-width:.4;vector-effect:non-scaling-stroke;fill:var(--land);opacity:.5}
+.cborder{fill:none;stroke:#8b929c;stroke-width:.2;vector-effect:non-scaling-stroke;pointer-events:none}
+
+.tip{position:absolute;z-index:20;pointer-events:none;background:var(--panel);border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:7px 9px;max-width:220px;opacity:0;transition:opacity .1s}
+.tip.on{opacity:1}
+.tip .tt{font-weight:var(--w-title);margin-bottom:3px;font-size:10.5px}
+.tip .tr{display:flex;justify-content:space-between;gap:12px;color:var(--ink-2);font-size:10px;padding:1px 0}
+
+/* ---- right list ----------------------------------------------------------- */
+.list-top{padding:8px 10px 6px;border-bottom:1px solid var(--border-soft);background:var(--bg-soft)}
+.list-top .row1{display:flex;gap:6px;margin-bottom:7px}
+.list-top .row1 .search{flex:1;margin:0}
+.list-top .allbtn{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);
+  padding:0 12px;border-radius:var(--radius);font-size:10.5px}
+.list-top .allbtn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.sorts{display:flex;gap:11px;font-size:8.5px;align-items:center}
+.sorts .sortlbl{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:8px}
+.sorts button{border:0;background:transparent;color:var(--muted);padding:1px 0;font-size:8.5px;letter-spacing:.02em}
+.sorts button.on{color:var(--primary);font-weight:var(--w-strong)}
+.sorts button .dir{margin-left:2px}
+
+/* cards: rounded, elevated, status-accented list tiles */
+.list-scroll{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:11px;background:var(--bg-soft)}
+.card{position:relative;flex:0 0 auto;padding:6px 12px 6px 15px;background:var(--panel);border:1px solid var(--muted);
+  border-radius:10px;box-shadow:var(--shadow);cursor:pointer;overflow:hidden;
+  transition:background .13s ease,border-color .13s ease,box-shadow .13s ease,transform .09s ease}
+.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sc,var(--muted))}
+.card:hover{background:var(--primary-soft);border-color:var(--primary);box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.card:active{transform:translateY(0);box-shadow:var(--shadow)}
+.card .ch{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
+.card .tt{font-weight:500;color:var(--ink);min-width:0;font-size:10.5px;line-height:1.25}
+.card .dt{color:var(--muted);font-size:9.5px;white-space:nowrap;flex:0 0 auto;margin-top:1px}
+.card .sub{color:var(--ink-2);font-size:10px;margin:4px 0 5px;line-height:1.3}
+.card .geo{display:inline-flex;align-items:center;gap:5px;background:var(--bg-sunk);border:1px solid var(--border);
+  border-radius:999px;padding:2px 9px;color:var(--ink-2);font-size:9.5px;margin-bottom:4px}
+.pwrap{display:flex;align-items:center;gap:9px;margin:0 0 4px}
+.progress{flex:1;height:5px;border-radius:999px;background:var(--bg-sunk);overflow:hidden}
+.progress>i{display:block;height:100%;border-radius:999px;transition:width .3s ease}
+.pct{font-size:9px;font-weight:var(--w-strong);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:26px;text-align:right}
+.tags{display:flex;flex-wrap:wrap;gap:4px}
+.tag{border-radius:999px;padding:2px 8px;font-weight:var(--w-strong);font-size:8.5px;background:var(--chip);color:var(--chip-ink);white-space:nowrap;letter-spacing:.02em}
+.tag.sdg{color:#fff}
+.tag.lvl{text-transform:uppercase;letter-spacing:.04em}
+.tag.st{color:#fff}
+.tag.src{background:transparent;border:1px solid var(--border);color:var(--muted);font-weight:400}
+
+.pager{display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 6px;border-top:1px solid var(--border);color:var(--ink-2);font-size:10px}
+.pager button{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+  border:1px solid var(--border);background:var(--panel);color:var(--ink-2);border-radius:7px;
+  transition:background .13s ease,border-color .13s ease,color .13s ease,transform .09s ease}
+.pager button svg{display:block}
+.pager button:hover{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}
+.pager button:active{transform:translateY(1px)}
+.pager .pg{min-width:52px;text-align:center;font-weight:var(--w-strong);color:var(--ink-2);
+  letter-spacing:.03em;font-variant-numeric:tabular-nums;padding:0 4px}
+
+/* ---- bottom bar (theme + admin entry points) ----------------------------- */
+.botbar{flex:0 0 auto;background:var(--panel);border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;padding:6px 12px}
+/* ---- ticker (slower marquee) - legacy styles kept for reference ----------- */
+.ticker{height:var(--tick);flex:0 0 var(--tick);background:var(--panel);border-top:1px solid var(--border);
+  display:flex;align-items:center;overflow:hidden;position:relative}
+.ticker::before,.ticker::after{content:'';position:absolute;top:0;bottom:0;width:34px;z-index:2;pointer-events:none}
+.ticker::before{left:0;background:linear-gradient(90deg,var(--panel),transparent)}
+.ticker::after{right:0;background:linear-gradient(270deg,var(--panel),transparent)}
+.ticker .track{display:flex;align-items:center;gap:20px;white-space:nowrap;padding-left:100%;
+  animation:tick 240s linear infinite}
+.ticker:hover .track{animation-play-state:paused}
+.ticker .ti{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2)}
+.ticker .ti .sd{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+/* kind chip - pillar label on KPIs, or PROJECT / RESULT / PORTFOLIO */
+.ticker .ti .kd{color:var(--muted);font-weight:var(--w-strong);letter-spacing:.05em;font-size:8px;
+  text-transform:uppercase;border:1px solid var(--border);border-radius:3px;padding:1px 4px;line-height:1.3}
+.ticker .ti.k-prj .kd{color:var(--primary);border-color:var(--primary-soft);background:var(--primary-soft)}
+.ticker .ti.k-res .kd,.ticker .ti.k-sum .kd{color:var(--ink-2)}
+.ticker .ti .tx{color:var(--ink);font-weight:var(--w-strong);max-width:230px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.ticker .ti .tv{color:var(--ink-2);font-size:9.5px;font-variant-numeric:tabular-nums}
+.ticker .ti .tp{font-weight:var(--w-title);font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.ticker .ti .td{font-size:8px;line-height:1}
+.ticker .ti .sep{color:var(--border);font-size:9px}
+.ticker .ti.clk{cursor:pointer;border-radius:5px;padding:2px 4px;margin:0 -4px;transition:background .12s ease}
+.ticker .ti.clk:hover{background:var(--bg-sunk)}
+.ticker .ti.lead{gap:8px;padding-right:14px;margin-right:2px;border-right:1px solid var(--border)}
+.ticker .ti.lead .kd{background:#1CABE2;color:#fff;border-color:#1CABE2}
+@keyframes tick{to{transform:translateX(-100%)}}
+
+/* ---- insights dashboard --------------------------------------------------- */
+.insights{overflow:hidden;padding:0;background:var(--bg-soft);display:flex;flex-direction:column}
+/* min-height 36px matches .side-head so the filter bar lines up with the left toggles */
+.ins-ctrl{display:flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.ins-ctrl .ax{color:var(--muted);font-weight:var(--w-strong);margin:0 1px 0 4px}
+.ins-ctrl select{border:1px solid var(--border);background:var(--panel);color:var(--ink);border-radius:5px;
+  padding:4px 6px;font-family:inherit;font-size:10.5px}
+.ins-ctrl .swap{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);width:26px;height:26px;
+  border-radius:5px;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+.ins-ctrl .swap:hover{color:var(--primary);border-color:var(--primary)}
+.ins-modes{margin-left:auto;display:flex;background:var(--bg-sunk);border:1px solid var(--border);border-radius:6px;padding:2px}
+.ins-modes button{border:0;background:transparent;padding:4px 11px;border-radius:4px;color:var(--ink-2);font-size:10.5px}
+.ins-modes button.on{background:var(--primary);color:#fff}
+.ins-chart{flex:1;min-height:0;padding:10px 12px 4px;overflow:hidden}
+.ins-chart svg{width:100%;height:100%;display:block}
+.ins-chart .axlabel{fill:var(--muted);font-size:10px}
+.ins-chart .gridline{stroke:var(--border-soft)}
+.ins-chart .total{fill:var(--ink-2);font-size:10px;font-weight:var(--w-strong)}
+.ins-chart .seg{cursor:default}
+.ins-chart .xlab{fill:var(--ink-2);font-size:10.5px}
+.ins-legend{display:flex;flex-wrap:wrap;gap:4px 14px;padding:6px 12px 12px;border-top:1px solid var(--border-soft);overflow:auto;max-height:64px}
+.ins-legend .li{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2)}
+.ins-legend .li .sq{width:10px;height:10px;border-radius:2px;flex:0 0 auto}
+.ins-legend .li.mut{color:var(--muted);font-style:italic}
+
+.empty{color:var(--muted);text-align:center;padding:28px 12px}
+.hide{display:none !important}
+
+/* ---- detail modal --------------------------------------------------------- */
+.modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(15,23,42,.42);
+  backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .14s}
+.modal-overlay.on{opacity:1;pointer-events:auto}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-xl);
+  width:810px;max-width:100%;height:86vh;max-height:86vh;display:flex;flex-direction:column;transform:translateY(6px);transition:transform .14s}
+.modal-overlay.on .modal{transform:none}
+.modal-head{display:flex;align-items:flex-start;gap:12px;padding:14px 17px;border-bottom:1px solid var(--border);position:sticky;top:0}
+.modal-head .mt{flex:1;min-width:0}
+/* report-type eyebrow: RESULTS REPORT (blue) vs FORECAST REPORT (navy) - tells the
+   two modal screens apart at a glance */
+.modal-head .mt .mkicker{display:flex;align-items:center;gap:7px;font-size:8.5px;letter-spacing:.09em;
+  text-transform:uppercase;font-weight:var(--w-strong);color:var(--primary);margin-bottom:3px}
+.modal-head .mt .mkicker:empty{display:none}
+.modal-head .mt .mkicker.fc{color:#0c447c}
+/* subject pill: what the report is ABOUT - Impact / Project / Country … */
+.modal-head .mt .mkicker .mk-type{display:inline-block;border-radius:999px;padding:1px 8px;
+  background:var(--muted);color:#fff;font-size:8px;letter-spacing:.05em;font-weight:var(--w-strong)}
+.modal-head .mt h2{margin:0;font-size:13px;font-weight:var(--w-title);line-height:1.32;color:var(--ink)}
+.modal-head .mt .msub{color:var(--muted);font-size:10px;margin-top:3px}
+.modal-head .mt .msub-impact{color:var(--muted);font-size:9.5px;margin-top:2px;line-height:1.35;opacity:.85}
+.modal-head .mx{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);width:27px;height:27px;
+  border-radius:6px;font-size:15px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+.modal-head .mx:hover{color:var(--primary);border-color:var(--primary)}
+.modal-head .mback{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);width:27px;height:27px;
+  border-radius:6px;font-size:18px;line-height:1;flex:0 0 auto;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.modal-head .mback:hover{color:var(--primary);border-color:var(--primary)}
+.modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:15px 17px 19px}
+/* persistent modal action bar: pinned below the scrolling body, so Close / Export /
+   Save stay reachable on every tab regardless of how long the form scrolls */
+.modal-foot{display:flex;align-items:center;gap:8px;padding:11px 17px;border-top:1px solid var(--border);
+  background:var(--panel);border-radius:0 0 10px 10px;flex:0 0 auto}
+.modal-foot .ufmsg{margin-right:auto;color:var(--red);font-size:10px}
+.modal-foot .ufmsg.ok{color:var(--green)}
+@media (max-width:640px){ .modal-foot{border-radius:0} }
+
+/* ---- About modal ---------------------------------------------------------- */
+.modal.about{width:560px;height:auto;max-height:88vh}
+.about-hero{display:flex;flex-direction:column;gap:6px;align-items:flex-start;
+  padding:4px 0 16px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.about-hero .about-brandrow{display:flex;align-items:center;gap:12px}
+.about-hero .about-ic{width:42px;height:42px;flex:0 0 auto;display:block}
+.about-hero .wm.sdg{font-size:22px;letter-spacing:.04em}
+.about-hero .wm.sdg span{color:#1CABE2 !important} /* brand blue */
+.about-hero .rain{height:4px;width:100%;border-radius:2px;
+  background:linear-gradient(90deg,#E5243B,#DDA63A,#4C9F38,#26BDE2,#FCC30B,#FD6925,#0A97D9,#00689D,#19486A)}
+.about-lead{color:var(--ink-2);font-size:11.5px;line-height:1.6;margin:0 0 12px}
+.about-lead b{color:var(--ink);font-weight:var(--w-strong)}
+.about-lead:last-of-type{margin-bottom:0}
+.about-foot{margin-top:16px;text-align:center;color:var(--muted);font-size:9.5px;letter-spacing:.02em}
+.about-foot #appVersion{font-variant-numeric:tabular-nums}
+.about-foot .about-mail{color:var(--accent,var(--ink-2));text-decoration:none}
+.about-foot .about-mail:hover{text-decoration:underline}
+/* "Your organization" tab: profile form, logo picker, activation status */
+.about .about-tabs{padding:12px 17px 0}
+.org-onoff{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--ink);
+  border:1px solid var(--border);background:var(--bg-soft);border-radius:9px;padding:10px 12px;margin-bottom:12px;cursor:pointer}
+.org-onoff input{accent-color:var(--primary)}
+.org-status{color:var(--muted);font-size:10px;margin-left:auto}
+.org-status.ok{color:var(--green)}
+.org-logo-row{display:flex;align-items:center;gap:14px;margin-top:14px}
+.org-logo-prev{flex:0 0 auto;width:132px;height:68px;border:1px dashed var(--border);border-radius:8px;
+  background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.org-logo-prev span{color:var(--muted);font-size:9.5px}
+.org-logo-prev img{max-width:100%;max-height:100%;display:block}
+.org-logo-btns{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0}
+.org-logo-btns .hbtn+.hbtn{margin-left:0}
+.org-logo-hint{color:var(--muted);font-size:9.5px;line-height:1.5}
+/* one row: [badge] title  ·  ↳ sub-line  ................  [Export PDF] */
+.chain{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:0 12px;margin-bottom:14px}
+.chain .lnk{display:flex;gap:9px;padding:5px 0;position:relative;min-width:0;flex:0 1 auto}
+.chain .lnk .badge{flex:0 0 60px;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#fff;
+  border-radius:4px;padding:2px 0;text-align:center;height:fit-content;font-weight:var(--w-strong)}
+.chain .lnk .txt{color:var(--ink-2);font-size:10.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chain .lnk.here .txt{color:var(--ink);font-weight:var(--w-strong)}
+.chain .kids{color:var(--muted);font-size:9.5px;padding:0;white-space:nowrap;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+.chain .rc-export{margin-left:auto;flex:0 0 auto;border:1px solid var(--border);background:var(--panel);
+  color:var(--ink-2);padding:5px 11px;border-radius:var(--radius);font-size:10px;font-weight:var(--w-strong);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer}
+.chain .rc-export:hover{border-color:var(--primary);color:var(--primary)}
+.chain .rc-export:disabled{opacity:.55;cursor:default}
+.chain .rc-export .ic{font-size:12px;line-height:1}
+/* forecast report header: dimension/horizon line on the left, Export PDF on the right */
+.fcr-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.fcr-head .fc-h{margin:0;flex:1 1 auto;min-width:0}
+.fcr-export{margin-left:auto;flex:0 0 auto;border:1px solid var(--border);background:var(--panel);
+  color:var(--ink-2);padding:5px 11px;border-radius:var(--radius);font-size:10px;font-weight:var(--w-strong);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer}
+.fcr-export:hover{border-color:var(--primary);color:var(--primary)}
+.fcr-export .ic{font-size:12px;line-height:1}
+.mgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:14px}
+.stat{background:var(--bg-soft);border:1px solid var(--border);border-radius:7px;padding:8px 10px}
+.stat .sl{color:var(--muted);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase}
+.stat .sv{font-size:15px;font-weight:var(--w-title);margin-top:3px;color:var(--ink)}
+.stat .sv small{font-size:10px;color:var(--muted);font-weight:400}
+.stat .ss{margin-top:5px;min-height:16px}
+.stat .ss .sbadge{display:inline-block;font-size:9.5px;font-weight:500;color:var(--chip-ink);background:var(--chip);border-radius:5px;padding:1px 6px;vertical-align:middle;letter-spacing:.02em}
+.msec{margin-bottom:14px}
+.msec h4{margin:0 0 8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-title)}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
+.meta .row{display:flex;justify-content:space-between;gap:12px;font-size:10.5px;border-bottom:1px dashed var(--border-soft);padding:3px 0}
+.meta .row .k{color:var(--muted)}
+.meta .row .v{color:var(--ink-2);text-align:right}
+.note-box{background:var(--bg-soft);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:6px;padding:9px 11px;font-size:10.5px;color:var(--ink-2);line-height:1.45}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;color:#fff;font-size:9px;font-weight:var(--w-strong)}
+/* Active-filter strip: states which slice of the portfolio a results box is
+   showing. Absent entirely when nothing is filtered, so its presence alone is the
+   signal that the numbers below are narrowed. */
+.fstrip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;padding:8px 10px;
+  background:var(--bg-soft);border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:6px}
+.fstrip-lbl{color:var(--muted);font-size:8.5px;font-weight:var(--w-strong);letter-spacing:.05em;text-transform:uppercase}
+.fstrip .fchip{display:inline-flex;align-items:baseline;gap:5px;max-width:100%;
+  background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:2px 9px;
+  font-size:10px;color:var(--ink-2);overflow-wrap:anywhere}
+.fstrip .fchip b{color:var(--muted);font-weight:var(--w-strong);font-size:8.5px;
+  letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+/* entity-summary results popup (donor/output/country/project/… ) */
+.esum-grid{display:flex;gap:9px;margin-bottom:14px}
+.esum-grid .stat{flex:1 1 0;min-width:0}
+/* auto layout: each column sizes to its own content - wide content → wide column,
+   small content → narrow column. Text wraps so nothing forces a horizontal scroll. */
+.esum-tbl{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:auto}
+.esum-tbl th{text-align:left;color:var(--muted);font-weight:var(--w-strong);padding:5px 7px;border-bottom:1px solid var(--border);white-space:nowrap;vertical-align:bottom}
+.esum-tbl td{padding:6px 7px;border-bottom:1px solid var(--border-soft);color:var(--ink-2);overflow-wrap:anywhere}
+.esum-tbl th.num,.esum-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;width:1%}
+.esum-tbl th.tcol,.esum-tbl td.tcol{text-align:left;white-space:nowrap;width:1%}
+.esum-tbl tbody tr{cursor:pointer}
+.esum-tbl tbody tr:hover{background:var(--bg-soft)}
+.esum-tbl.esum-static tbody tr{cursor:default}
+.esum-tbl .esum-nm{color:var(--ink)}
+.esum-tbl .esum-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+/* Chain-level groups: a result table sectioned one level down the chain (Plan→
+   Impacts, Impact→Outcomes, Outcome→Outputs, …). Each group is its own rounded
+   card - the hierarchy code + statement label sit OUTSIDE the card, the column
+   header + rows INSIDE it. Shared by the results report and the forecast report. */
+.esum-group{margin:0 0 14px}
+.esum-group:last-child{margin-bottom:0}
+.esum-group-hd{display:flex;align-items:center;gap:8px;padding:0 3px 7px;min-width:0}
+.esum-grp-bar{display:inline-block;width:3px;height:13px;border-radius:2px;flex:none}
+.esum-grp-code{color:var(--ink);font-weight:var(--w-title);letter-spacing:.01em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+.esum-grp-t{color:var(--ink-2);font-weight:var(--w-strong);letter-spacing:.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.esum-grp-n{margin-left:auto;color:var(--muted);font-weight:var(--w-strong);
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+/* the card: rounded + clipped; the column header is tinted so it reads as a
+   header sitting inside the card, and rows drop their own outer border. */
+.esum-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  background:var(--card);box-shadow:var(--shadow)}
+.esum-card table{margin:0}
+.esum-card thead th{background:var(--bg-soft);border-bottom:1px solid var(--border)}
+.esum-card tbody tr:last-child td{border-bottom:none}
+.esum-card th:first-child,.esum-card td:first-child{padding-left:11px}
+.esum-card th:last-child,.esum-card td:last-child{padding-right:11px}
+/* the forecast report nests these group cards inside its outer card - keep the
+   inner cards flush and let the label breathe below the card heading. */
+.fc-tablecard .esum-group:first-of-type{margin-top:2px}
+/* Both location-box tables (activities + beneficiaries) share ONE grid: light 1px
+   gridlines and fixed layout. Fixed layout makes the declared column widths exact –
+   auto layout treats width as a hint and lets columns grow to fill the table. */
+.esum-tbl.loc-tbl{table-layout:fixed;border-collapse:collapse}
+.esum-tbl.loc-tbl th,.esum-tbl.loc-tbl td{border:1px solid var(--border)}
+.esum-tbl.loc-tbl thead th{background:#e8f1fb}
+.esum-tbl.loc-tbl tbody tr{cursor:default}
+.esum-tbl.loc-tbl tbody tr:hover{background:transparent}
+/* …except a KPI roll-up row, which IS the drill-down into that KPI's activities:
+   a results box lists KPIs, and the activity narratives are one click away. */
+.esum-tbl.loc-tbl tbody tr.esum-trow,.esum-tbl.esum-static tbody tr.esum-trow{cursor:pointer}
+.esum-tbl.loc-tbl tbody tr.esum-trow:hover{background:var(--bg-soft)}
+.ben-heat th.num,.ben-heat td.ben-cell,.ben-heat td.ben-tot{text-align:center}
+.ben-heat thead th.num{padding:5px 3px}
+.ben-heat td.ben-cell,.ben-heat td.ben-tot{padding:4px 3px}
+.ben-heat .ben-tot{font-weight:var(--w-title);color:var(--ink);background:var(--bg-soft)}
+.ben-heat td.ben-lbl{text-align:left;padding:6px 8px}   /* row-total caption stays left */
+.ben-heat tfoot tr:hover{background:transparent}
+/* heat pill: a badge carrying the (centred) number; the cell stays uncoloured. Every pill
+   shares one width (--pill-w, sized to the longest number) so the column reads evenly;
+   max-width caps it to the cell so many columns never force a horizontal scroll. Fixed
+   height + a transparent 1px border keep filled, hollow and empty pills the same size. */
+.ben-pill{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;
+  min-width:calc(var(--pill-w,4ch) + 14px);max-width:calc(100% - 2px);height:19px;padding:0 6px;
+  border-radius:999px;border:1px solid transparent;overflow:hidden;
+  font-size:9.5px;font-weight:var(--w-strong);font-variant-numeric:tabular-nums;line-height:1}
+.ben-pill.hollow{background:transparent;border-color:var(--muted);color:var(--ink)}  /* totals: gray outline */
+.ben-pill.empty{background:transparent;border-color:var(--border)}                   /* empty cell placeholder */
+/* slim row-number column: same width in both tables so rows line up 1:1.
+   Wide enough for 3-4 digit row numbers (all activities are shown, uncapped). */
+.esum-tbl td.rn-col,.esum-tbl th.rn-col{width:42px;text-align:center;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.esum-tbl td.loc-col,.esum-tbl th.loc-col{width:118px;white-space:normal;overflow-wrap:anywhere}
+.esum-tbl td.act-col,.esum-tbl th.act-col{width:190px;white-space:normal;overflow-wrap:anywhere}
+/* A row that spans several KPIs is named by its KPI - code AND name - and the
+   activity's own free text steps back onto the note icon in .note-col, read on
+   hover. In a box about ONE KPI the header has already named it, so the same
+   lead column carries the narrative instead: there the activity IS the detail. */
+.esum-tbl td.kpi-col,.esum-tbl th.kpi-col{width:230px;white-space:normal;overflow-wrap:anywhere}
+.kpi-code{font-weight:var(--w-strong);color:var(--ink);white-space:nowrap}
+.kpi-name{color:var(--muted)}
+.act-narr{color:var(--ink)}
+.esum-tbl td.note-col,.esum-tbl th.note-col{width:52px;text-align:center}
+.act-note{padding:1px 4px;font-size:11px;line-height:1.2;cursor:help;background:none;border:0;
+  border-radius:5px;opacity:.62;transition:opacity .12s,background .12s}
+.act-note:hover,.act-note:focus-visible{opacity:1;background:var(--bg-soft);outline:none}
+.act-note.empty{color:var(--muted);opacity:.5;cursor:default}
+/* the KPI's own activity history: same note icon, in a narrow trailing column */
+.retbl td.note-col,.retbl th.note-col{width:64px;text-align:center}
+/* In fixed layout every non-pinned column must be auto so it (not the pinned
+   rn/loc/act columns) absorbs the leftover width; equal auto columns share it
+   equally, so Value / Date / Project / KPI all end up the same width. */
+.esum-tbl.loc-tbl th.num,.esum-tbl.loc-tbl td.num{width:auto}
+.esum-tbl.loc-tbl th.col-eq,.esum-tbl.loc-tbl td.col-eq{width:auto}
+/* per-column alignment for the activities table: Value/Date centred, Project/KPI right */
+.esum-tbl td.col-c,.esum-tbl th.col-c{text-align:center;font-variant-numeric:tabular-nums}
+.esum-tbl td.col-r,.esum-tbl th.col-r{text-align:right}
+.facet.openable{cursor:pointer}
+@media (max-width:560px){ .mgrid{grid-template-columns:repeat(3,1fr)} .meta{grid-template-columns:1fr} }
+
+/* ---- modal tabs (Details / Add activity · Control Panel tabs) ------------- */
+.modal-tabs{display:flex;gap:6px;padding:10px 17px 0}
+.modal-tabs button{border:1px solid var(--border);background:var(--bg-soft);color:var(--ink-2);
+  padding:6px 13px;border-radius:7px;font-size:10.5px}
+.modal-tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.modal-tabs button:hover:not(.on){border-color:var(--primary);color:var(--primary)}
+
+/* ---- activity data-entry form -------------------------------------------- */
+.aform .afgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.af{display:flex;flex-direction:column;gap:4px}
+.af.full{grid-column:1/-1}
+.af span{color:var(--muted);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase}
+.af span em{color:var(--red);font-style:normal}
+.af input,.af textarea,.af select{border:1px solid var(--border);background:var(--bg-soft);color:var(--ink);
+  border-radius:6px;padding:7px 9px;font-family:inherit;font-size:10.5px;width:100%}
+.af input:focus,.af textarea:focus,.af select:focus{outline:none;border-color:var(--primary);background:var(--panel)}
+.af textarea{resize:vertical}
+.afbtns{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:13px}
+.afmsg{margin-right:auto;color:var(--red);font-size:10px}
+/* live before/after progress preview while entering a report */
+.afprev{grid-column:1/-1;background:var(--bg-soft);border:1px solid var(--border);border-radius:7px;padding:8px 10px}
+.afprev:empty{display:none}
+.rp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;padding:2px 0}
+.rp-row .rp-k{color:var(--muted);font-size:9px;letter-spacing:.05em;text-transform:uppercase}
+.rp-row .rp-v{color:var(--ink);font-weight:var(--w-strong);display:flex;align-items:center;gap:6px}
+.rp-row.rp-after{border-top:1px dashed var(--border);margin-top:4px;padding-top:6px}
+.rp-row.rp-after .rp-v{color:var(--primary)}
+.rp-chip{color:#fff;font-size:9px;font-weight:var(--w-strong);border-radius:999px;padding:1px 7px;min-width:30px;text-align:center}
+.rp-tgt{color:var(--muted);font-size:9px;margin-top:6px;line-height:1.4}
+
+/* ---- control panel : results framework editor ---------------------------- */
+.modal.cp{width:780px}
+.cp-note{color:var(--ink-2);font-size:10.5px;line-height:1.5;background:var(--bg-soft);border:1px solid var(--border);
+  border-radius:7px;padding:9px 11px;margin-top:14px;margin-bottom:14px}
+.cp-pillar{border:1px solid var(--border);border-radius:9px;padding:11px 12px;margin-bottom:12px;background:var(--bg-soft)}
+.cp-ph{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.cp-dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.cp-pt{font-weight:var(--w-title);font-size:11.5px;color:var(--ink)}
+.cp-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.cp-lab{flex:0 0 56px;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-strong)}
+/* read-only statement text in the framework tree (editing happens in a child popup) */
+.cp-stmt{flex:1;min-width:0;font-size:10.5px;color:var(--ink);line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.cp-row.cp-impact .cp-stmt{font-weight:var(--w-strong)}
+.cp-output .cp-stmt{color:var(--ink-2)}
+/* ---- Communication : monthly PDF reports for every Lead ------------------- */
+.modal.comm{width:min(1060px,94vw)}
+.comm-bar{display:flex;align-items:center;gap:8px;padding:12px 17px 2px;flex-wrap:wrap}
+.comm-lbl{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-strong)}
+.comm-sel{padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--ink);font-size:11px}
+.comm-msg{font-size:10.5px;color:var(--ink-2);margin-left:auto;max-width:46%;line-height:1.35}
+.comm-tabs{flex-wrap:wrap}
+.comm-count{display:inline-block;margin-left:5px;padding:0 5px;border-radius:8px;background:rgba(127,127,127,.18);font-size:8.5px;vertical-align:1px}
+.modal-tabs button.on .comm-count{background:rgba(255,255,255,.25)}
+.comm-mailtab{margin-left:auto}
+.commtbl td{vertical-align:middle}
+.comm-email{font-size:9px;color:var(--muted);margin-top:1px;font-family:var(--mono,monospace)}
+.comm-off td{opacity:.45}
+.comm-off td.uact{opacity:1}
+.comm-chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;white-space:nowrap;border:1px solid var(--border);color:var(--muted)}
+.comm-chip.ready{border-color:#2563eb55;color:#2563eb;background:#2563eb14}
+.comm-chip.sent{border-color:#16a34a55;color:#16a34a;background:#16a34a14}
+.comm-chip.off{border-color:var(--border);color:var(--muted);background:var(--bg-soft)}
+.comm-act button{min-width:28px}
+/* per-category bulk enable/disable row above the leads table */
+.comm-bulk{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.comm-bulk-lbl{font-size:10px;color:var(--muted);margin-right:auto}
+/* email draft tab: editor left, live preview right */
+.comm-mail{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.comm-mail-edit .cp-note{margin-top:0}
+.comm-field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.comm-field>span{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-strong)}
+.comm-subj,.comm-body{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--ink);font-size:11px;line-height:1.5;box-sizing:border-box}
+.comm-body{resize:vertical;font-family:inherit}
+.comm-mail-prev{border:1px solid var(--border);border-radius:10px;background:var(--panel);overflow:hidden}
+.comm-prev-lbl{font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-strong);padding:9px 14px 6px;border-bottom:1px dashed var(--border)}
+.comm-prev-head{background:var(--bg-soft)}
+.comm-prev-row{font-size:10.5px;color:var(--ink-2);padding:4px 14px}
+.comm-prev-row b{display:inline-block;width:52px;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.04em}
+.comm-prev-subj{border-bottom:1px solid var(--border);padding-bottom:9px;color:var(--ink);font-weight:var(--w-strong)}
+.comm-prev-body{padding:12px 14px 4px;font-size:11px;line-height:1.6;color:var(--ink)}
+.comm-prev-body p{margin:0 0 10px;white-space:pre-wrap}
+.comm-prev-att{display:flex;align-items:center;gap:8px;margin:6px 14px 14px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-soft);font-size:10.5px;color:var(--ink)}
+.comm-prev-att+.comm-prev-att{margin-top:-8px}
+.comm-att-ic{font-size:15px}
+.comm-att-k{margin-left:auto;font-size:8.5px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
+@media (max-width:900px){ .comm-mail{grid-template-columns:1fr} }
+
+/* ---- Communication : email delivery settings (Brevo) ---------------------- */
+.comm-svc{margin-top:18px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg-soft)}
+.comm-svc-h{font-size:11.5px;font-weight:var(--w-title);color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.comm-svc-badge{font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:10px;
+  border:1px solid var(--border);color:var(--muted);background:var(--panel)}
+.comm-svc-badge.on{border-color:#16a34a55;color:#16a34a;background:#16a34a14}
+.comm-svc .uform input{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--ink);font-size:11px;box-sizing:border-box}
+.comm-live{display:flex;gap:8px;align-items:flex-start;font-size:10px;color:var(--ink-2);line-height:1.5;margin:8px 0 2px}
+.comm-live input{width:auto !important;margin-top:2px}
+
+/* ---- control panel : Regions / Countries lead assignment ------------------ */
+.cp-geo .utbl{margin-bottom:16px}
+.geo-lead{width:100%;max-width:220px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;
+  background:var(--panel);color:var(--ink);font-size:10.5px}
+.geo-lead-cell{min-width:160px}
+.geo-search{display:block;margin:2px 0 10px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;
+  background:var(--panel);color:var(--ink);font-size:11px;width:280px}
+
+/* Lead (accountable user) chip next to an Outcome / Output statement */
+.cp-leadchip{flex:0 0 auto;font-size:9px;color:var(--muted);border:1px solid var(--border);
+  background:var(--panel);border-radius:10px;padding:2px 7px;white-space:nowrap;max-width:140px;
+  overflow:hidden;text-overflow:ellipsis}
+.cp-adduser{margin:2px 0 10px}
+.cp-outs{margin-left:14px;padding-left:12px;border-left:2px solid var(--border);margin:2px 0 10px}
+.cp-output .cp-lab{color:var(--ink-2)}
+.cp-del{flex:0 0 auto;border:1px solid var(--border);background:var(--panel);border-radius:6px;
+  width:28px;height:28px;font-size:12px;color:var(--muted)}
+.cp-del:hover{border-color:var(--red);color:var(--red)}
+.cp-addwrap{margin-top:6px}
+.cp-addbtn{border:1px dashed var(--border);background:transparent;color:var(--primary);border-radius:6px;padding:5px 11px;font-size:10px}
+.cp-addbtn:hover{border-color:var(--primary);background:var(--primary-soft)}
+.cp-add-outcome{margin:2px 0 4px}
+.cp-add-pillar{margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)}
+.cp-addbtn.cp-addpillar{font-size:11px;padding:6px 13px;color:var(--primary);border-color:var(--primary)}
+.cp-fw.ro .cp-del,.cp-fw.ro .cp-addwrap{display:none}
+.cp-empty{color:var(--muted);font-size:11px;line-height:1.5;text-align:center;
+  border:1px dashed var(--border);border-radius:8px;padding:18px 14px;margin:6px 0 12px}
+
+/* ---- control panel : which plan the framework editor is editing ----------- */
+.cp-fwplan{display:flex;align-items:center;gap:9px;margin-top:2px;padding:9px 12px;
+  border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:8px;background:var(--bg-soft)}
+.cp-fwplan-lbl{font-size:8px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-strong)}
+.cp-fwplan-nm{font-size:12px;font-weight:var(--w-title);color:var(--ink)}
+.cp-fwplan-dates{margin-left:auto;font-size:10px;color:var(--muted);white-space:nowrap}
+
+/* ---- header : active-plan chip (one line) + manage dropdown --------------- */
+.planbox{position:relative;display:flex;align-items:center;min-width:0}
+.planchip{display:flex;align-items:center;gap:7px;height:32px;max-width:300px;min-width:0;cursor:pointer;
+  border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:0 11px;
+  box-shadow:var(--shadow)}
+.planchip:hover{border-color:var(--primary)}
+.planchip-ic{flex:0 0 auto;font-size:12px;line-height:1;color:var(--primary)}
+.planchip-nm{font-size:11.5px;font-weight:400;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.planchip-cr{flex:0 0 auto;font-size:9px;color:var(--muted)}
+/* dropdown anchored to the chip's right edge (chip sits on the right of the header) */
+.plan-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:60;
+  min-width:320px;max-width:400px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--shadow-lg,0 12px 34px rgba(15,23,42,.22));padding:5px;max-height:70vh;overflow:auto}
+.plan-mi{display:flex;align-items:center;gap:6px;width:100%;text-align:left;
+  border-radius:7px;padding:4px 6px;color:var(--ink)}
+.plan-mi.on{background:var(--primary-soft)}
+/* click-to-switch title area (a button that fills the row) */
+.plan-mi-main{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.25;cursor:pointer;
+  border:0;background:transparent;border-radius:6px;padding:5px 6px;text-align:left}
+.plan-mi-main:hover{background:var(--bg-soft)}
+.plan-mi.on .plan-mi-main:hover{background:transparent}
+.plan-mi-nm{font-size:11.5px;font-weight:400;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plan-mi-sub{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* default check toggle - marks the plan the app opens on (Admin can click to set) */
+.plan-mi-def{flex:0 0 auto;border:0;background:transparent;font-size:12px;font-weight:700;line-height:1;
+  color:var(--border);width:22px;height:22px;border-radius:6px;padding:0;
+  display:flex;align-items:center;justify-content:center}
+button.plan-mi-def{cursor:pointer}
+button.plan-mi-def:hover{color:var(--primary);background:var(--bg-soft)}
+.plan-mi-def.on{color:var(--primary)}
+.plan-mi-def.ghost{color:transparent}
+/* edit / delete row actions */
+.plan-mi-act{flex:0 0 auto;border:1px solid transparent;background:transparent;cursor:pointer;
+  font-size:12px;line-height:1;color:var(--muted);width:26px;height:26px;border-radius:6px;padding:0}
+.plan-mi-act:hover:not(:disabled){border-color:var(--border);color:var(--ink-2);background:var(--bg-soft)}
+.plan-mi-del:hover:not(:disabled){border-color:var(--red);color:var(--red)}
+.plan-mi-act:disabled{opacity:.35;cursor:not-allowed}
+.plan-mi-foot{display:block;width:100%;cursor:pointer;margin-top:3px;padding:9px 10px;
+  border:0;border-top:1px solid var(--border);border-radius:0 0 7px 7px;background:transparent;
+  color:var(--muted);font-size:10.5px;font-weight:var(--w-strong);text-align:left}
+.plan-mi-foot:hover{color:var(--primary);background:var(--bg-soft)}
+
+/* ---- header user chip + role gating -------------------------------------- */
+.userbox{position:relative;display:flex;align-items:center}
+.userchip{display:flex;align-items:center;gap:7px;height:32px;padding:0 9px 0 3px;border:1px solid var(--border);
+  border-radius:999px;background:var(--bg-sunk);max-width:210px;cursor:pointer;color:var(--ink)}
+.userchip:hover{border-color:var(--primary)}
+.userchip[aria-expanded="true"]{border-color:var(--primary);background:var(--panel)}
+.userbox .ua{flex:0 0 auto;width:24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:var(--w-title)}
+.userbox .un{font-size:11px;font-weight:400;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.userbox .uchev{flex:0 0 auto;font-size:10px;line-height:1;color:var(--muted);transition:transform .12s}
+.userchip[aria-expanded="true"] .uchev{transform:rotate(180deg)}
+/* account dropdown */
+.user-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:60;min-width:216px;
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--shadow-lg,0 12px 34px rgba(15,23,42,.22));padding:5px}
+.um-head{display:flex;align-items:center;gap:9px;padding:7px 9px 9px;min-width:0}
+.um-head .um-av{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:var(--w-title)}
+.um-head .um-tx{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.um-head .um-nm{font-size:12px;font-weight:var(--w-strong);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.um-head .um-sub{font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.um-sep{height:1px;background:var(--border);margin:2px 4px 4px}
+.um-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;cursor:pointer;
+  border:0;background:transparent;border-radius:7px;padding:8px 10px;color:var(--ink);font-size:11.5px}
+.um-item:hover{background:var(--bg-soft)}
+.um-item .um-ic{flex:0 0 auto;width:15px;text-align:center;font-size:12px;color:var(--muted)}
+.um-item:hover .um-ic{color:var(--ink)}
+.um-item.danger{color:var(--red)}
+.um-item.danger .um-ic{color:var(--red)}
+.um-item.danger:hover{background:var(--red);color:#fff}
+.um-item.danger:hover .um-ic{color:#fff}
+body:not(.status-admin) #btnReset{display:none}
+/* Global Items + Results Management are Admin-only; Viewers can't report */
+body:not(.status-admin) #btnControl{display:none}
+body:not(.status-admin) #btnResults{display:none}
+body.status-viewer #btnNewActivity{display:none}
+
+/* ---- footer clear-filters button ----------------------------------------- */
+.clearbtn{border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:5px;
+  padding:5px 10px;font-size:10.5px;opacity:.55;transition:opacity .12s,border-color .12s,color .12s}
+.clearbtn.on{opacity:1;border-color:var(--red);color:var(--red)}
+.clearbtn.on:hover{background:var(--red);color:#fff}
+
+/* ---- right pane: Progress / Results header ------------------------------- */
+.pane-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+  font-size:11px;font-weight:var(--w-title);color:var(--ink);letter-spacing:.02em;margin:0 2px 8px}
+.pane-title .rc{font-size:9.5px;font-weight:400;color:var(--muted);letter-spacing:.03em;white-space:nowrap}
+.pane-title .rc-new{padding:3px 9px;font-size:10px;font-weight:var(--w-title);white-space:nowrap;align-self:center}
+
+/* ---- report cards (transactions) ----------------------------------------- */
+.rcard .rmeta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0 5px}
+.rcard .rby{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2);font-weight:var(--w-strong);min-width:0}
+.rcard .rby{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rcard .rdot{flex:0 0 auto;width:9px;height:9px;border-radius:50%}
+.rcard .rval{flex:0 0 auto;font-size:9.5px;font-weight:var(--w-strong);color:var(--ink);
+  background:var(--bg-sunk);border-radius:999px;padding:2px 8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tag.geo2{border:0}
+/* KPIs/Activities pane: no left colour strip; softer look */
+.rcard::before{display:none !important}
+.rcard{padding-left:12px}
+.rcard .tag{border:0;font-weight:var(--w-strong)}
+
+/* ---- two-line facet label (name + description) --------------------------- */
+.facet .nmwrap{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.facet .nmwrap .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.facet .nmwrap .nmdesc{font-size:8.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.facet.cat .nmwrap .nm{font-weight:var(--w-strong);color:var(--ink)}
+
+/* ---- rolled-up status pill in the detail results-chain ------------------- */
+.rollpill{flex:0 0 auto;margin-left:8px;font-size:8.5px;font-weight:var(--w-strong);color:#fff;
+  border-radius:999px;padding:2px 8px;white-space:nowrap;letter-spacing:.02em}
+.chain .lnk{display:flex;align-items:center;gap:7px}
+
+/* ---- Users Management ----------------------------------------------------- */
+.utbl{width:100%;border-collapse:collapse;margin-top:12px;font-size:10.5px;table-layout:auto}
+.utbl th{text-align:left;color:var(--muted);font-weight:var(--w-strong);font-size:9px;
+  text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--border)}
+.utbl td{padding:7px 8px;border-bottom:1px solid var(--border-soft);vertical-align:middle}
+.umono{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--ink-2)}
+.umuted{font-size:10.5px;color:var(--ink-2);margin-top:2px;max-width:280px}
+.utbl td a{color:var(--accent,#0C85C7);text-decoration:none}
+.utbl td a:hover{text-decoration:underline}
+.udot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:-1px}
+.cp-users .ustat{font-size:9px;font-weight:var(--w-strong);border-radius:999px;padding:2px 8px}
+.cp-users .ustat.on{background:rgba(22,163,74,.14);color:#16a34a}
+.cp-users .ustat.off{background:rgba(148,163,184,.18);color:var(--muted)}
+/* Status badge (Admin / User / Viewer) */
+.ustatus{font-size:9px;font-weight:var(--w-strong);border-radius:999px;padding:2px 8px}
+.ustatus.admin{background:rgba(91,141,239,.16);color:#5B8DEF}
+.ustatus.user{background:rgba(157,123,238,.16);color:#9D7BEE}
+.ustatus.viewer{background:rgba(148,163,184,.18);color:var(--muted)}
+.uf-statusnote{margin:10px 0 0}
+.uact{white-space:nowrap;text-align:right}
+/* Always keep clear space between the Edit and delete (🗑) actions so they never
+   sit flush against each other, in every admin table (donors, users, measures). */
+.uact .cp-del{margin-left:12px}
+/* Beneficiary types: name, code, description, entries and actions each in their own column */
+.bttbl td{padding:5px 8px}
+.bttbl th:nth-child(1),.bttbl td:nth-child(1){width:1%;white-space:nowrap}
+.bttbl th:nth-child(2),.bttbl td:nth-child(2){width:1%;white-space:nowrap}
+.bttbl th:nth-child(4),.bttbl td:nth-child(4){width:1%;white-space:nowrap;text-align:right}
+.bttbl th:last-child,.bttbl td:last-child{width:1%;white-space:nowrap}
+.bt-name-cell{vertical-align:middle}
+.bt-name-txt{color:var(--ink);font-weight:var(--w-strong)}
+.bt-code-cell{vertical-align:middle}
+.bt-code{display:inline-block;font-family:var(--mono,ui-monospace,monospace);font-size:9.5px;font-weight:var(--w-strong);
+  letter-spacing:.03em;color:var(--ink-2);background:var(--chip,rgba(120,130,150,.12));
+  border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+.bt-desc-cell{color:var(--muted);font-size:9.5px;line-height:1.4;vertical-align:middle}
+.bttbl .uact .cp-del{margin-left:12px}
+.cp-mini{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);border-radius:5px;
+  padding:3px 9px;font-size:10px;margin-left:5px}
+.cp-mini:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.cp-mini:disabled{opacity:.4;cursor:default}
+.uform{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:12px}
+.uform-h{font-weight:var(--w-title);font-size:11px;margin-bottom:9px}
+.ufgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.uform .ufgrid + .ufgrid{margin-top:14px}   /* always keep vertical space between stacked field rows */
+.uform label{display:flex;flex-direction:column;gap:3px;min-width:0}
+.uform label span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.uform input,.uform select{border:1px solid var(--border);background:var(--bg-soft);color:var(--ink);
+  border-radius:6px;padding:6px 8px;font-family:inherit;font-size:10.5px}
+.uform input:focus,.uform select:focus{outline:none;border-color:var(--primary);background:var(--panel)}
+.ufbtns{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:11px}
+.ufbtns .ufmsg{margin-right:auto;color:var(--red);font-size:10px}
+.ufbtns .ufmsg.ok{color:var(--green)}
+tr.uedit td{background:var(--bg-soft);padding:10px}
+.kpitbl td:nth-child(2),.kpitbl th:nth-child(2){width:100%}   /* KPI name fills remaining width */
+.kpitbl td:first-child,.kpitbl th:first-child{white-space:nowrap}   /* Code sizes to content */
+.kpitbl tbody tr:hover{background:var(--bg-soft)}
+.kpitbl .kpi-pill{display:inline-block;font-size:9px;font-weight:var(--w-strong);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.kpigrid{grid-template-columns:repeat(4,1fr)}
+.kpigrid .kf-wide{grid-column:1 / -1}
+@media (max-width:720px){ .kpigrid{grid-template-columns:repeat(2,1fr)} }
+
+/* Control Panel footer - data tools (Export SQL / Reset) */
+.cp-foot{display:flex;align-items:center;gap:8px;padding:11px 16px;border-top:1px solid var(--border);background:var(--bg-soft);border-radius:0 0 12px 12px}
+.cp-foot-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-right:auto;font-weight:var(--w-strong)}
+.hbtn.danger{color:var(--red)}
+.hbtn.danger:hover{border-color:var(--red);background:var(--red);color:#fff}
+
+/* KPI Inventory filter: More / Less controls */
+.facet-more{display:flex;gap:8px;padding:5px 4px 2px;margin-left:21px}
+.moreless{border:1px dashed var(--border);background:transparent;color:var(--primary);border-radius:5px;
+  padding:3px 9px;font-size:9.5px}
+.moreless:hover{border-color:var(--primary);background:var(--primary-soft)}
+
+/* Child popup (KPI edit) - dims everything below it */
+.child-overlay{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;
+  padding:24px;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)}
+.child-overlay.on{display:flex}
+.child-modal{width:560px;max-width:100%;max-height:86vh;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-xl)}
+.child-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:13px 16px;border-bottom:1px solid var(--border)}
+.child-head h3{margin:0;font-size:12.5px;font-weight:var(--w-title);color:var(--ink)}
+.child-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:14px 16px 16px}
+.child-body .uform{border:0;padding:0;background:transparent}
+.child-body .uform-h{display:none}
+.child-body .kpigrid{grid-template-columns:repeat(2,1fr)}
+
+/* ---- login gate ---------------------------------------------------------- */
+.login-gate{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
+  background:var(--bg-soft);background:linear-gradient(160deg,var(--bg-soft),var(--bg-sunk))}
+.login-gate.on{display:flex}
+.login-card{width:340px;max-width:calc(100vw - 40px);background:var(--panel);border:1px solid var(--border);
+  border-radius:14px;box-shadow:var(--shadow-xl);padding:26px 26px 20px;display:flex;flex-direction:column}
+.login-card .lg-brand{font-size:11px;font-weight:var(--w-title);letter-spacing:.02em;color:var(--ink)}
+.login-card .lg-brand b{color:var(--primary)}
+.login-card .lg-rain{height:3px;border-radius:2px;margin:8px 0 16px;
+  background:linear-gradient(90deg,#E5243B,#DDA63A,#4C9F38,#26BDE2,#FCC30B,#FD6925,#0A97D9,#00689D,#19486A)}
+.login-card h2{font-size:15px;margin:0 0 16px;color:var(--ink);font-weight:var(--w-title)}
+.login-card .lg-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.login-card .lg-field span{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.login-card .lg-field input{border:1px solid var(--border);background:var(--bg-soft);color:var(--ink);
+  border-radius:7px;padding:9px 11px;font-family:inherit;font-size:12px}
+.login-card .lg-field input:focus{outline:none;border-color:var(--primary);background:var(--panel)}
+.login-card .lg-submit{justify-content:center;padding:9px;font-size:12px;margin-top:4px}
+.login-card .lg-msg{color:var(--red);font-size:10.5px;min-height:14px;margin-bottom:4px}
+.login-card .lg-hint{margin-top:14px;font-size:9.5px;color:var(--muted);line-height:1.5;text-align:center}
+.login-card .lg-hint b{color:var(--ink-2)}
+
+/* ---- Results tab: editable reporting history ----------------------------- */
+.retbl-wrap{overflow-x:auto;margin-top:10px}
+.retbl{width:100%;border-collapse:collapse;font-size:10.5px}
+.retbl th{text-align:left;color:var(--muted);font-weight:var(--w-strong);font-size:9px;
+  text-transform:uppercase;letter-spacing:.05em;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.retbl td{padding:5px 8px;border-bottom:1px solid var(--border-soft);vertical-align:middle}
+/* read-only activity history rows (edit/delete via buttons → child popup) */
+.retbl-ro tbody tr:hover{background:var(--bg-soft)}
+.retbl .re-datecell,.retbl .re-valcell,.retbl .re-by{white-space:nowrap}
+.retbl .re-by{color:var(--ink-2)}
+.retbl .re-valcell{font-weight:var(--w-strong);color:var(--ink)}
+/* the activity note is an icon now, not text - centre it instead of clipping */
+/* The narrative reads as a sentence, so it wraps and stays left-aligned - these
+   tables are always about ONE KPI, which the header above them has named. */
+.retbl .re-narr{color:var(--ink-2);text-align:left;white-space:normal;overflow-wrap:anywhere}
+.retbl .re-empty{color:var(--muted);text-align:center;padding:16px}
+.retbl .re-actcell{text-align:right;white-space:nowrap;display:flex;gap:6px;justify-content:flex-end}
+.retbl .re-edit{border:1px solid var(--border);background:var(--panel);color:var(--ink-2);border-radius:5px;
+  padding:4px 10px;font-size:10px}
+.retbl .re-edit:hover{border-color:var(--primary);color:var(--primary)}
+.retbl .re-del{border:1px solid var(--border);background:var(--panel);border-radius:5px;
+  width:28px;height:26px;font-size:11px;color:var(--muted)}
+.retbl .re-del:hover{border-color:var(--red);color:var(--red)}
+/* edit-activity popup: fixed-KPI context header */
+.na-ctx{background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:11px}
+.na-ctx span{font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:block}
+.na-ctx b{font-size:12px;color:var(--ink)}
+.na-ctx .na-ctx-sub{font-size:10px;color:var(--muted);margin-top:2px;text-transform:none;letter-spacing:0}
+
+/* ============================================================================
+ *  PROJECTS - donor facet, project cards, project form, secondary KPIs, points
+ * ========================================================================== */
+
+/* Project cards (right pane) */
+.pcard::before{display:none !important}
+.pcard{padding-left:12px}
+.pcard .rmeta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0 5px}
+.pcard .rby{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2);
+  font-weight:var(--w-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pcard .rdot{flex:0 0 auto;width:9px;height:9px;border-radius:50%}
+.pcard .rval{flex:0 0 auto;font-size:9.5px;font-weight:var(--w-strong);color:var(--ink)}
+.pcard .tag{border:0;font-weight:var(--w-strong)}
+.pagg{display:flex;flex-wrap:wrap;gap:6px;margin:1px 0 6px}
+.pagg-chip{display:inline-flex;align-items:center;gap:5px;font-size:9px;color:var(--ink-2);
+  background:var(--bg-sunk);border:1px solid var(--border);border-radius:999px;padding:2px 8px}
+.pagg-chip b{color:var(--ink);font-weight:var(--w-strong)}
+.pagg-chip.sec{border-style:dashed}
+.pagg-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+
+/* Pane mode toggle (Projects / KPIs) in the list header */
+.list-top .listmode{margin-bottom:7px}
+.list-top .listmode button{flex:1;text-align:center;font-size:10px}
+
+/* KPI cards reuse the project-card layout but keep a status-coloured left rail */
+.kcard.pcard::before{display:block !important}
+.kcard.pcard{padding-left:15px}
+
+/* KPI-detail Projects tab (card lists inside modals) */
+.mprojlist{display:flex;flex-direction:column;gap:8px;margin-top:2px}
+.mprojlist .card{cursor:pointer}
+
+/* Secondary badge (used in tables, tooltips) */
+.sec-badge{display:inline-block;font-size:7.5px;font-weight:var(--w-title);letter-spacing:.04em;
+  text-transform:uppercase;background:var(--kpi-sec-bg);color:var(--kpi-sec);border-radius:4px;padding:1px 4px;vertical-align:middle}
+/* Primary / Secondary KPI type badges (results-box Type column) */
+.kpi-type{display:inline-block;font-size:8px;font-weight:var(--w-title);letter-spacing:.04em;text-transform:uppercase;
+  border-radius:999px;padding:2px 8px;white-space:nowrap}
+.kpi-type.primary{background:var(--kpi-pri-bg);color:var(--kpi-pri)}
+.kpi-type.secondary{background:var(--kpi-sec-bg);color:var(--kpi-sec)}
+
+/* Project form (modal) */
+#prBody .uform{border:0;padding:0;background:transparent}
+.prform .prgrid{grid-template-columns:1fr 1fr}
+.prform .pf-wide{grid-column:1/-1}
+.uform textarea{border:1px solid var(--border);background:var(--bg-soft);color:var(--ink);
+  border-radius:7px;padding:7px 9px;font:inherit;font-size:11px;resize:vertical}
+.uform textarea:focus{outline:none;border-color:var(--primary);background:var(--panel)}
+.prtab{display:flex;flex-direction:column;gap:12px}
+.prtab .aform{margin-bottom:4px}
+.sec-h2{font-size:10px;font-weight:var(--w-title);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-2);margin-top:4px;border-top:1px solid var(--border-soft);padding-top:10px}
+.prkpi-list{display:flex;flex-direction:column;gap:2px}
+.prkpi-grp{display:flex;align-items:center;gap:7px;margin:11px 0 3px}
+.prkpi-row{display:flex;align-items:flex-start;gap:8px;padding:5px 8px;border:1px solid var(--border-soft);
+  border-radius:6px}
+.prkpi-row:hover{background:var(--bg-soft);border-color:var(--primary)}
+.prkpi-row input{margin-top:2px;accent-color:var(--primary);flex:0 0 auto}
+.prkpi-txt{font-size:10.5px;color:var(--ink);line-height:1.35;flex:1 1 auto}
+.prkpi-st{margin-left:6px;font-weight:var(--w-strong);font-size:9.5px}
+
+/* Primary KPIs: search the whole inventory, add what this project reports on.
+   The tree below the box lists only the KPIs already added. */
+.prkpi-search{position:relative;margin:10px 0 4px}
+.prkpi-q{width:100%;padding:8px 11px;font:inherit;font-size:11px;color:var(--ink);
+  background:var(--bg);border:1px solid var(--border);border-radius:7px;outline:none}
+.prkpi-q:focus{border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 18%,transparent)}
+.prkpi-q::placeholder{color:var(--muted)}
+.prkpi-res{position:absolute;z-index:40;left:0;right:0;top:calc(100% + 4px);max-height:290px;overflow-y:auto;
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 28px rgba(15,23,42,.16);
+  display:flex;flex-direction:column;padding:4px}
+.prkpi-res.hide{display:none}
+.prkpi-hit{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:9px;width:100%;
+  padding:7px 9px;border:0;border-radius:6px;background:none;text-align:left;cursor:pointer;font:inherit}
+.prkpi-hit:hover,.prkpi-hit:focus-visible{background:var(--bg-soft);outline:none}
+.prkpi-hit-code{font-size:10px;font-weight:var(--w-strong);color:var(--ink);white-space:nowrap}
+.prkpi-hit-nm{font-size:10.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prkpi-hit-meta{font-size:9.5px;color:var(--muted);white-space:nowrap}
+.prkpi-hit-add{font-size:9.5px;font-weight:var(--w-strong);color:var(--primary);white-space:nowrap}
+.prkpi-none{padding:9px 10px;font-size:10.5px;color:var(--muted)}
+/* Remove control. Disabled (and explained on hover) while the KPI still carries
+   activities logged under this project. */
+.prkpi-del{flex:0 0 auto;margin-left:8px;padding:2px 6px;font-size:11px;line-height:1.2;cursor:pointer;
+  background:none;border:1px solid transparent;border-radius:5px;color:var(--muted)}
+.prkpi-del:hover:not(:disabled){color:var(--danger,#dc2626);border-color:var(--border);background:var(--bg-soft)}
+.prkpi-del:disabled,.prkpi-del.locked{cursor:not-allowed;opacity:.38}
+
+/* Map activity points (per selected country) */
+.apoint{cursor:pointer}
+.apoint:hover{stroke:var(--ink);stroke-width:0.9}
+
+/* Live settlement search (OpenStreetMap / Nominatim) in the project Activities tab */
+.place-search{position:relative}
+.place-results{position:absolute;left:0;right:0;top:100%;z-index:40;margin-top:3px;
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-lg);
+  max-height:240px;overflow-y:auto;display:none}
+.place-results.on{display:block}
+.place-row{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;
+  border-bottom:1px solid var(--border-soft)}
+.place-row:last-child{border-bottom:0}
+.place-row:hover{background:var(--primary-soft)}
+.place-nm{font-size:11px;color:#0d1526;font-weight:var(--w-title);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+[data-theme="dark"] .place-nm{color:var(--ink)}
+.place-ty{font-size:7.5px;text-transform:uppercase;letter-spacing:.04em;color:#0d1526;background:#33C2B4;
+  border-radius:4px;padding:1px 5px;flex:0 0 auto}
+.place-ctx{font-size:9.5px;color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:45%;text-align:right}
+.place-loading{padding:8px 10px;font-size:10px;color:var(--muted)}
+.place-chosen{display:none;margin-top:5px;font-size:10px;color:#16a34a;font-weight:var(--w-strong)}
+.place-chosen.on{display:block}
+
+/* ============================================================================
+ *  Clustered project-location map + location popup
+ * ========================================================================== */
+.pr-acthead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pr-actnote{font-size:10px;color:var(--muted)}
+/* Activities tab: the KPI roll-up rows drill into that KPI's own activity list */
+.retbl tbody tr.prk-row{cursor:pointer}
+.retbl tbody tr.prk-row:hover{background:var(--bg-soft)}
+.prk-chev{color:var(--muted);font-size:13px;line-height:1}
+
+/* Location popup - list of projects at a clicked map point */
+.locpop{position:absolute;z-index:30;min-width:230px;max-width:300px;background:var(--panel);
+  border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);
+  opacity:0;transform:translateY(4px);pointer-events:none;transition:opacity .12s,transform .12s}
+.locpop.on{opacity:1;transform:none;pointer-events:auto}
+.lp-head{display:flex;align-items:flex-start;gap:10px;padding:10px 12px 8px;border-bottom:1px solid var(--border-soft)}
+.lp-head b{font-size:12px;color:var(--ink);font-weight:var(--w-title)}
+.lp-sub{font-size:9.5px;color:var(--muted);margin-top:2px}
+.lp-x{margin-left:auto;flex:0 0 auto;border:0;background:transparent;color:var(--muted);font-size:16px;
+  line-height:1;cursor:pointer;padding:0 2px}
+.lp-x:hover{color:var(--ink)}
+.lp-list{max-height:230px;overflow-y:auto;padding:5px}
+.lp-proj{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;text-decoration:none;cursor:pointer}
+.lp-proj:hover{background:var(--primary-soft)}
+.lp-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.lp-nm{flex:1 1 auto;min-width:0;font-size:10.5px;color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lp-ac{flex:0 0 auto;font-size:9.5px;color:var(--muted);white-space:nowrap}
+.lp-pc{flex:0 0 auto;font-size:10px;font-weight:var(--w-strong)}
+
+/* ============================================================================
+ *  Beneficiaries + activity-form tabs
+ * ========================================================================== */
+.child-overlay.lvl2{z-index:340}          /* beneficiary-entry popup sits above the activity popup */
+#naBody .na-tabs{padding:2px 0 12px}
+#naBenPanel .pr-acthead{margin-bottom:8px}
+.ben-total{margin-top:8px;font-size:11px;font-weight:var(--w-strong);color:var(--ink);
+  text-align:right;padding-right:2px}
+
+/* Location popup "activity results" + "zoom in" controls + tiles + attribution */
+.lp-open{display:block;width:calc(100% - 16px);margin:8px 8px 2px;padding:7px 8px;font-size:10px;
+  font-weight:var(--w-strong);color:#fff;background:var(--primary);border:1px solid var(--primary);
+  border-radius:7px;cursor:pointer;text-align:center}
+.lp-open:hover{filter:brightness(1.06)}
+.lp-zoom{display:block;width:calc(100% - 16px);margin:6px 8px 2px;padding:6px 8px;font-size:10px;
+  font-weight:var(--w-strong);color:var(--primary);background:var(--primary-soft);
+  border:1px solid var(--primary);border-radius:7px;cursor:pointer}
+.lp-zoom:hover{background:var(--primary);color:#fff}
+#map image.tile{image-rendering:auto}
+/* Place-name labels overlay: keep the basemap's own label colours (dark text on the
+   light theme, light text on the dark theme) - no recolouring forced. */
+#map image.labeltile{image-rendering:auto;pointer-events:none}
+.map-attrib{position:absolute;right:6px;bottom:5px;z-index:6;font-size:9px;line-height:1.3;
+  background:rgba(255,255,255,.72);color:#334155;padding:1px 6px;border-radius:5px;pointer-events:auto}
+.map-attrib a{color:#1d4ed8;text-decoration:none}
+[data-theme="dark"] .map-attrib{background:rgba(15,23,42,.66);color:#cbd5e1}
+[data-theme="dark"] .map-attrib a{color:#93c5fd}
+
+/* Fixed-height tabbed activity popup: switching Activity details ↔ Beneficiaries
+   never resizes the modal - the body scrolls vertically instead. */
+#newActivityOverlay .child-modal{height:min(86vh,600px)}
+#naBody{display:flex;flex-direction:column}
+#naBody .na-tabs{flex:0 0 auto}
+#naBody #naDetailsPanel,#naBody #naBenPanel{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:2px}
+#naBody .afbtns{flex:0 0 auto;padding-top:10px}
+
+/* ============================================================================
+ *  Forecast dashboard - scenario projections toward targets
+ * ========================================================================== */
+.forecast{overflow-y:auto;overflow-x:hidden;background:var(--bg-soft);display:flex;flex-direction:column}
+.fc-ctrl{display:flex;align-items:center;gap:8px;min-height:36px;padding:5px 12px;border-bottom:1px solid var(--border);
+  flex-wrap:wrap;background:var(--panel);position:sticky;top:0;z-index:5}
+.fc-seg{display:flex;background:var(--bg-sunk);border:1px solid var(--border);border-radius:6px;padding:2px}
+.fc-seg button{border:0;background:transparent;padding:4px 11px;border-radius:4px;color:var(--ink-2);font-size:10.5px}
+.fc-seg button.on{background:var(--primary);color:#fff}
+.fc-lbl{color:var(--muted);font-size:10px;margin-left:4px}
+.fc-ctrl select{border:1px solid var(--border);background:var(--panel);color:var(--ink);border-radius:5px;
+  padding:4px 6px;font-family:inherit;font-size:10.5px}
+.fc-selchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary);background:var(--primary-soft);
+  color:var(--ink);border-radius:999px;padding:3px 10px;font-size:10.5px;max-width:340px;cursor:pointer;
+  white-space:nowrap;overflow:hidden}
+.fc-selchip .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.fc-selchip .x{color:var(--muted);font-size:12px;margin-left:2px}
+.fc-selchip:hover .x{color:var(--red)}
+.fc-scen{margin-left:auto;display:flex;gap:12px;align-items:center}
+.fc-scen .li{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;color:var(--muted)}
+.fc-scen .sq{width:9px;height:9px;border-radius:2px}
+.fc-export{margin-left:auto;border:1px solid var(--border);background:var(--panel);color:var(--ink-2);padding:5px 11px;
+  border-radius:var(--radius);font-size:10px;font-weight:var(--w-strong);display:inline-flex;align-items:center;
+  gap:6px;white-space:nowrap;cursor:pointer}
+.fc-export:hover{border-color:var(--primary);color:var(--primary)}
+.fc-export .ic{font-size:12px;line-height:1}
+.fc-body{display:flex;flex-direction:column;gap:10px;padding:10px 12px 16px}
+/* Forecast REPORT modal body: same flex-gap spacing as the tab's .fc-body, but
+   no extra padding (the modal body already supplies it) so the tiles, chart and
+   table never stick to each other. */
+.fc-rbody{display:flex;flex-direction:column;gap:12px}
+.fc-strip .fstrip{margin:0}
+/* exec tiles */
+.fc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:9px}
+.fc-tile{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 11px;box-shadow:var(--shadow)}
+.fc-tile .tl{color:var(--muted);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase}
+.fc-tile .tv{font-size:16px;font-weight:var(--w-title);margin-top:4px;color:var(--ink);letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-tile .ts{margin-top:5px;color:var(--muted);font-size:9.5px;min-height:15px;line-height:1.35}
+.fc-tile .ts .chip{display:inline-block;color:#fff;border-radius:999px;padding:1px 8px;font-size:9px;font-weight:var(--w-strong)}
+/* chart on top (full width), advice cards below */
+.fc-mid{display:flex;flex-direction:column;gap:10px}
+.fc-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:10px 12px;min-width:0}
+.fc-h{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:var(--w-title);margin-bottom:8px}
+.fc-chartcard{min-width:0}
+.fc-chart-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.fc-chart-head .fc-h{margin-bottom:0;min-width:0}
+.fc-chart svg{width:100%;height:auto;max-height:440px;display:block}
+.fc-chart .axlabel{fill:var(--muted);font-size:10px}
+.fc-chart .gridline{stroke:var(--border-soft)}
+.fc-chart .xlab{fill:var(--ink-2);font-size:9.5px}
+.fc-hist{fill:none;stroke:var(--ink-2);stroke-width:2.2;stroke-linejoin:round}
+.fc-cone{fill:rgba(37,99,235,.10);stroke:none}
+[data-theme="dark"] .fc-cone{fill:rgba(59,130,246,.16)}
+.fc-scen-ln{fill:none;stroke-width:1.8;stroke-dasharray:5 4;stroke-linejoin:round}
+.fc-scen-ln.mid{stroke-width:2.4;stroke-dasharray:none}
+.fc-end{font-size:10.5px;font-weight:var(--w-strong);font-variant-numeric:tabular-nums}
+.fc-target{stroke:var(--green);stroke-width:1.2;stroke-dasharray:2 3}
+.fc-tlab{fill:var(--green);font-size:8.5px;letter-spacing:.08em}
+.fc-today{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.fc-tdlab{fill:var(--muted);font-size:8px;letter-spacing:.08em}
+/* advice panel - full-width band below the chart, cards in a horizontal grid */
+.fc-advice{display:flex;flex-direction:column}
+/* a plain 3-column table: one card per cell, each card stretched to fill its
+   cell, rows sized to their tallest card. Only a genuinely oversized card (rare)
+   claims a second column; dense flow then backfills so no cell is left empty. */
+.fc-recs{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-flow:row dense;gap:8px}
+.fc-rec{border:1px solid var(--border);border-left-width:3px;border-radius:6px;padding:7px 9px;
+  background:var(--bg-soft);overflow:hidden}
+.fc-rec.fc-wide{grid-column:span 2}
+/* narrow screens can't carry three readable columns - stack to one */
+@media (max-width:640px){
+  .fc-recs{grid-template-columns:1fr}
+  .fc-rec.fc-wide{grid-column:auto}
+}
+.fc-rec.good{border-left-color:var(--green)}
+.fc-rec.warn{border-left-color:var(--amber)}
+.fc-rec.risk{border-left-color:var(--red)}
+.fc-rec.info{border-left-color:var(--muted)}
+.fc-rec .rt{font-size:10.5px;color:var(--ink);font-weight:var(--w-strong);margin-bottom:2px}
+.fc-rec .rb{font-size:10px;color:var(--ink-2);line-height:1.4}
+/* entity table */
+.fc-tbl{width:100%;border-collapse:collapse;font-size:10.5px}
+.fc-tbl th{text-align:left;color:var(--muted);font-weight:var(--w-strong);font-size:8.5px;letter-spacing:.05em;
+  text-transform:uppercase;padding:5px 7px;border-bottom:1px solid var(--border);white-space:nowrap}
+.fc-tbl td{padding:6px 7px;border-bottom:1px solid var(--border-soft);color:var(--ink-2);vertical-align:middle}
+.fc-tbl tbody tr{cursor:pointer}
+.fc-tbl tbody tr:hover{background:var(--bg-soft)}
+.fc-tbl tbody tr.on{background:var(--primary-soft)}
+/* non-clickable rows (e.g. a project item's KPI breakdown) */
+.fc-tbl tbody tr.fc-noclick{cursor:default}
+.fc-tbl tbody tr.fc-noclick:hover{background:transparent}
+/* section header row: the breakdown grouped one level down the chain */
+.fc-tbl tbody tr.fc-grp{cursor:default}
+.fc-tbl tbody tr.fc-grp:hover{background:transparent}
+.fc-tbl tbody tr.fc-grp td{padding:11px 7px 5px;border-bottom:1px solid var(--border);
+  background:var(--bg-soft);white-space:nowrap}
+.fc-tbl .fc-grp-bar{display:inline-block;width:3px;height:11px;border-radius:2px;margin-right:8px;vertical-align:-1px}
+.fc-tbl .fc-grp-t{color:var(--ink);font-weight:var(--w-title)}
+.fc-tbl .fc-grp-n{color:var(--muted);font-weight:var(--w-strong);margin-left:8px;font-variant-numeric:tabular-nums}
+.fc-tbl th.num,.fc-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fc-tbl td.ent{max-width:0;width:32%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-tbl td.ent .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:middle}
+.fc-tbl td.ent .nm{color:var(--ink)}
+.fc-tbl td.ent .sub{display:block;color:var(--muted);font-size:9px;margin:1px 0 0 15px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-tbl td.spark svg{display:block}
+.fc-chip{display:inline-block;color:#fff;border-radius:999px;padding:1px 8px;font-size:8.5px;
+  font-weight:var(--w-strong);white-space:nowrap}
+.fc-tbl .mut{color:var(--muted)}
+/* outlook range bar: worst→best band, realistic dot, target tick (scale −10%..150%) */
+.fc-range{position:relative;display:block;width:120px;height:8px;border-radius:999px;background:var(--bg-sunk)}
+.fc-range .band{position:absolute;top:0;bottom:0;border-radius:999px;background:var(--primary);opacity:.3}
+.fc-range .tgt{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--green)}
+.fc-range .dotr{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:var(--primary);
+  border:1.5px solid var(--panel);transform:translate(-50%,-50%);box-shadow:var(--shadow)}
+
+/* ============================================================================
+ *  TIMELINE - portfolio delivery Gantt
+ * ========================================================================== */
+.timeline{--tl-label-w:250px;overflow:hidden;background:var(--bg-sunk);display:flex;flex-direction:column}
+/* control bar - mirrors the forecast/insights control rows */
+.tl-ctrl{display:flex;align-items:center;gap:10px;min-height:36px;padding:5px 12px;
+  border-bottom:1px solid var(--border);flex-wrap:wrap;flex:0 0 auto}
+.tl-seg{display:flex;background:var(--bg-sunk);border:1px solid var(--border);border-radius:6px;padding:2px}
+.tl-seg button{border:0;background:transparent;padding:4px 11px;border-radius:4px;color:var(--ink-2);font-size:10.5px}
+.tl-seg button.on{background:var(--primary);color:#fff}
+.tl-toggle{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);font-size:10.5px;cursor:pointer;margin-left:auto}
+.tl-toggle input{accent-color:var(--primary);width:13px;height:13px}
+/* scroll body: sticky year axis + rows */
+.tl-wrap{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;position:relative}
+.tl-empty{padding:26px 16px;color:var(--muted);font-size:11px}
+/* header */
+.tl-head{position:sticky;top:0;z-index:6;display:grid;grid-template-columns:var(--tl-label-w) 1fr;
+  align-items:stretch;background:var(--bg-sunk);border-bottom:1px solid var(--border);height:38px;padding:0 10px}
+.tl-head-label{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 12px;
+  border-right:1px solid var(--border)}
+.tl-head-title{font-weight:var(--w-title);font-size:11px;color:var(--ink)}
+.tl-head-sub{font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tl-axis{position:relative}
+.tl-year{position:absolute;top:0;bottom:0;border-left:1px solid var(--border)}
+.tl-year .yl{position:absolute;top:4px;left:7px;font-size:10px;font-weight:var(--w-strong);
+  color:var(--ink-2);font-variant-numeric:tabular-nums}
+/* quarter labels: centred on each quarter, positioned to match the body gridlines */
+.tl-q{position:absolute;bottom:3px;transform:translateX(-50%);font-size:7.5px;letter-spacing:.04em;
+  color:var(--muted);opacity:.8;white-space:nowrap}
+/* groups as rounded cards (a neat box per group, spaced apart) */
+.tl-groups{padding:8px 10px 4px}
+.tl-gcard{background:var(--panel);border-radius:6px;box-shadow:0 0 0 1px var(--border),var(--shadow-lg);
+  margin-bottom:9px;overflow:hidden}
+.tl-ghead{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-soft);
+  border-bottom:1px solid var(--border-soft)}
+.tl-ghead .gdot{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.tl-ghead .gnm{font-size:10.5px;font-weight:var(--w-title);color:var(--ink);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.tl-ghead .gsub{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  flex:1;min-width:0}
+.tl-ghead .gct{margin-left:auto;font-size:9px;color:var(--muted);background:var(--bg-sunk);border-radius:999px;
+  padding:1px 8px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+/* card body holds the rows and a gridline + today overlay aligned to the track */
+.tl-gbody{position:relative}
+.tl-grid{position:absolute;top:0;bottom:0;left:var(--tl-label-w);right:0;pointer-events:none;z-index:0}
+.tl-grid .gl{position:absolute;top:0;bottom:0;width:0;border-left:1px solid var(--border)}
+.tl-grid .gl.q{border-left-style:dotted;opacity:.5}
+/* TODAY marker sits in its own overlay ABOVE the bars (never hidden behind one) */
+.tl-today-ov{position:absolute;inset:0 0 0 var(--tl-label-w);pointer-events:none;z-index:4}
+.tl-today{position:absolute;top:0;bottom:0;width:0;border-left:1.5px dashed var(--primary);opacity:.9}
+.tl-today .tdlab{position:absolute;top:3px;left:3px;font-size:7.5px;font-weight:var(--w-strong);
+  letter-spacing:.08em;color:var(--primary);white-space:nowrap;background:var(--panel);
+  padding:1px 4px;border-radius:3px;box-shadow:0 0 0 1px var(--border)}
+/* project row */
+.tl-row{position:relative;z-index:1;display:grid;grid-template-columns:var(--tl-label-w) 1fr;
+  align-items:center;min-height:30px}
+.tl-row + .tl-row{border-top:1px solid var(--border-soft)}
+.tl-row:hover{background:var(--bg-soft)}
+.tl-label{display:flex;align-items:center;gap:8px;padding:4px 12px;min-width:0;cursor:pointer;
+  border-right:1px solid var(--border)}
+.tl-label .ldot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.tl-label .ltx{min-width:0}
+.tl-label .lnm{font-size:10.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-label .lsub{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-label:hover .lnm{color:var(--primary)}
+.tl-track{position:relative;height:100%;min-height:30px}
+/* bar: soft status-tinted rail, solid achievement fill, % label */
+.tl-bar{position:absolute;top:50%;transform:translateY(-50%);height:15px;border-radius:5px;
+  background:color-mix(in srgb,var(--bc) 22%,var(--panel));border:1px solid color-mix(in srgb,var(--bc) 55%,transparent);
+  min-width:3px;cursor:pointer;overflow:hidden;box-shadow:var(--shadow)}
+.tl-bar:hover{filter:brightness(1.04);box-shadow:var(--shadow-lg)}
+.tl-bar.est{border-style:dashed;opacity:.9}
+.tl-bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--bc);opacity:.9;border-radius:5px 0 0 5px}
+.tl-bar .blab{position:absolute;right:5px;top:0;bottom:0;display:flex;align-items:center;
+  font-size:8.5px;font-weight:var(--w-strong);color:var(--ink);font-variant-numeric:tabular-nums;
+  text-shadow:0 0 3px var(--panel),0 0 3px var(--panel)}
+/* activity tick */
+.tl-act{position:absolute;top:50%;transform:translate(-50%,-50%);width:3px;height:3px;border-radius:50%;
+  background:var(--ink-2);opacity:.55;z-index:2;pointer-events:none;
+  box-shadow:0 0 0 1.5px color-mix(in srgb,var(--panel) 80%,transparent)}
+.tl-note{position:relative;z-index:1;padding:8px 12px;color:var(--muted);font-size:9.5px;
+  border-top:1px solid var(--border-soft)}
+/* legend */
+.tl-legend{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:6px 16px;padding:7px 12px;
+  border-top:1px solid var(--border);overflow:auto;max-height:60px}
+.tl-legend .li{display:inline-flex;align-items:center;gap:6px;font-size:9.5px;color:var(--ink-2)}
+.tl-legend .li.mut{color:var(--muted)}
+.tl-legend .sq{width:11px;height:9px;border-radius:2px;flex:0 0 auto}
+.tl-legend .actmk{width:5px;height:5px;border-radius:50%;background:var(--ink-2);opacity:.7;flex:0 0 auto;
+  box-shadow:0 0 0 1.5px var(--bg-soft)}
+.tl-legend .todaymk{width:0;height:11px;border-left:1.5px dashed var(--primary);flex:0 0 auto}
+.tl-legend .estmk{width:14px;height:9px;border-radius:2px;border:1px dashed var(--muted);flex:0 0 auto}
+@media (max-width:640px){ .timeline{--tl-label-w:150px} .tl-label .lsub{display:none} .tl-qs{display:none} }
+
+/* ============================================================================
+ *  RESPONSIVE - tablets and phones
+ * ========================================================================== */
+@media (max-width:900px){
+  /* Single-column main: map / insights / forecast fill the full width and the
+     two side panes become overlay drawers on top, toggled by the same ‹ ›
+     buttons. !important beats the inline grid-template-columns set by setGrid(). */
+  /* overflow:hidden keeps the parked drawers from widening the mobile layout
+     viewport (mobile browsers zoom out to fit overflowing content) */
+  .main{grid-template-columns:1fr !important;overflow:hidden}
+  .side{position:absolute;top:0;bottom:0;z-index:18;width:min(320px,85vw);
+    box-shadow:var(--shadow-xl);transition:transform .2s ease,visibility .2s}
+  .side.left{left:0}
+  .side.right{right:0}
+  .main.no-left .side.left{transform:translateX(-100%);visibility:hidden;box-shadow:none}
+  .main.no-right .side.right{transform:translateX(100%);visibility:hidden;box-shadow:none}
+  .resizer{display:none}
+  /* scrim behind an open drawer; tapping it closes the drawers (wired in app.js) */
+  .main:not(.no-left)::before,.main:not(.no-right)::before{content:'';position:absolute;inset:0;
+    z-index:15;background:rgba(15,23,42,.35)}
+  /* pane toggles pin to the screen edge, or ride along the open drawer's edge */
+  .collapse{z-index:19}
+  .collapse.l{left:8px}
+  .collapse.r{right:8px}
+  .main:not(.no-left) .collapse.l{left:calc(min(320px,85vw) + 8px)}
+  .main:not(.no-right) .collapse.r{right:calc(min(320px,85vw) + 8px)}
+  /* bars wrap onto extra rows instead of overflowing off-screen
+     (flex-basis:auto releases the fixed --hdr/--sub heights) */
+  .header{flex-wrap:wrap;flex-basis:auto;height:auto;min-height:var(--hdr);padding:6px 10px;row-gap:6px}
+  .botbar{flex-wrap:wrap}
+  .planchip{max-width:200px}
+}
+
+@media (max-width:640px){
+  /* header slims down: live badge goes, avatar-only user chip */
+  .snap{display:none}
+  .wm.sdg{font-size:14px}
+  .planchip{max-width:150px}
+  .userchip .un{display:none}
+  .legend{width:170px}
+  .legend #legendRows{max-height:26vh}
+  /* modals + child popups go fullscreen */
+  .modal-overlay{padding:0}
+  .modal-overlay .modal{width:100%;height:100%;max-height:100%;border-radius:0}
+  .modal-tabs{flex-wrap:wrap}
+  .child-overlay{padding:0}
+  .child-overlay .child-modal{width:100%;height:100%;max-height:100%;border-radius:0}
+  #newActivityOverlay .child-modal{height:100%}
+  /* form grids collapse to one column */
+  .aform .afgrid{grid-template-columns:1fr}
+  .ufgrid{grid-template-columns:1fr}
+  .kpigrid{grid-template-columns:1fr}
+  .child-body .kpigrid{grid-template-columns:1fr}
+  .prform .prgrid{grid-template-columns:1fr}
+  .meta{grid-template-columns:1fr}
+  .mgrid{grid-template-columns:repeat(3,1fr)}
+  .esum-grid{flex-wrap:wrap}
+  .esum-grid .stat{flex:1 1 40%}
+  .chain{flex-wrap:wrap}
+  .chain .rc-export{margin-left:0}
+  .comm-msg{max-width:100%;margin-left:0}
+}
+
+/* touch devices: larger tap targets for the most-used controls */
+@media (pointer:coarse){
+  .seg button{padding:8px 12px}
+  .hbtn{padding:8px 12px}
+  .modal-tabs button{padding:8px 13px}
+  .map-controls button{width:34px;height:34px}
+  .pager button{width:32px;height:32px}
+  .collapse{width:26px;height:44px}
+  .facet{padding:6px 4px}
+  .facet input[type=checkbox]{width:15px;height:15px}
+}

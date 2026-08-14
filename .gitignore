@@ -1,0 +1,29 @@
+# Raw GeoNames dumps — build-time inputs only, already distilled into tools/cities.json.
+# Not needed to run or rebuild the demo. Download from https://download.geonames.org/export/dump/
+cities1000.txt
+cities1000.zip
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+
+# Local tooling and launchers - working files, not part of the published app.
+.claude/
+start.bat
+
+# The LOCAL-mode database. Built from schema.sql + js/seed.js on first run
+# (python server.py), so it is reproducible and never committed - the published
+# GitHub snapshot runs on the browser store instead and needs none of this.
+*.db
+rbm.db
+*.db-wal
+*.db-shm
+__pycache__/
+*.pyc
+
+# The overview deck and the manual in docs/ ARE published. Their source screenshots
+# are build inputs only - they are already embedded in the documents themselves.
+docs/screenshots/
